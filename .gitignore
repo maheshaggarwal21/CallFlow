@@ -1,0 +1,98 @@
+# Node modules
+**/node_modules/
+
+# Build outputs
+**/.next/
+**/dist/
+**/out/
+**/build/
+**/coverage/
+**/.turbo/
+**/.parcel-cache/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.idea/
+.vscode/
+
+# Env files (keep example files tracked)
+.env
+.env.*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/editor
+*.sublime-workspace
+*.sublime-project
+.vscode/*
+!.vscode/settings.json
+
+# Mobile / React Native
+android/.gradle/
+android/app/build/
+ios/Pods/
+ios/build/
+.expo/
+
+# Xcode
+*.xcworkspace
+*.xcodeproj/project.xcworkspace/
+DerivedData/
+
+# Keystores, certificates
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+
+# Generated lockfiles (if you prefer a single manager, uncomment one)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Sentry
+.sentrycli
+
+# Misc
+coverage/
+.nyc_output/
+*.log
+
+# Optional: ignore nested git folders if any were accidentally committed
+**/.git/
+
+# Keep examples and docs tracked
+!.env.example
+
+# Local test outputs
+*.local
+
+# Temporary files
+*.tmp
+*~
+
+# Build artifacts from CI or local tooling
+artifacts/
+
+# Terraform state (if any)
+*.tfstate
+*.tfstate.backup
+
+# Mac specific
+.AppleDouble
+
+# Windows specific
+ehthumbs.db
+
+# Secrets (catch-all)
+secrets/
+

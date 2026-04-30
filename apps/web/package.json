@@ -1,0 +1,28 @@
+{
+  "name": "@callflow/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@callflow/shared-types": "file:../../packages/shared-types",
+    "next": "^15.3.1",
+    "react": "^18",
+    "react-dom": "^18",
+    "react-qr-code": "^2.0.15",
+    "swr": "^2.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^9",
+    "eslint-config-next": "^15.3.1",
+    "typescript": "^5"
+  }
+}

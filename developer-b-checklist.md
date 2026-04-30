@@ -1,0 +1,19 @@
+# Developer B Checklist
+- [x] Copy dev-b-web scaffold into apps/web
+- [x] Add lib/constants.ts and refactor colors to use shared tokens
+- [x] Add chartTransforms, tagMaps, and callSentiment helpers
+- [x] Update lib/api for httpOnly cookie auth (credentials include)
+- [x] Apply DM Sans in app layout
+- [x] Update middleware to read token cookie
+- [x] Update Sidebar to use /employees/names and auth hook
+- [x] Update CallFilters (source filter + API param mapping)
+- [x] Update Recordings/Misc queries to API param names and misc-count endpoint
+- [x] Wire Team page quick stats to call_stats
+- [x] Align Employees page with two-state analytics + call list
+- [x] Align Employee dashboard to /analytics/employee with date ranges
+- [x] Update Overview page to month param and CSAT employee scope
+- [x] Update CallPanel for aiStatusTag, resolution, and intercom phone
+- [x] Remove unsupported students sync-trigger UI
+- [ ] Implement EmployeeFilterDropdown (if needed by design)
+- [ ] Add MobileCallCard (if needed for responsive layout)
+- [ ] Verify call table audio/play behavior vs API

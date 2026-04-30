@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: callflow-postgres
+    environment:
+      POSTGRES_USER: callflow
+      POSTGRES_PASSWORD: callflow
+      POSTGRES_DB: callflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - callflow_pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: callflow-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - callflow_redisdata:/data
+
+volumes:
+  callflow_pgdata:
+  callflow_redisdata:
