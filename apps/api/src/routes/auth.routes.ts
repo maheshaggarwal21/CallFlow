@@ -78,6 +78,11 @@ router.post("/login", loginLimiter, async (req, res) => {
   });
 });
 
+router.post("/logout", (_req, res) => {
+  res.clearCookie("token", { httpOnly: true, secure: true, sameSite: "none", path: "/" });
+  return res.json({ ok: true });
+});
+
 router.get("/me", requireAuth, async (req, res) => {
   const userId = req.user?.sub;
   if (!userId) {

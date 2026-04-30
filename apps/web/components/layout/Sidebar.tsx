@@ -12,7 +12,7 @@ import type { EmployeeName } from "@callflow/shared-types";
 export default function Sidebar() {
   const router   = useRouter();
   const pathname = usePathname();
-  const { name, color_index, isOwner } = useAuth();
+  const { name, role, color_index, isOwner } = useAuth();
   const { syncLabel, aiPending, isLive } = useSystemStatus();
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [empOpen, setEmpOpen]       = useState(true);
@@ -29,7 +29,15 @@ export default function Sidebar() {
     return exact ? pathname === path : pathname.startsWith(path);
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // ignore network errors — still clear local state
+    }
     router.push("/login");
   }
 

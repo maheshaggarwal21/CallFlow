@@ -67,7 +67,7 @@ export default function Topbar() {
             display: "inline-block",
           }} />
           <span style={{ fontSize: 11, fontWeight: 700, color: isLive ? C.green : C.muted }}>
-            {isLive ? "LIVE" : "Idle"}
+            {isLive ? "LIVE" : "No Sync"}
           </span>
         </div>
       </div>

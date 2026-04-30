@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import useSWR from "swr";
 import { C, eClr, init, fmtS } from "@/lib/colors";
-import { fetcher } from "@/lib/api";
+import { fetcher, api } from "@/lib/api";
 import { getStudentDisplay } from "@/lib/studentLabel";
+import type { Call } from "@callflow/shared-types";
 import { toLineChartData } from "@/lib/chartTransforms";
 import PieChart from "@/components/ui/PieChart";
 import LineChart from "@/components/ui/LineChart";
@@ -38,29 +39,97 @@ function StatCard({ label, value, sub, icon, delta, accent = C.orange }: {
   );
 }
 
-export default function OverviewPage() {
-  const monthOptions = useMemo(() => {
-    const now = new Date();
-    const makeMonth = (offset: number) => {
-      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, 1));
-      return d.toISOString().slice(0, 7);
-    };
-    return [
-      { key: "current", label: "This Month", value: makeMonth(0) },
-      { key: "last", label: "Last Month", value: makeMonth(-1) },
-    ];
-  }, []);
+type Period = "today" | "yesterday" | "week" | "month" | "last_month" | "all";
 
-  const [month, setMonth] = useState<string>(monthOptions[0]?.value ?? "");
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "today",      label: "Today" },
+  { key: "yesterday",  label: "Yesterday" },
+  { key: "week",       label: "Last 7 Days" },
+  { key: "month",      label: "This Month" },
+  { key: "last_month", label: "Last Month" },
+  { key: "all",        label: "All Time" },
+];
+
+export default function OverviewPage() {
+  const [period, setPeriod]                 = useState<Period>("month");
   const [csatEmployeeId, setCsatEmployeeId] = useState<string>("");
+  const [playingId, setPlayingId]           = useState<string | null>(null);
+  const [fetchingId, setFetchingId]         = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlCache = useRef<Map<string, string>>(new Map());
+
+  async function handlePlay(call: Call) {
+    if (playingId === call.id) {
+      audioRef.current?.pause();
+      setPlayingId(null);
+      return;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.onended = null;
+    }
+    let audioUrl: string | null = urlCache.current.get(call.id) ?? call.audio_presigned_url ?? null;
+    if (!audioUrl) {
+      setFetchingId(call.id);
+      try {
+        const data = await api.get<Call>(`/calls/${call.id}`);
+        audioUrl = data.audio_presigned_url ?? null;
+        if (audioUrl) urlCache.current.set(call.id, audioUrl);
+      } catch {
+        // no audio
+      } finally {
+        setFetchingId(null);
+      }
+    }
+    if (!audioUrl) return;
+    const audio = new Audio(audioUrl);
+    audioRef.current = audio;
+    audio.play().catch(() => {});
+    setPlayingId(call.id);
+    audio.onended = () => setPlayingId(null);
+    audio.onerror = () => setPlayingId(null);
+  }
+
+  const dateRange = useMemo(() => {
+    const today = new Date();
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const startOfDay = (d: Date) => { const c = new Date(d); c.setHours(0, 0, 0, 0); return c; };
+    const endOfDay   = (d: Date) => { const c = new Date(d); c.setHours(23, 59, 59, 999); return c; };
+
+    switch (period) {
+      case "today":
+        return { date_from: fmt(startOfDay(today)), date_to: fmt(endOfDay(today)) };
+      case "yesterday": {
+        const y = new Date(today); y.setDate(y.getDate() - 1);
+        return { date_from: fmt(startOfDay(y)), date_to: fmt(endOfDay(y)) };
+      }
+      case "week": {
+        const s = new Date(today); s.setDate(s.getDate() - 6);
+        return { date_from: fmt(startOfDay(s)), date_to: fmt(endOfDay(today)) };
+      }
+      case "month": {
+        const s = new Date(today.getFullYear(), today.getMonth(), 1);
+        return { date_from: fmt(startOfDay(s)), date_to: fmt(endOfDay(today)) };
+      }
+      case "last_month": {
+        const s = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const e = new Date(today.getFullYear(), today.getMonth(), 0);
+        return { date_from: fmt(startOfDay(s)), date_to: fmt(endOfDay(e)) };
+      }
+      case "all":
+      default:
+        return { date_from: "2000-01-01" };
+    }
+  }, [period]);
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
-    if (month) p.set("month", month);
+    if (dateRange.date_from) p.set("date_from", dateRange.date_from);
+    if ("date_to" in dateRange && dateRange.date_to) p.set("date_to", dateRange.date_to);
     if (csatEmployeeId) p.set("employee_id", csatEmployeeId);
     const qs = p.toString();
     return `/analytics/overview${qs ? `?${qs}` : ""}`;
-  }, [month, csatEmployeeId]);
+  }, [dateRange, csatEmployeeId]);
 
   const { data } = useSWR<OverviewStats>(query, fetcher);
 
@@ -77,13 +146,13 @@ export default function OverviewPage() {
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: C.text, letterSpacing: -0.5 }}>Dashboard</h1>
           <p style={{ margin: "5px 0 0", fontSize: 15, color: C.muted, fontWeight: 400 }}>Overview · Max Music School</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          {monthOptions.map((p) => {
-            const isA = month === p.value;
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {PERIODS.map((p) => {
+            const isA = period === p.key;
             return (
-              <button key={p.key} onClick={() => setMonth(p.value)} style={{
+              <button key={p.key} onClick={() => setPeriod(p.key)} style={{
                 padding: "8px 16px", borderRadius: 20,
-                border: `1px solid ${isA ? C.orangeBdr : C.border}`,
+                border: `1px solid ${isA ? C.orange : C.border}`,
                 background: isA ? C.orange : "transparent",
                 color: isA ? "#fff" : C.muted,
                 cursor: "pointer", fontSize: 14, fontWeight: isA ? 700 : 500,
@@ -91,10 +160,6 @@ export default function OverviewPage() {
               }}>{p.label}</button>
             );
           })}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, background: C.greenLight, border: `1px solid ${C.greenBdr}`, borderRadius: 20, padding: "6px 14px", marginLeft: 8 }}>
-            <div style={{ width: 7, height: 7, background: C.green, borderRadius: "50%" }} />
-            <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>Live</span>
-          </div>
         </div>
       </div>
 
@@ -332,7 +397,7 @@ export default function OverviewPage() {
               <p style={{ margin: "2px 0 0", fontSize: 12, color: C.muted }}>Latest activity across all lines</p>
             </div>
             <a href="/dashboard/employees" style={{ fontSize: 12, color: C.orange, fontWeight: 600, textDecoration: "none" }}>
-              View all ->
+              View all &rarr;
             </a>
           </div>
 
@@ -357,7 +422,26 @@ export default function OverviewPage() {
                 borderBottom: `1px solid ${C.borderLight}`,
               }}>
                 <div style={{ padding: "0 8px", display: "flex", alignItems: "center" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: 6, background: C.bgDeep, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, color: C.muted }}>▶</div>
+                  <button
+                    onClick={() => handlePlay(call)}
+                    title={fetchingId === call.id ? "Loading…" : playingId === call.id ? "Pause" : "Play recording"}
+                    style={{
+                      width: 28, height: 28, borderRadius: "50%", border: "none",
+                      background: playingId === call.id
+                        ? `linear-gradient(135deg,${C.orange},#f59e0b)`
+                        : C.bgDeep,
+                      boxShadow: playingId === call.id
+                        ? "0 2px 8px rgba(232,118,26,0.35)"
+                        : `inset 0 0 0 1.5px ${C.border}`,
+                      cursor: fetchingId === call.id ? "wait" : "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 9, color: playingId === call.id ? "#fff" : C.muted,
+                      flexShrink: 0, opacity: fetchingId === call.id ? 0.6 : 1,
+                      transition: "all 0.18s",
+                    }}
+                  >
+                    {fetchingId === call.id ? "⏳" : playingId === call.id ? "⏸" : "▶"}
+                  </button>
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 600, color: call.caller_phone === "Unknown" ? C.dim : C.text, fontStyle: call.caller_phone === "Unknown" ? "italic" : "normal", padding: "0 8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {call.caller_phone === "Unknown" ? "Unknown" : call.caller_phone}

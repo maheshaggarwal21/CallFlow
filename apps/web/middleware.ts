@@ -12,8 +12,10 @@ const OWNER_ONLY_PATHS = [
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow login page through always
-  if (pathname === "/login") return NextResponse.next();
+  // Public routes — no auth needed
+  if (pathname === "/" || pathname === "/login" || pathname.startsWith("/images/")) {
+    return NextResponse.next();
+  }
 
   const token = request.cookies.get("token")?.value;
 

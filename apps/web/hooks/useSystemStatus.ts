@@ -15,15 +15,16 @@ export function useSystemStatus() {
   const android = data?.android_last_sync_at ?? null;
   const aiPending = data?.ai_queue_pending ?? 0;
 
+  const now = Date.now();
+  const recentThreshold = 20 * 60 * 1000; // 20 minutes
+  const ftpAge = ftp ? now - new Date(ftp).getTime() : Infinity;
+  const androidAge = android ? now - new Date(android).getTime() : Infinity;
+  const isLive = ftpAge < recentThreshold || androidAge < recentThreshold;
+
   function syncLabel(): string {
-    if (!ftp && !android) return "Idle";
-    const now = Date.now();
-    const ftpAge = ftp ? now - new Date(ftp).getTime() : Infinity;
-    const androidAge = android ? now - new Date(android).getTime() : Infinity;
-    const recentThreshold = 20 * 60 * 1000; // 20 minutes
     if (ftpAge < recentThreshold) return "FTP sync active";
     if (androidAge < recentThreshold) return "Phone sync active";
-    return "Idle";
+    return "No Sync";
   }
 
   return {
@@ -31,6 +32,6 @@ export function useSystemStatus() {
     android,
     aiPending,
     syncLabel: syncLabel(),
-    isLive: !!(ftp || android),
+    isLive,
   };
 }

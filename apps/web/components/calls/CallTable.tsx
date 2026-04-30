@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { C, eClr, init, fmtS } from "@/lib/colors";
 import { callSentiment } from "@/lib/callSentiment";
 import { getStudentDisplay } from "@/lib/studentLabel";
+import { api } from "@/lib/api";
 import Pagination from "@/components/ui/Pagination";
 import { WAIconInline } from "@/components/ui/WABtn";
 import MobileCallCard from "@/components/calls/MobileCallCard";
@@ -25,9 +26,11 @@ interface Props {
 
 export default function CallTable({ calls, total, page, pageSize, onPageChange, onSelect, selectedId }: Props) {
   const totalPages  = Math.ceil(total / pageSize);
-  const [hovId, setHovId]       = useState<string | null>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [hovId, setHovId]         = useState<string | null>(null);
+  const [playingId, setPlayingId]   = useState<string | null>(null);
+  const [fetchingId, setFetchingId] = useState<string | null>(null);
+  const audioRef   = useRef<HTMLAudioElement | null>(null);
+  const urlCache   = useRef<Map<string, string>>(new Map());
   const [isMobile, setIsMobile] = useState(false);
 
   // Stop audio when component unmounts or calls list changes
@@ -42,21 +45,39 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  function handlePlay(call: Call) {
-    // If already playing this call, pause it
+  async function handlePlay(call: Call) {
+    // Pause if already playing this call
     if (playingId === call.id) {
       audioRef.current?.pause();
       setPlayingId(null);
       return;
     }
-    // Stop any current audio
+    // Stop any currently playing audio
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.onended = null;
     }
-    if (!call.audio_presigned_url) return;
 
-    const audio = new Audio(call.audio_presigned_url);
+    // Use cached URL, inline URL, or fetch on-demand from /calls/:id
+    let audioUrl: string | null =
+      urlCache.current.get(call.id) ?? call.audio_presigned_url ?? null;
+
+    if (!audioUrl) {
+      setFetchingId(call.id);
+      try {
+        const data = await api.get<Call>(`/calls/${call.id}`);
+        audioUrl = data.audio_presigned_url ?? null;
+        if (audioUrl) urlCache.current.set(call.id, audioUrl);
+      } catch {
+        // silently ignore — no audio available
+      } finally {
+        setFetchingId(null);
+      }
+    }
+
+    if (!audioUrl) return;
+
+    const audio = new Audio(audioUrl);
     audioRef.current = audio;
     audio.play().catch(() => {});
     setPlayingId(call.id);
@@ -133,8 +154,8 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
           const isIn     = call.call_direction === "inbound";
           const isSel    = call.id === selectedId;
           const isHov    = hovId === call.id;
-          const isPlaying = playingId === call.id;
-          const hasAudio  = !!call.audio_presigned_url;
+          const isPlaying  = playingId === call.id;
+          const isFetching = fetchingId === call.id;
 
           return (
             <div
@@ -155,23 +176,24 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
                 <button
                   onClick={() => handlePlay(call)}
-                  title={hasAudio ? (isPlaying ? "Pause" : "Play recording") : "No recording"}
+                  title={isFetching ? "Loading…" : isPlaying ? "Pause" : "Play recording"}
                   style={{
                     width: 32, height: 32, borderRadius: "50%", border: "none",
                     background: isPlaying
                       ? `linear-gradient(135deg,${C.orange},#f59e0b)`
-                      : hasAudio ? C.bgDeep : C.bgDeep,
+                      : C.bgDeep,
                     boxShadow: isPlaying
                       ? "0 2px 8px rgba(232,118,26,0.35)"
-                      : `inset 0 0 0 1.5px ${hasAudio ? C.border : C.borderLight}`,
-                    cursor: hasAudio ? "pointer" : "default",
+                      : `inset 0 0 0 1.5px ${C.border}`,
+                    cursor: isFetching ? "wait" : "pointer",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: isPlaying ? 11 : 10,
-                    color: isPlaying ? "#fff" : hasAudio ? C.muted : C.dim,
+                    color: isPlaying ? "#fff" : C.muted,
                     transition: "all 0.18s", flexShrink: 0,
+                    opacity: isFetching ? 0.6 : 1,
                   }}
                 >
-                  {isPlaying ? "⏸" : "▶"}
+                  {isFetching ? "⏳" : isPlaying ? "⏸" : "▶"}
                 </button>
               </div>
 

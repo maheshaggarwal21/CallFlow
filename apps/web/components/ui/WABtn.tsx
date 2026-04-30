@@ -1,7 +1,7 @@
 "use client";
 
 interface Props {
-  phone: string;
+  phone: string | null;
   size?: "sm" | "md";
 }
 
@@ -46,7 +46,7 @@ export default function WABtn({ phone, size = "md" }: Props) {
   );
 }
 
-export function WAIconInline({ phone }: { phone: string }) {
+export function WAIconInline({ phone }: { phone: string | null }) {
   if (!phone || phone === "Unknown") return null;
   const digits = phone.replace(/\D/g, "");
   return (

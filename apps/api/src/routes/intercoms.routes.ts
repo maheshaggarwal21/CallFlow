@@ -26,7 +26,10 @@ router.get("/", async (_req, res) => {
     "ORDER BY i.intercom_code ASC"
   );
 
-  return res.json(result.rows);
+  return res.json(result.rows.map((r) => ({
+    ...r,
+    call_count_total: Number(r.call_count_total),
+  })));
 });
 
 router.patch("/:id", requireOwner, async (req, res) => {

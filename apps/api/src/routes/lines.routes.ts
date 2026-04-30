@@ -31,7 +31,11 @@ router.get("/", async (_req, res) => {
     "ORDER BY l.line_number ASC"
   );
 
-  return res.json(result.rows);
+  return res.json(result.rows.map((r) => ({
+    ...r,
+    call_count_today: Number(r.call_count_today),
+    employee_color_index: r.employee_color_index !== null ? Number(r.employee_color_index) : null,
+  })));
 });
 
 router.patch("/:id", requireOwner, async (req, res) => {
@@ -48,7 +52,7 @@ router.patch("/:id", requireOwner, async (req, res) => {
     values.push(updates.employee_id);
     const idx = values.length;
     fields.push(`employee_id = $${idx}`);
-    fields.push(`assigned_at = CASE WHEN $${idx} IS NULL THEN NULL ELSE NOW() END`);
+    fields.push(`assigned_at = CASE WHEN $${idx}::uuid IS NULL THEN NULL ELSE NOW() END`);
   }
 
   if (updates.purpose !== undefined) {

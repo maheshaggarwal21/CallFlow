@@ -84,7 +84,7 @@ export default function EmployeesPage() {
               padding: 0,
             }}
           >
-            <- All employees
+            &larr; All employees
           </button>
         )}
       </div>

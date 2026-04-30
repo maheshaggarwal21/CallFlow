@@ -1,4 +1,8 @@
 import fs from "fs";
+import path from "path";
+import os from "os";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { OpenAI } from "openai";
 import pool from "../db/pool";
 import { downloadAudioToFile } from "./storage.service";
@@ -7,6 +11,27 @@ import {
   buildSummaryPrompt,
   Turn,
 } from "../queue/prompts";
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Convert any audio format to 16-kHz mono PCM WAV using ffmpeg.
+ * KoreCall recordings are G.711 A-law 8kHz — Whisper requires standard PCM.
+ * Returns the path to the converted file (caller must delete it).
+ */
+async function toPcmWav(inputPath: string): Promise<string> {
+  const ffmpeg = process.env.FFMPEG_PATH || "ffmpeg";
+  const outPath = path.join(os.tmpdir(), `callflow-pcm-${Date.now()}.wav`);
+  await execFileAsync(ffmpeg, [
+    "-y",
+    "-i", inputPath,
+    "-ar", "16000",   // 16 kHz — Whisper's preferred sample rate
+    "-ac", "1",       // mono
+    "-c:a", "pcm_s16le",  // 16-bit PCM
+    outPath,
+  ]);
+  return outPath;
+}
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -118,15 +143,26 @@ export async function processAiJob(callId: string) {
     return;
   }
 
+  // Convert to PCM WAV — KoreCall files are G.711 A-law which Whisper rejects
+  let whisperPath = tmpPath;
+  let convertedPath: string | null = null;
+  try {
+    convertedPath = await toPcmWav(tmpPath);
+    whisperPath = convertedPath;
+  } catch {
+    // ffmpeg not available or conversion failed — try raw file anyway
+    whisperPath = tmpPath;
+  }
+
   try {
     const transcriptRes = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(tmpPath),
+      file: fs.createReadStream(whisperPath),
       model: "whisper-1",
       language: "hi",
       response_format: "text",
     });
 
-    const transcriptRaw = typeof transcriptRes === "string" ? transcriptRes : transcriptRes.text;
+    const transcriptRaw = typeof transcriptRes === "string" ? transcriptRes : (transcriptRes as { text: string }).text;
 
     const transcriptJson = await diarize(transcriptRaw);
     const summaryObj = await summarise(transcriptJson);
@@ -157,5 +193,6 @@ export async function processAiJob(callId: string) {
     );
   } finally {
     fs.unlink(tmpPath, () => undefined);
+    if (convertedPath) fs.unlink(convertedPath, () => undefined);
   }
 }

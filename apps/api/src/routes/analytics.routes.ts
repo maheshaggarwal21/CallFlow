@@ -43,18 +43,37 @@ router.get("/misc-count", async (_req, res) => {
     "FROM calls WHERE is_misc = TRUE"
   );
 
-  return res.json(result.rows[0]);
+  const row = result.rows[0];
+  return res.json({
+    count: Number(row.count || 0),
+    avg_duration_secs: Number(row.avg_duration_secs || 0),
+    disconnected_count: Number(row.disconnected_count || 0),
+    no_response_count: Number(row.no_response_count || 0),
+  });
 });
 
 router.get("/overview", requireOwner, async (req, res) => {
-  const monthParam = typeof req.query.month === "string" ? req.query.month : undefined;
-  const monthRange = parseMonth(monthParam);
-  const now = new Date();
-  const start = monthRange?.start || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const end = monthRange?.end || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const dateFromParam = typeof req.query.date_from === "string" ? req.query.date_from : null;
+  const dateToParam   = typeof req.query.date_to   === "string" ? req.query.date_to   : null;
+
+  let start: Date, end: Date, skipMomDelta: boolean;
+
+  if (dateFromParam || dateToParam) {
+    const now = new Date();
+    start = dateFromParam ? new Date(dateFromParam + "T00:00:00.000Z") : new Date(0);
+    end   = dateToParam   ? new Date(dateToParam   + "T23:59:59.999Z") : now;
+    skipMomDelta = true;
+  } else {
+    const monthParam = typeof req.query.month === "string" ? req.query.month : undefined;
+    const monthRange = parseMonth(monthParam);
+    const now = new Date();
+    start = monthRange?.start || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    end   = monthRange?.end   || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    skipMomDelta = false;
+  }
 
   const prevStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1));
-  const prevEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const prevEnd   = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
 
   const [totalsRes, prevRes] = await Promise.all([
     pool.query(
@@ -90,7 +109,12 @@ router.get("/overview", requireOwner, async (req, res) => {
   const prevOutbound = Number(prev.outbound || 0);
   const prevAvg = Number(prev.avg_duration_secs || 0);
 
-  const momDelta = {
+  const momDelta = skipMomDelta ? {
+    total_pct: null as number | null,
+    inbound_pct: null as number | null,
+    outbound_pct: null as number | null,
+    avg_duration_secs: 0,
+  } : {
     total_pct: prevTotal > 0 ? Math.round(((totalCalls - prevTotal) / prevTotal) * 100) : null,
     inbound_pct: prevInbound > 0 ? Math.round(((inbound - prevInbound) / prevInbound) * 100) : null,
     outbound_pct: prevOutbound > 0 ? Math.round(((outbound - prevOutbound) / prevOutbound) * 100) : null,

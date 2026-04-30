@@ -3,6 +3,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import rateLimit from "express-rate-limit";
+import path from "path";
 import authRoutes from "./routes/auth.routes";
 import callsRoutes from "./routes/calls.routes";
 import analyticsRoutes from "./routes/analytics.routes";
@@ -13,6 +14,8 @@ import linesRoutes from "./routes/lines.routes";
 import mobileRoutes from "./routes/mobile.routes";
 import systemRoutes from "./routes/system.routes";
 import studentsRoutes from "./routes/students.routes";
+import devRoutes from "./routes/dev.routes";
+import { DEV_UPLOADS_DIR } from "./services/storage.service";
 
 dotenv.config();
 
@@ -42,7 +45,19 @@ app.use("/api/v1/mobile", mobileRoutes);
 app.use("/api/v1/system", systemRoutes);
 app.use("/api/v1/students", studentsRoutes);
 
-app.use((req, res) => {
+// Dev-only: serve local audio files + test helpers (disabled in production)
+if (process.env.NODE_ENV !== "production") {
+  app.use("/dev-audio", express.static(DEV_UPLOADS_DIR, {
+    setHeaders: (res) => {
+      res.set("Access-Control-Allow-Origin", webOrigin);
+      res.set("Accept-Ranges", "bytes");
+    },
+  }));
+  app.use("/api/v1/dev", devRoutes);
+  console.log(`[DEV] Local audio served from: ${DEV_UPLOADS_DIR}`);
+}
+
+app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
