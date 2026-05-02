@@ -1,8 +1,6 @@
-import dotenv from "dotenv";
+import "dotenv/config"; // must be first — loads env before any module initialises OpenAI/Redis clients
 import { aiQueue } from "./aiQueue";
 import { processAiJob } from "../services/ai.service";
-
-dotenv.config();
 
 aiQueue.process(async (job) => {
   const callId = job.data?.callId as string | undefined;

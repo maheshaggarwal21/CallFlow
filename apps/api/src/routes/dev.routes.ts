@@ -4,11 +4,11 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { existsSync, copyFileSync, mkdirSync } from "fs";
+import { existsSync, copyFileSync, mkdirSync, readFileSync } from "fs";
 import path from "path";
 import pool from "../db/pool";
 import { aiQueue } from "../queue/aiQueue";
-import { DEV_UPLOADS_DIR } from "../services/storage.service";
+import { DEV_UPLOADS_DIR, uploadAudioObject } from "../services/storage.service";
 
 const router = Router();
 
@@ -54,6 +54,10 @@ router.post("/test-call", async (req, res) => {
   const ext = path.extname(audio_file_path) || ".wav";
   const audioKey = `dev-test-${Date.now()}${ext}`;
   copyFileSync(audio_file_path, path.join(DEV_UPLOADS_DIR, audioKey));
+
+  // If R2 is configured, upload there too — downloadAudioToFile will use R2 when configured
+  const audioBuffer = readFileSync(audio_file_path);
+  await uploadAudioObject(audioKey, audioBuffer, "audio/wav");
 
   // Resolve employee if provided
   let employeeId: string | null = null;

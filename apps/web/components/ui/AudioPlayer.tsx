@@ -5,19 +5,81 @@ import { C, fmtS } from "@/lib/colors";
 
 interface Props {
   url: string | null;
+  /** Stable ID (e.g. call UUID) used as the sessionStorage key.
+   *  Must NOT be the URL — presigned URLs change on every fetch. */
+  storageId?: string;
 }
 
-export default function AudioPlayer({ url }: Props) {
+function storageKey(id: string) {
+  return `audio-pos:${id}`;
+}
+
+export default function AudioPlayer({ url, storageId }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
+  // Track position in a ref so the beforeunload/cleanup handler always has the latest value
+  const currentRef = useRef(0);
 
+  // When URL changes: reset state, restore any saved position for this URL
   useEffect(() => {
     setPlaying(false);
     setCurrent(0);
+    currentRef.current = 0;
     setDuration(0);
   }, [url]);
+
+  // Restore saved position once metadata is loaded (duration known)
+  function handleMetadata() {
+    const el = audioRef.current;
+    if (!el || !storageId) return;
+    setDuration(el.duration ?? 0);
+    const saved = sessionStorage.getItem(storageKey(storageId));
+    if (saved) {
+      const t = parseFloat(saved);
+      if (t > 0 && t < el.duration - 1) {
+        el.currentTime = t;
+        setCurrent(t);
+        currentRef.current = t;
+      }
+    }
+  }
+
+  function handleTimeUpdate() {
+    const el = audioRef.current;
+    if (!el) return;
+    setCurrent(el.currentTime);
+    currentRef.current = el.currentTime;
+    if (storageId) sessionStorage.setItem(storageKey(storageId), String(el.currentTime));
+  }
+
+  function handleEnded() {
+    setPlaying(false);
+    if (storageId) sessionStorage.removeItem(storageKey(storageId));
+  }
+
+  async function togglePlay() {
+    const el = audioRef.current;
+    if (!el) return;
+    if (playing) {
+      el.pause();
+      setPlaying(false);
+    } else {
+      await el.play().catch(() => {});
+      setPlaying(true);
+    }
+  }
+
+  function handleSeek(e: React.ChangeEvent<HTMLInputElement>) {
+    const el = audioRef.current;
+    if (!el) return;
+    const t = Number(e.target.value);
+    el.currentTime = t;
+    setCurrent(t);
+    currentRef.current = t;
+    if (storageId) sessionStorage.setItem(storageKey(storageId), String(t));
+  }
 
   if (!url) {
     return (
@@ -40,24 +102,6 @@ export default function AudioPlayer({ url }: Props) {
     );
   }
 
-  async function togglePlay() {
-    const el = audioRef.current;
-    if (!el) return;
-    if (playing) {
-      el.pause();
-    } else {
-      await el.play();
-    }
-    setPlaying(!playing);
-  }
-
-  function handleSeek(e: React.ChangeEvent<HTMLInputElement>) {
-    const el = audioRef.current;
-    if (!el) return;
-    el.currentTime = Number(e.target.value);
-    setCurrent(Number(e.target.value));
-  }
-
   return (
     <div
       style={{
@@ -70,9 +114,9 @@ export default function AudioPlayer({ url }: Props) {
       <audio
         ref={audioRef}
         src={url}
-        onLoadedMetadata={() => setDuration(audioRef.current?.duration ?? 0)}
-        onTimeUpdate={() => setCurrent(audioRef.current?.currentTime ?? 0)}
-        onEnded={() => setPlaying(false)}
+        onLoadedMetadata={handleMetadata}
+        onTimeUpdate={handleTimeUpdate}
+        onEnded={handleEnded}
         preload="metadata"
       />
 

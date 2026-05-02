@@ -161,7 +161,7 @@ export default function CallPanel({ callId, onClose }: Props) {
               {/* ── SUMMARY TAB ── */}
               {tab === "summary" && (
                 <>
-                  <AudioPlayer url={call.audio_presigned_url ?? null} />
+                  <AudioPlayer url={call.audio_presigned_url ?? null} storageId={call.id} />
 
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                     {aiTag && (
