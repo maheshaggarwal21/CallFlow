@@ -10,6 +10,7 @@ import pool from "../db/pool";
 import { downloadAudioToFile } from "./storage.service";
 import {
   buildDiarizationPrompt,
+  buildConsistencyCheckPrompt,
   buildSummaryPrompt,
   Turn,
   isUnansweredCall,
@@ -121,6 +122,38 @@ async function diarize(transcriptRaw: string): Promise<Turn[]> {
   }));
 }
 
+type Correction = { index: number; newSpeaker: string; reason?: string };
+
+async function consistencyCheck(turns: Turn[]): Promise<Turn[]> {
+  if (turns.length < 3) return turns;
+
+  const prompt = buildConsistencyCheckPrompt(turns);
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages: [{ role: "user", content: prompt }],
+    response_format: { type: "json_object" },
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  const parsed = parseJsonOrThrow<{ corrections?: Correction[] }>(raw, "ConsistencyCheck");
+
+  if (!Array.isArray(parsed.corrections) || parsed.corrections.length === 0) return turns;
+
+  const corrected = turns.map((t) => ({ ...t }));
+  for (const c of parsed.corrections) {
+    if (
+      typeof c.index === "number" &&
+      c.index >= 0 &&
+      c.index < corrected.length &&
+      (c.newSpeaker === "Agent" || c.newSpeaker === "Caller")
+    ) {
+      corrected[c.index].speaker = c.newSpeaker as "Agent" | "Caller";
+    }
+  }
+  return corrected;
+}
+
 async function summarise(turns: Turn[]): Promise<SummaryResult> {
   const prompt = buildSummaryPrompt(turns);
   const response = await openai.chat.completions.create({
@@ -228,7 +261,8 @@ export async function processAiJob(callId: string) {
       ];
       summaryObj = { summary: "Call was not answered. An automated operator message played indicating the contact was unavailable or switched off.", sentiment: "neutral" };
     } else {
-      transcriptJson = await diarize(transcriptRaw);
+      const rawTurns = await diarize(transcriptRaw);
+      transcriptJson = await consistencyCheck(rawTurns);
       summaryObj = await summarise(transcriptJson);
     }
 
