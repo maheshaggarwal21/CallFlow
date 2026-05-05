@@ -20,9 +20,29 @@ import { DEV_UPLOADS_DIR } from "./services/storage.service";
 dotenv.config();
 
 const app = express();
-const webOrigin = process.env.WEB_ORIGIN || "http://localhost:3000";
 
-app.use(cors({ origin: webOrigin, credentials: true }));
+// Required when running behind nginx/reverse-proxy: tells Express to trust
+// the X-Forwarded-For header so rate limiters key on the real client IP,
+// not nginx's 127.0.0.1 (which would bucket all users together).
+app.set("trust proxy", 1);
+
+// Allow both local dev and the deployed frontend domain
+const allowedOrigins = (process.env.WEB_ORIGIN || "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Allow requests with no Origin header (curl, mobile app, server-to-server)
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      cb(new Error(`CORS: origin ${origin} not allowed`));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 app.use(
@@ -49,7 +69,7 @@ app.use("/api/v1/students", studentsRoutes);
 if (process.env.NODE_ENV !== "production") {
   app.use("/dev-audio", express.static(DEV_UPLOADS_DIR, {
     setHeaders: (res) => {
-      res.set("Access-Control-Allow-Origin", webOrigin);
+      res.set("Access-Control-Allow-Origin", allowedOrigins[0]);
       res.set("Accept-Ranges", "bytes");
     },
   }));

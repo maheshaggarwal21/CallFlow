@@ -18,7 +18,8 @@ async function requestAndroidPermissions() {
   const permissions = [
     PermissionsAndroid.PERMISSIONS.READ_CALL_LOG,
     PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
-    PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+    PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,   // Android ≤12
+    (PermissionsAndroid.PERMISSIONS as any).READ_MEDIA_AUDIO, // Android 13+
     PermissionsAndroid.PERMISSIONS.FOREGROUND_SERVICE,
     PermissionsAndroid.PERMISSIONS.CAMERA,
   ].filter(Boolean) as string[];
