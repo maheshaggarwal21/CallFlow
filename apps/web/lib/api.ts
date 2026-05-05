@@ -16,11 +16,16 @@ async function request<T>(
     credentials: "include",
   });
 
-  if (res.status === 401) {
+  if (res.status === 401 && path !== "/auth/login") {
     if (typeof window !== "undefined") {
       window.location.href = "/login";
     }
     throw new Error("Unauthorized");
+  }
+
+  if (res.status === 401 && path === "/auth/login") {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? body?.message ?? "Invalid email or password.");
   }
 
   if (!res.ok) {
