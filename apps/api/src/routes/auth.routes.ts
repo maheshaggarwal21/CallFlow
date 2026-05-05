@@ -59,12 +59,14 @@ router.post("/login", loginLimiter, async (req, res) => {
     { expiresIn: "8h" }
   );
 
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie("token", token, {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
     maxAge: 8 * 60 * 60 * 1000,
     path: "/",
+    ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
   });
 
   return res.json({
@@ -79,7 +81,14 @@ router.post("/login", loginLimiter, async (req, res) => {
 });
 
 router.post("/logout", (_req, res) => {
-  res.clearCookie("token", { httpOnly: true, secure: true, sameSite: "none", path: "/" });
+  const isProd = process.env.NODE_ENV === "production";
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    path: "/",
+    ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+  });
   return res.json({ ok: true });
 });
 
