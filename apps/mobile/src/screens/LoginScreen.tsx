@@ -69,6 +69,7 @@ export default function LoginScreen() {
         value={apiKey}
         onChangeText={setApiKey}
         placeholder="Paste API key"
+        placeholderTextColor="#6b6460"
         style={styles.input}
         autoCapitalize="none"
       />
@@ -107,19 +108,20 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "#1a1714",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#e8e2d9",
+    borderColor: "#3d3835",
     padding: 16,
   },
-  label: { fontSize: 14, fontWeight: "600", color: "#1a1714", marginBottom: 8 },
+  label: { fontSize: 14, fontWeight: "600", color: "#e8e2d9", marginBottom: 8 },
   input: {
     borderWidth: 1,
-    borderColor: "#e8e2d9",
-    backgroundColor: "#f0ede6",
+    borderColor: "#3d3835",
+    backgroundColor: "#2b2724",
     padding: 10,
     borderRadius: 8,
+    color: "#f5f2ed",
   },
   button: {
     marginTop: 12,
@@ -131,15 +133,15 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontWeight: "700" },
   secondaryButton: {
     marginTop: 10,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#2b2724",
     borderWidth: 1,
-    borderColor: "#e8e2d9",
+    borderColor: "#3d3835",
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: "center",
   },
-  secondaryButtonText: { color: "#1a1714", fontWeight: "700" },
-  note: { marginTop: 10, fontSize: 12, color: "#8a8278" },
+  secondaryButtonText: { color: "#f5f2ed", fontWeight: "700" },
+  note: { marginTop: 10, fontSize: 12, color: "#7a7470" },
   scannerRoot: { flex: 1, backgroundColor: "#1a1714" },
   scannerHeader: {
     paddingTop: 40,
