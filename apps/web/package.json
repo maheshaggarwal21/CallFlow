@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@callflow/shared-types": "file:../../packages/shared-types",
+    "ftp-srv": "^4.6.3",
     "next": "^15.3.1",
     "react": "^18",
     "react-dom": "^18",

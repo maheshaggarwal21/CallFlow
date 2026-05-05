@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "stream";
 
 let client: S3Client | null = null;
 
@@ -25,7 +26,7 @@ function getClient(): S3Client | null {
 
 export async function uploadAudioObject(
   key: string,
-  body: Buffer,
+  body: Buffer | Readable | Uint8Array,
   contentType?: string
 ): Promise<boolean> {
   const bucket = process.env.R2_BUCKET;
