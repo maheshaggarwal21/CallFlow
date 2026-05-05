@@ -29,7 +29,7 @@ app.set("trust proxy", 1);
 // Allow both local dev and the deployed frontend domain
 const allowedOrigins = (process.env.WEB_ORIGIN || "http://localhost:3000")
   .split(",")
-  .map((o) => o.trim())
+  .map((o) => o.trim().replace(/\/$/, ""))  // strip any accidental trailing slash
   .filter(Boolean);
 
 app.use(
