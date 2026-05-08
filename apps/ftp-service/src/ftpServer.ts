@@ -189,9 +189,19 @@ export function startFtpServer() {
         const isWav = fileName.toLowerCase().endsWith(".wav");
         if (!isWav) return;
 
-        const localFilePath = path.join(FTP_ROOT, fileName);
-        const sourceKey = fileName.replace(/\\/g, "/").replace(/^\//, "");
-        const baseName = path.basename(fileName);
+        const localFilePath = path.isAbsolute(fileName)
+          ? fileName
+          : path.join(FTP_ROOT, fileName);
+
+        const relativeKey = path.relative(FTP_ROOT, localFilePath)
+          .replace(/\\/g, "/");
+        if (relativeKey.startsWith("..")) {
+          console.warn(`⚠️  Skipping file outside FTP root: ${fileName}`);
+          return;
+        }
+
+        const sourceKey = relativeKey.replace(/^\//, "");
+        const baseName = path.basename(localFilePath);
 
         await processUploadedFile(localFilePath, baseName, sourceKey);
       });
