@@ -35,16 +35,16 @@ export function parseFilename(filename: string): ParsedFilename | null {
   if (legacy) {
     const [, line, dir, intercom, ts, phone] = legacy;
     const calledAt = buildCalledAt(ts);
-    if (!calledAt) return null;
-
-    return {
-      lineNumber: line,
-      direction: dir === "A" ? "inbound" : "outbound",
-      intercomCode: intercom || null,
-      calledAt,
-      callerPhone: normalizePhone(phone),
-      rawFilename: filename,
-    };
+    if (calledAt) {
+      return {
+        lineNumber: line,
+        direction: dir === "A" ? "inbound" : "outbound",
+        intercomCode: intercom || null,
+        calledAt,
+        callerPhone: normalizePhone(phone),
+        rawFilename: filename,
+      };
+    }
   }
 
   const korecall = filename.match(KORECALL_REGEX);
