@@ -17,9 +17,11 @@ const createSchema = z.object({
 });
 
 const patchSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  phone: z.string().min(8).max(15).optional().nullable(),
-  status: z.enum(["active", "inactive"]).optional(),
+  name:     z.string().min(1).max(100).optional(),
+  email:    z.string().email().max(100).optional(),
+  phone:    z.string().min(8).max(15).optional().nullable(),
+  status:   z.enum(["active", "inactive"]).optional(),
+  password: z.string().min(8).max(72).optional(),
 });
 
 function sha256(input: string) {
@@ -137,6 +139,10 @@ router.patch("/:id", requireOwner, async (req, res) => {
     values.push(updates.name);
     fields.push(`name = $${values.length}`);
   }
+  if (updates.email !== undefined) {
+    values.push(updates.email);
+    fields.push(`email = $${values.length}`);
+  }
   if (updates.phone !== undefined) {
     values.push(updates.phone ?? null);
     fields.push(`phone = $${values.length}`);
@@ -145,6 +151,11 @@ router.patch("/:id", requireOwner, async (req, res) => {
     values.push(updates.status);
     fields.push(`status = $${values.length}`);
   }
+  if (updates.password !== undefined) {
+    const hash = await bcrypt.hash(updates.password, 12);
+    values.push(hash);
+    fields.push(`password_hash = $${values.length}`);
+  }
 
   if (fields.length === 0) {
     return res.status(400).json({ error: "No fields to update" });
@@ -152,17 +163,24 @@ router.patch("/:id", requireOwner, async (req, res) => {
 
   values.push(req.params.id);
 
-  const result = await pool.query(
-    `UPDATE employees SET ${fields.join(", ")} WHERE id = $${values.length} ` +
-      "RETURNING id, name, email, phone, role, status, color_index",
-    values
-  );
+  try {
+    const result = await pool.query(
+      `UPDATE employees SET ${fields.join(", ")} WHERE id = $${values.length} ` +
+        "RETURNING id, name, email, phone, role, status, color_index",
+      values
+    );
 
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: "Not found" });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "Email already in use by another account" });
+    }
+    throw err;
   }
-
-  return res.json(result.rows[0]);
 });
 
 router.post("/:id/api-key", requireOwner, async (req, res) => {

@@ -266,13 +266,18 @@ export async function processAiJob(callId: string) {
       summaryObj = await summarise(transcriptJson);
     }
 
+    const autoResolution =
+      summaryObj.sentiment === "positive" ? "resolved" :
+      summaryObj.sentiment === "negative" ? "escalated" : null;
+
     await pool.query(
-      "UPDATE calls SET ai_status = 'done', transcript_raw = $1, transcript_json = $2, summary = $3, sentiment = $4, updated_at = NOW() WHERE id = $5",
+      "UPDATE calls SET ai_status = 'done', transcript_raw = $1, transcript_json = $2, summary = $3, sentiment = $4, resolution_status = $5, updated_at = NOW() WHERE id = $6",
       [
         transcriptRaw,
         JSON.stringify(transcriptJson),
         summaryObj.summary || null,
         summaryObj.sentiment || null,
+        autoResolution,
         callId,
       ]
     );

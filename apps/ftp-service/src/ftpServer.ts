@@ -146,6 +146,11 @@ async function processUploadedFile(
       console.log(`🤖 AI job queued for call: ${callId}`);
     }
 
+    // Stamp the FTP sync time so the dashboard shows "FTP sync active"
+    await pool.query(
+      "UPDATE system_state SET ftp_last_sync_at = NOW() WHERE id = 1"
+    );
+
     console.log(`✅ Processed: ${fileName} | ${parsed.direction} | ${parsed.callerPhone}`);
 
   } catch (err) {

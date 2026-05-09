@@ -4,11 +4,21 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import type { SystemStatus } from "@callflow/shared-types";
 
+function timeAgo(ts: string): string {
+  const diffMs = Date.now() - new Date(ts).getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins === 1) return "1 min ago";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  return hrs === 1 ? "1 hr ago" : `${hrs} hrs ago`;
+}
+
 export function useSystemStatus() {
   const { data } = useSWR<SystemStatus>(
     "/system/status",
     fetcher,
-    { refreshInterval: 30_000 }
+    { refreshInterval: 15_000 }
   );
 
   const ftp = data?.ftp_last_sync_at ?? null;
@@ -22,8 +32,12 @@ export function useSystemStatus() {
   const isLive = ftpAge < recentThreshold || androidAge < recentThreshold;
 
   function syncLabel(): string {
-    if (ftpAge < recentThreshold) return "FTP sync active";
-    if (androidAge < recentThreshold) return "Phone sync active";
+    if (ftpAge <= androidAge && ftpAge < recentThreshold && ftp)
+      return `FTP · ${timeAgo(ftp)}`;
+    if (androidAge < recentThreshold && android)
+      return `Phone · ${timeAgo(android)}`;
+    if (ftp) return `Last: ${timeAgo(ftp)}`;
+    if (android) return `Last: ${timeAgo(android)}`;
     return "No Sync";
   }
 

@@ -5,78 +5,67 @@ type Props = {
   label?: string;
 };
 
-function polarToXY(cx: number, cy: number, r: number, deg: number) {
-  const rad = ((deg - 90) * Math.PI) / 180;
-  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
-}
-
-function arcPath(
-  cx: number,
-  cy: number,
-  radius: number,
-  thickness: number,
-  startDeg: number,
-  endDeg: number
-) {
-  const s = polarToXY(cx, cy, radius, startDeg);
-  const e = polarToXY(cx, cy, radius, endDeg);
-  const sInner = polarToXY(cx, cy, radius - thickness, startDeg);
-  const eInner = polarToXY(cx, cy, radius - thickness, endDeg);
-  const large = endDeg - startDeg > 180 ? 1 : 0;
-  return [
-    `M${s.x},${s.y}`,
-    `A${radius},${radius} 0 ${large} 1 ${e.x},${e.y}`,
-    `L${eInner.x},${eInner.y}`,
-    `A${radius - thickness},${radius - thickness} 0 ${large} 0 ${sInner.x},${sInner.y}`,
-    "Z",
-  ].join(" ");
-}
-
 export default function GaugeMeter({ value, label = "Satisfaction Score" }: Props) {
-  const cx = 90;
-  const cy = 90;
-  const r = 70;
   const pct = Math.max(0, Math.min(100, value));
-  const filled = -140 + (pct / 100) * 280;
 
-  const segments = [
-    { start: -140, end: -70, color: "#f59e0b" },
-    { start: -70, end: 0, color: "#84cc16" },
-    { start: 0, end: 70, color: "#22c55e" },
-    { start: 70, end: 140, color: "#16a34a" },
-  ];
+  // Semicircle arc via stroke-dasharray on a full circle.
+  // rotate(180 cx cy) shifts the start point from 3 o'clock → 9 o'clock so the
+  // visible arc runs left → top → right (the clean top half of the circle).
+  const cx = 100, cy = 95, r = 66;
+  const fullC = 2 * Math.PI * r;
+  const halfC = Math.PI * r;           // arc length of the semicircle track
+  const filledLen = (pct / 100) * halfC;
 
-  const needleRad = (filled * Math.PI) / 180;
-  const nx = cx + 55 * Math.cos(needleRad);
-  const ny = cy + 55 * Math.sin(needleRad);
+  const color = pct >= 70 ? C.green : pct >= 40 ? C.orange : C.red;
+  const bgColor = C.bgDeep;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <svg width={180} height={110} viewBox="0 0 180 110">
-        {segments.map((s, i) => (
-          <path key={`bg-${i}`} d={arcPath(cx, cy, r, 14, s.start, s.end)} fill={C.bgDeep} opacity={0.6} />
-        ))}
-        {segments.map((s, i) => {
-          const end = Math.min(s.end, filled);
-          if (end <= s.start) return null;
-          return (
-            <path
-              key={`fg-${i}`}
-              d={arcPath(cx, cy, r, 14, s.start, end)}
-              fill={s.color}
-              opacity={0.85}
-            />
-          );
-        })}
-        <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={C.text} strokeWidth={2} strokeLinecap="round" />
-        <circle cx={cx} cy={cy} r={5} fill={C.text} />
-        <text x={cx} y={cy + 22} textAnchor="middle" fontSize={22} fontWeight={700} fill={C.text}>
+      <svg
+        width={200} height={112}
+        viewBox="0 0 200 112"
+        style={{ overflow: "visible" }}
+      >
+        {/* Track */}
+        <circle
+          cx={cx} cy={cy} r={r}
+          fill="none"
+          stroke={bgColor}
+          strokeWidth={18}
+          strokeDasharray={`${halfC} ${fullC}`}
+          strokeLinecap="round"
+          transform={`rotate(180 ${cx} ${cy})`}
+        />
+
+        {/* Fill */}
+        {pct > 0 && (
+          <circle
+            cx={cx} cy={cy} r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth={18}
+            strokeDasharray={`${filledLen} ${fullC}`}
+            strokeLinecap="round"
+            transform={`rotate(180 ${cx} ${cy})`}
+          />
+        )}
+
+        {/* Percentage */}
+        <text
+          x={cx} y={72}
+          textAnchor="middle"
+          fontSize={30} fontWeight={800}
+          fill={color}
+        >
           {pct}%
         </text>
-        <text x={20} y={105} fontSize={9} fill={C.muted}>Low</text>
-        <text x={145} y={105} fontSize={9} fill={C.muted}>High</text>
+
+        {/* Endpoint labels */}
+        <text x={18} y={cy + 12} fontSize={10} fontWeight={600} fill={C.muted}>Low</text>
+        <text x={182} y={cy + 12} fontSize={10} fontWeight={600} fill={C.muted} textAnchor="end">High</text>
       </svg>
-      <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 500 }}>{label}</p>
+
+      <p style={{ margin: "-4px 0 0", fontSize: 12, color: C.muted, fontWeight: 600 }}>{label}</p>
     </div>
   );
 }
