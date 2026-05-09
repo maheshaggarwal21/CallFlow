@@ -33,6 +33,14 @@ Current Status
 - Web login: apps/web/lib/api.ts now surfaces 401 errors on /auth/login instead of hard redirecting to /login.
 - Supabase seed script executed locally via npx ts-node src/seed.ts; admin/employee seed accounts created.
 - Production blocker: API on droplet still failing with Postgres 28P01 (password auth failed). Suspect incorrect DATABASE_URL in droplet .env; needs verification in /root/CallFlow/apps/api/.env and /root/CallFlow/apps/ftp-service/.env.
+- FTP server config: apps/ftp-service/src/ftpServer.ts uses pasv_url from VPS_PUBLIC_IP with pasv range 1024-1050; external uploads will fail if VPS_PUBLIC_IP is unset or passive ports are blocked.
+- FTP troubleshooting: /tmp/korecall_ftp empty, logs show invalid credentials and ECONNRESET, no STOR events yet.
+- FTP filename parsing: added support for Korecall filenames with phone digits before timestamp and validated timestamps to avoid invalid Date errors.
+- FTP parser fallback: if legacy pattern matches but timestamp invalid, now falls through to Korecall pattern instead of returning null.
+- AI queue status: Redis connectivity restored (PONG), but ai_jobs show queued in DB while Redis queue is empty; needs manual requeue of queued jobs.
+- Mobile: added upload log + offline queue tracking and a Sync Status screen (after login) to show last 50 uploads and queued items.
+- Mobile audit (2026-05-09): confirm hardcoded HTTP base URL and cleartext traffic enabled; runtime request missing for MANAGE_EXTERNAL_STORAGE; SAF folder path converted to RNFS path; multipart upload uses raw path; offline queue unbounded. Constraints: no nested folders; no Play Store; keep AsyncStorage; request MANAGE_EXTERNAL_STORAGE at runtime; HTTPS base host is api-callflow.thexpertshair.com.
+- Mobile: call recording match now falls back to closest audio file by mtime within 10 minutes if phone digits are absent or no filename match.
 
 you have to act as a senior software senior having 15+ years of experience in designing and making production grade software , understanding the needs and not doing any over engineering while maintaining proper security .
 

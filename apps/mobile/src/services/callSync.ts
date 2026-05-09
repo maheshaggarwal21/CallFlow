@@ -2,6 +2,7 @@ import CallLog from "react-native-call-log";
 import RNFS from "react-native-fs";
 import { api } from "./api";
 import { enqueueCall, getQueue, saveQueue } from "./offlineQueue";
+import { addUploadLog } from "./uploadLog";
 import { useStore } from "../store/useStore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -22,23 +23,65 @@ function mapCallType(type: string, duration: number) {
 
 async function findRecordingFile(storagePath: string, phone: string, callTimeMs: number) {
   const phoneDigits = phone.replace(/\D/g, "");
-  if (!phoneDigits) return null;
   const files = await RNFS.readDir(storagePath);
-  const matches = files.filter((f) => f.isFile() && f.name.includes(phoneDigits));
-  if (matches.length === 0) return null;
+  const audioFiles = files.filter((f) => {
+    if (!f.isFile()) return false;
+    const name = f.name.toLowerCase();
+    return (
+      name.endsWith(".m4a") ||
+      name.endsWith(".mp3") ||
+      name.endsWith(".wav") ||
+      name.endsWith(".aac") ||
+      name.endsWith(".amr") ||
+      name.endsWith(".3gp")
+    );
+  });
+  if (audioFiles.length === 0) return null;
 
-  let best = matches[0];
-  let bestDiff = Math.abs((best.mtime?.getTime() || 0) - callTimeMs);
+  const candidates = phoneDigits
+    ? audioFiles.filter((f) => f.name.includes(phoneDigits))
+    : [];
 
-  for (const file of matches) {
-    const diff = Math.abs((file.mtime?.getTime() || 0) - callTimeMs);
-    if (diff < bestDiff) {
-      best = file;
-      bestDiff = diff;
+  const pickClosest = (list: typeof audioFiles) => {
+    let best = list[0];
+    let bestDiff = Math.abs((best.mtime?.getTime() || 0) - callTimeMs);
+    for (const file of list) {
+      const diff = Math.abs((file.mtime?.getTime() || 0) - callTimeMs);
+      if (diff < bestDiff) {
+        best = file;
+        bestDiff = diff;
+      }
     }
+    return { best, bestDiff };
+  };
+
+  if (candidates.length > 0) {
+    return pickClosest(candidates).best.path;
   }
 
+  const { best, bestDiff } = pickClosest(audioFiles);
+  const MAX_TIME_DIFF_MS = 10 * 60 * 1000;
+  if (bestDiff > MAX_TIME_DIFF_MS) return null;
   return best.path;
+}
+
+function fileNameFromUri(uri?: string) {
+  if (!uri) return "no-audio";
+  const parts = uri.split(/\\|\//);
+  return parts[parts.length - 1] || "no-audio";
+}
+
+function ensureFileUri(path?: string) {
+  if (!path) return undefined;
+  if (path.startsWith("file://") || path.startsWith("content://")) return path;
+  return `file://${path}`;
+}
+
+function errorMessage(err: unknown) {
+  if (!err) return "Upload failed";
+  if (typeof err === "string") return err;
+  const message = (err as { message?: string })?.message;
+  return message || "Upload failed";
 }
 
 async function uploadCall(apiKey: string, payload: Record<string, any>, audioUri?: string) {
@@ -78,7 +121,9 @@ export async function syncCallsOnce() {
 
   for (const call of recent) {
     const mapped = mapCallType(call.type, Number(call.duration) || 0);
-    const audioUri = await findRecordingFile(storagePath, call.phoneNumber, call.dateTime);
+    const audioPath = await findRecordingFile(storagePath, call.phoneNumber, call.dateTime);
+    const audioUri = ensureFileUri(audioPath || undefined);
+    const fileName = fileNameFromUri(audioUri || undefined);
 
     const payload = {
       device_id: deviceId,
@@ -92,8 +137,11 @@ export async function syncCallsOnce() {
 
     try {
       await uploadCall(apiKey, payload, audioUri || undefined);
-    } catch {
-      await enqueueCall({ payload, audioUri: audioUri || undefined });
+      await addUploadLog({ fileName, status: "uploaded" });
+    } catch (err) {
+      const errMsg = errorMessage(err);
+      await enqueueCall({ payload, audioUri: audioUri || undefined, fileName, error: errMsg });
+      await addUploadLog({ fileName, status: "queued", error: errMsg });
     }
   }
 
@@ -101,10 +149,14 @@ export async function syncCallsOnce() {
   if (queue.length > 0) {
     const remaining = [] as typeof queue;
     for (const item of queue) {
+      const fileName = item.fileName || fileNameFromUri(item.audioUri);
       try {
-        await uploadCall(apiKey, item.payload, item.audioUri);
-      } catch {
-        remaining.push(item);
+        await uploadCall(apiKey, item.payload, ensureFileUri(item.audioUri));
+        await addUploadLog({ fileName, status: "uploaded" });
+      } catch (err) {
+        const errMsg = errorMessage(err);
+        remaining.push({ ...item, fileName, error: errMsg, queuedAt: item.queuedAt || new Date().toISOString() });
+        await addUploadLog({ fileName, status: "failed", error: errMsg });
       }
     }
     await saveQueue(remaining);

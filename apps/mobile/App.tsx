@@ -1,5 +1,7 @@
 import React, { useEffect } from "react";
 import {
+  Alert,
+  Linking,
   PermissionsAndroid,
   Platform,
   SafeAreaView,
@@ -10,11 +12,17 @@ import {
 } from "react-native";
 import LoginScreen from "./src/screens/LoginScreen";
 import DeviceSetupScreen from "./src/screens/DeviceSetupScreen";
+import SyncStatusScreen from "./src/screens/SyncStatusScreen";
 import { hydrateStore, useStore } from "./src/store/useStore";
 import { syncCallsOnce } from "./src/services/callSync";
 
 async function requestAndroidPermissions() {
   if (Platform.OS !== "android") return;
+  const androidVersion = typeof Platform.Version === "number" ? Platform.Version : Number(Platform.Version);
+  const manageExternalStorage = (PermissionsAndroid.PERMISSIONS as any).MANAGE_EXTERNAL_STORAGE as
+    | string
+    | undefined;
+  const shouldRequestManage = androidVersion >= 30 && !!manageExternalStorage;
   const permissions = [
     PermissionsAndroid.PERMISSIONS.READ_CALL_LOG,
     PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
@@ -24,8 +32,23 @@ async function requestAndroidPermissions() {
     PermissionsAndroid.PERMISSIONS.CAMERA,
   ].filter(Boolean) as string[];
 
+  if (shouldRequestManage) permissions.push(manageExternalStorage as string);
+
   if (permissions.length === 0) return;
-  await PermissionsAndroid.requestMultiple(permissions);
+  const results = await PermissionsAndroid.requestMultiple(permissions);
+  if (shouldRequestManage && manageExternalStorage) {
+    const status = results[manageExternalStorage];
+    if (status !== PermissionsAndroid.RESULTS.GRANTED) {
+      Alert.alert(
+        "All files access needed",
+        "Enable All files access in system settings so recordings can be read.",
+        [
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+          { text: "Later", style: "cancel" },
+        ]
+      );
+    }
+  }
 }
 
 export default function App() {
@@ -62,6 +85,7 @@ export default function App() {
           <Text style={styles.readyText}>Sync runs every 15 minutes.</Text>
         </View>
       )}
+      {token && <SyncStatusScreen />}
     </SafeAreaView>
   );
 }
