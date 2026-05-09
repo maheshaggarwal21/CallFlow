@@ -2,7 +2,7 @@ import "dotenv/config"; // must be first — loads env before any module initial
 import { aiQueue } from "./aiQueue";
 import { processAiJob } from "../services/ai.service";
 
-aiQueue.process(async (job) => {
+aiQueue.process(3, async (job) => {
   const callId = job.data?.callId as string | undefined;
   if (!callId) {
     throw new Error("Missing callId");
