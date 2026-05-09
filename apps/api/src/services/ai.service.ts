@@ -250,11 +250,14 @@ export async function processAiJob(callId: string) {
 
     let transcriptJson: Turn[];
     let summaryObj: { summary: string; sentiment: "positive" | "negative" | "neutral" };
+    let noResponseCall = false;
 
     if (isDialToneOnly(transcriptRaw)) {
+      noResponseCall = true;
       transcriptJson = [{ speaker: "Agent", text: "[System] Dial tones only — no speech detected." }];
       summaryObj = { summary: "Call was placed but only dial tones were recorded. No conversation took place.", sentiment: "neutral" };
     } else if (isUnansweredCall(transcriptRaw)) {
+      noResponseCall = true;
       transcriptJson = [
         { speaker: "Agent", text: "[Automated] Call not answered — operator message detected." },
         { speaker: "Caller", text: "[System] Contact did not pick up." },
@@ -267,6 +270,7 @@ export async function processAiJob(callId: string) {
     }
 
     const autoResolution =
+      noResponseCall ? "no_response" :
       summaryObj.sentiment === "positive" ? "resolved" :
       summaryObj.sentiment === "negative" ? "escalated" : null;
 

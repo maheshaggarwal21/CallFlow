@@ -146,6 +146,7 @@ export type OverviewStats = {
   csat_score: number;
   resolved_count: number;
   escalated_count: number;
+  no_response_count: number;
   top_line: { line_number: string; call_count: number } | null;
   line_status: LineStatus[];
   recent_calls: Call[];

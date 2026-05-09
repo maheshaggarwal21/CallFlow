@@ -177,8 +177,9 @@ router.get("/overview", requireOwner, async (req, res) => {
   const resRes = await pool.query(
     "SELECT " +
       "COUNT(*) FILTER (WHERE resolution_status = 'resolved') AS resolved_count, " +
-      "COUNT(*) FILTER (WHERE resolution_status = 'escalated') AS escalated_count " +
-    "FROM calls WHERE is_misc = FALSE AND called_at >= $1 AND called_at < $2",
+      "COUNT(*) FILTER (WHERE resolution_status = 'escalated') AS escalated_count, " +
+      "COUNT(*) FILTER (WHERE resolution_status = 'no_response') AS no_response_count " +
+    "FROM calls WHERE called_at >= $1 AND called_at < $2",
     [start.toISOString(), end.toISOString()]
   );
 
@@ -240,6 +241,7 @@ router.get("/overview", requireOwner, async (req, res) => {
     csat_score: Number(csatRes.rows[0]?.csat_score || 0),
     resolved_count: Number(resRes.rows[0]?.resolved_count || 0),
     escalated_count: Number(resRes.rows[0]?.escalated_count || 0),
+    no_response_count: Number(resRes.rows[0]?.no_response_count || 0),
     top_line: topLineRes.rows[0]
       ? { line_number: topLineRes.rows[0].line_number, call_count: Number(topLineRes.rows[0].call_count) }
       : null,

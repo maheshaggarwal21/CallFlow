@@ -327,20 +327,27 @@ export default function OverviewPage() {
             <GaugeMeter value={csat} label={csatEmployeeId ? "Employee CSAT" : "Overall CSAT"} />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
             <div style={{
-              padding: "12px 14px", borderRadius: 12, textAlign: "center",
+              padding: "12px 10px", borderRadius: 12, textAlign: "center",
               background: C.greenLight, border: `1px solid ${C.greenBdr}`,
             }}>
-              <p style={{ margin: 0, fontSize: 24, fontWeight: 800, color: C.green }}>{data?.resolved_count ?? "—"}</p>
-              <p style={{ margin: "3px 0 0", fontSize: 11, color: C.green, fontWeight: 600 }}>Resolved</p>
+              <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: C.green }}>{data?.resolved_count ?? "—"}</p>
+              <p style={{ margin: "3px 0 0", fontSize: 10, color: C.green, fontWeight: 600 }}>Resolved</p>
             </div>
             <div style={{
-              padding: "12px 14px", borderRadius: 12, textAlign: "center",
+              padding: "12px 10px", borderRadius: 12, textAlign: "center",
               background: C.redLight, border: `1px solid ${C.redBdr}`,
             }}>
-              <p style={{ margin: 0, fontSize: 24, fontWeight: 800, color: C.red }}>{data?.escalated_count ?? "—"}</p>
-              <p style={{ margin: "3px 0 0", fontSize: 11, color: C.red, fontWeight: 600 }}>Escalated</p>
+              <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: C.red }}>{data?.escalated_count ?? "—"}</p>
+              <p style={{ margin: "3px 0 0", fontSize: 10, color: C.red, fontWeight: 600 }}>Escalated</p>
+            </div>
+            <div style={{
+              padding: "12px 10px", borderRadius: 12, textAlign: "center",
+              background: C.orangeLight, border: `1px solid ${C.orangeBdr}`,
+            }}>
+              <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: C.orange }}>{data?.no_response_count ?? "—"}</p>
+              <p style={{ margin: "3px 0 0", fontSize: 10, color: C.orange, fontWeight: 600 }}>No Response</p>
             </div>
           </div>
         </div>

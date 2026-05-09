@@ -64,15 +64,16 @@ async function insertCall(data: {
   misc_reason: string | null;
   audio_storage_key: string | null;
   ai_status: "pending" | "failed" | "done";
+  resolution_status: "resolved" | "escalated" | "no_response" | null;
 }) {
   const result = await pool.query(
     `INSERT INTO calls (
         source, source_file_key, device_id, line_number, intercom_code,
         call_direction, caller_phone, student_name, called_at, duration_secs,
-        employee_id, is_misc, misc_reason, audio_storage_key, ai_status
+        employee_id, is_misc, misc_reason, audio_storage_key, ai_status, resolution_status
       ) VALUES (
         'korecall', $1, NULL, $2, $3, $4, $5, $6,
-        $7, $8, $9, $10, $11, $12, $13
+        $7, $8, $9, $10, $11, $12, $13, $14
       )
       ON CONFLICT (source_file_key) DO NOTHING
       RETURNING id`,
@@ -81,6 +82,7 @@ async function insertCall(data: {
       data.call_direction, data.caller_phone, data.student_name,
       data.called_at.toISOString(), data.duration_secs, data.employee_id,
       data.is_misc, data.misc_reason, data.audio_storage_key, data.ai_status,
+      data.resolution_status,
     ]
   );
   return result.rows[0]?.id as string | undefined;
@@ -142,6 +144,7 @@ async function processUploadedFile(
         misc_reason:       miscReason,
         audio_storage_key: audioKey,
         ai_status:         aiStatus,
+        resolution_status: isMisc ? "no_response" : null,
       });
 
       console.log(`✅ Processed: ${fileName} | ${parsed.direction} | ${parsed.callerPhone}`);
@@ -158,13 +161,14 @@ async function processUploadedFile(
         call_direction:    direction,
         caller_phone:      "Unknown",
         student_name:      null,
-        called_at:         new Date(),         // best we can do without a parseable timestamp
+        called_at:         new Date(),
         duration_secs:     durationSecs,
         employee_id:       employeeId,
         is_misc:           isMisc,
         misc_reason:       "Filename could not be fully parsed",
         audio_storage_key: audioKey,
         ai_status:         aiStatus,
+        resolution_status: isMisc ? "no_response" : null,
       });
 
       console.warn(`⚠️  Stored with partial info: ${fileName}`);
