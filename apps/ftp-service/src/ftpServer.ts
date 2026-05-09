@@ -88,60 +88,93 @@ async function insertCall(data: {
 
 // ── core processor ──────────
 
+// Best-effort line/direction extraction when full parsing fails
+function partialParse(fileName: string): { lineNumber: string; direction: "inbound" | "outbound" } {
+  const lineMatch = fileName.match(/^(\d{2})--/);
+  const dirMatch  = fileName.match(/--([AB])-/i);
+  return {
+    lineNumber: lineMatch?.[1] ?? "00",
+    direction:  dirMatch?.[1]?.toUpperCase() === "A" ? "inbound" : "outbound",
+  };
+}
+
 async function processUploadedFile(
   localFilePath: string,
   fileName: string,
   sourceKey: string
 ) {
   try {
-    const parsed = parseFilename(fileName);
-    if (!parsed) {
-      console.warn(`⚠️  Skipping unparseable file: ${fileName}`);
-      fs.unlinkSync(localFilePath);
-      return;
-    }
-
     if (await hasCallBySourceKey(sourceKey)) {
       console.log(`⏭️  Already processed: ${sourceKey}`);
       fs.unlinkSync(localFilePath);
       return;
     }
 
-    const durationSecs    = await getDurationSeconds(localFilePath);
-    const isMisc          = durationSecs < 30;
-    const miscReason      = isMisc ? "Short duration — possible disconnect" : null;
-    const studentName     = await findStudentName(parsed.callerPhone);
-    const employeeId      = await findEmployeeId(parsed.lineNumber);
+    const parsed       = parseFilename(fileName);
+    const durationSecs = await getDurationSeconds(localFilePath);
+    const isMisc       = durationSecs < 30;
 
-    // Stream from disk directly to R2! Extremely memory efficient.
-    const fileStream      = fs.createReadStream(localFilePath);
-    const r2Key           = `korecall/${sourceKey}`;
-    const uploaded        = await uploadAudioObject(r2Key, fileStream, "audio/wav");
-    const audioKey        = uploaded ? r2Key : null;
-    const aiStatus        = isMisc ? "done" : audioKey ? "pending" : "failed";
+    // Upload audio to R2 regardless of whether the filename parsed
+    const fileStream = fs.createReadStream(localFilePath);
+    const r2Key      = `korecall/${sourceKey}`;
+    const uploaded   = await uploadAudioObject(r2Key, fileStream, "audio/wav");
+    const audioKey   = uploaded ? r2Key : null;
 
-    const callId = await insertCall({
-      source_file_key:   sourceKey,
-      line_number:       parsed.lineNumber,
-      intercom_code:     parsed.intercomCode,
-      call_direction:    parsed.direction,
-      caller_phone:      parsed.callerPhone,
-      student_name:      studentName,
-      called_at:         parsed.calledAt,
-      duration_secs:     durationSecs,
-      employee_id:       employeeId,
-      is_misc:           isMisc,
-      misc_reason:       miscReason,
-      audio_storage_key: audioKey,
-      ai_status:         aiStatus,
-    });
+    let callId: string | undefined;
+
+    if (parsed) {
+      const studentName = await findStudentName(parsed.callerPhone);
+      const employeeId  = await findEmployeeId(parsed.lineNumber);
+      const miscReason  = isMisc ? "Short duration — possible disconnect" : null;
+      const aiStatus    = isMisc ? "done" : audioKey ? "pending" : "failed";
+
+      callId = await insertCall({
+        source_file_key:   sourceKey,
+        line_number:       parsed.lineNumber,
+        intercom_code:     parsed.intercomCode,
+        call_direction:    parsed.direction,
+        caller_phone:      parsed.callerPhone,
+        student_name:      studentName,
+        called_at:         parsed.calledAt,
+        duration_secs:     durationSecs,
+        employee_id:       employeeId,
+        is_misc:           isMisc,
+        misc_reason:       miscReason,
+        audio_storage_key: audioKey,
+        ai_status:         aiStatus,
+      });
+
+      console.log(`✅ Processed: ${fileName} | ${parsed.direction} | ${parsed.callerPhone}`);
+    } else {
+      // Filename doesn't match any known pattern — store with what we can infer
+      const { lineNumber, direction } = partialParse(fileName);
+      const employeeId = await findEmployeeId(lineNumber);
+      const aiStatus   = audioKey ? "pending" : "failed";
+
+      callId = await insertCall({
+        source_file_key:   sourceKey,
+        line_number:       lineNumber,
+        intercom_code:     null,
+        call_direction:    direction,
+        caller_phone:      "Unknown",
+        student_name:      null,
+        called_at:         new Date(),         // best we can do without a parseable timestamp
+        duration_secs:     durationSecs,
+        employee_id:       employeeId,
+        is_misc:           isMisc,
+        misc_reason:       "Filename could not be fully parsed",
+        audio_storage_key: audioKey,
+        ai_status:         aiStatus,
+      });
+
+      console.warn(`⚠️  Stored with partial info: ${fileName}`);
+    }
 
     if (callId && !isMisc && audioKey) {
       await pool.query(
         "INSERT INTO ai_jobs (call_id, status) VALUES ($1, 'queued')",
         [callId]
       );
-      // Wait for it to be added to the queue
       await aiQueue.add({ callId });
       console.log(`🤖 AI job queued for call: ${callId}`);
     }
@@ -150,8 +183,6 @@ async function processUploadedFile(
     await pool.query(
       "UPDATE system_state SET ftp_last_sync_at = NOW() WHERE id = 1"
     );
-
-    console.log(`✅ Processed: ${fileName} | ${parsed.direction} | ${parsed.callerPhone}`);
 
   } catch (err) {
     console.error(`❌ Failed to process ${fileName}:`, err);

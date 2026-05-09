@@ -15,7 +15,6 @@ function buildQuery(filters: CallFilterState, page: number): string {
   const p = new URLSearchParams();
   p.set("limit",  String(PAGE_SIZE));
   p.set("offset", String((page - 1) * PAGE_SIZE));
-  p.set("is_misc", "false");
   if (filters.search)     p.set("phone",       filters.search);
   if (filters.direction)  p.set("direction",   filters.direction);
   if (filters.employeeId) p.set("employee_id", filters.employeeId);

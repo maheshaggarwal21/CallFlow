@@ -1,5 +1,15 @@
-const LEGACY_REGEX = /^(\d{2})--([AB])-(\d{1,3})?-*(\d{14})-(.+)\.wav$/i;
-const KORECALL_REGEX = /^(\d{2})--([AB])-(.*?)---(\d{14})-(.+)\.wav$/i;
+/**
+ * Korecall filename parser — handles all observed separator variants.
+ *
+ * Actual filename formats (separator count before datetime varies):
+ *   {line}--{dir}----{datetime14}-{name}.wav          empty meta, 4 dashes
+ *   {line}--{dir}-{short}--{datetime14}-{name}.wav    short intercom, 2 dashes
+ *   {line}--{dir}-{number}---{datetime14}-{name}.wav  full number, 3 dashes
+ *   {line}--{dir}-{code}----{datetime14}-{name}.wav   code + 4 dashes
+ *
+ * Strategy: anchor on the 14-digit datetime (year 20xx, validated month/day).
+ * Use a lazy match for the meta field so any separator length works.
+ */
 
 export type ParsedFilename = {
   lineNumber: string;
@@ -10,71 +20,77 @@ export type ParsedFilename = {
   rawFilename: string;
 };
 
+// Strict 14-digit datetime: YYYY MM DD HH mm ss, year 20xx, month 01-12, day 01-31
+const DT_FRAG = "20\\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\\d|3[01])\\d{6}";
+
+// Main regex: lazy-match the meta field; require ≥1 dash before the datetime
+// This matches all separator lengths (--  ---  ----  etc.)
+const MAIN_RE = new RegExp(
+  `^(\\d{2})--([AB])-(.*?)-+(${DT_FRAG})-(.+)\\.wav$`,
+  "i"
+);
+
 function buildCalledAt(ts: string): Date | null {
   if (!/^\d{14}$/.test(ts)) return null;
 
-  const year = ts.slice(0, 4);
-  const month = ts.slice(4, 6);
-  const day = ts.slice(6, 8);
-  const hour = ts.slice(8, 10);
-  const minute = ts.slice(10, 12);
-  const second = ts.slice(12, 14);
+  // Explicitly treat as UTC — Korecall records UTC timestamps.
+  // VPS (DigitalOcean Ubuntu) is UTC by default, but being explicit avoids
+  // timezone-mismatch bugs if the server is ever reconfigured.
+  const iso = `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)}` +
+               `T${ts.slice(8, 10)}:${ts.slice(10, 12)}:${ts.slice(12, 14)}Z`;
 
-  const calledAt = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
-  return Number.isNaN(calledAt.getTime()) ? null : calledAt;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function normalizePhone(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "Unknown";
-  return trimmed.toLowerCase() === "unknown" ? "Unknown" : trimmed;
+function extractPhoneAndIntercom(metaRaw: string): {
+  intercomCode: string | null;
+  callerPhone: string;
+} {
+  // Strip non-digit chars (the meta field can have trailing dashes captured by
+  // the lazy regex before the separator group takes over)
+  const digits = metaRaw.replace(/\D/g, "");
+
+  if (digits.length === 0) {
+    return { intercomCode: null, callerPhone: "Unknown" };
+  }
+
+  if (digits.length <= 6) {
+    // Short codes (1–6 digits) are extension / intercom codes, not dialable phones
+    return { intercomCode: digits, callerPhone: "Unknown" };
+  }
+
+  // 7+ digit strings are the dialed / caller phone number.
+  // Korecall prefixes Malaysian numbers with the +60 country code — keep as-is
+  // so the full number is stored and can be searched.
+  return { intercomCode: null, callerPhone: digits };
 }
 
 export function parseFilename(filename: string): ParsedFilename | null {
-  const legacy = filename.match(LEGACY_REGEX);
-  if (legacy) {
-    const [, line, dir, intercom, ts, phone] = legacy;
-    const calledAt = buildCalledAt(ts);
-    if (calledAt) {
-      return {
-        lineNumber: line,
-        direction: dir === "A" ? "inbound" : "outbound",
-        intercomCode: intercom || null,
-        calledAt,
-        callerPhone: normalizePhone(phone),
-        rawFilename: filename,
-      };
-    }
-  }
+  const m = filename.match(MAIN_RE);
+  if (!m) return null;
 
-  const korecall = filename.match(KORECALL_REGEX);
-  if (!korecall) return null;
+  const [, line, dir, meta, ts, tail] = m;
 
-  const [, line, dir, meta, ts, tail] = korecall;
   const calledAt = buildCalledAt(ts);
   if (!calledAt) return null;
 
-  const metaDigits = meta.replace(/\D/g, "");
-  let intercomCode: string | null = null;
-  let callerPhone: string | null = null;
+  const { intercomCode, callerPhone: phoneFromMeta } = extractPhoneAndIntercom(meta);
 
-  if (metaDigits.length >= 4) {
-    intercomCode = metaDigits.slice(0, 3);
-    callerPhone = metaDigits.slice(3);
-  } else if (metaDigits.length > 0) {
-    intercomCode = metaDigits;
-  }
-
-  if (!callerPhone) {
-    callerPhone = /^\d+$/.test(tail) ? tail : "Unknown";
-  }
+  // If the tail (last segment before .wav) is a pure digit string it IS the
+  // caller number (Korecall sometimes puts the caller number there for inbound).
+  // Otherwise it's a label like "Unknown".
+  const callerPhone =
+    tail && tail.toLowerCase() !== "unknown" && /^\d{7,}$/.test(tail)
+      ? tail
+      : phoneFromMeta;
 
   return {
-    lineNumber: line,
-    direction: dir === "A" ? "inbound" : "outbound",
+    lineNumber:   line,
+    direction:    dir.toUpperCase() === "A" ? "inbound" : "outbound",
     intercomCode,
     calledAt,
-    callerPhone: normalizePhone(callerPhone),
-    rawFilename: filename,
+    callerPhone,
+    rawFilename:  filename,
   };
 }
