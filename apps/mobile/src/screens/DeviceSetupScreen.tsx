@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import DocumentPicker from "react-native-document-picker";
+import RNFS from "react-native-fs";
 import { api } from "../services/api";
 import { useStore } from "../store/useStore";
 import { getQueueCount } from "../services/offlineQueue";
@@ -35,6 +36,16 @@ export default function DeviceSetupScreen() {
         Alert.alert(
           "Invalid Folder",
           "Could not resolve this folder path. Please select a folder from device storage, not a cloud location."
+        );
+        return;
+      }
+
+      try {
+        await RNFS.readDir(realPath);
+      } catch {
+        Alert.alert(
+          "Folder not accessible",
+          "Grant All files access in system settings and try selecting the folder again."
         );
         return;
       }
