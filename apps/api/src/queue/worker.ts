@@ -32,7 +32,5 @@ aiQueue.on("failed", (job, err) => {
   console.error("AI job failed", job?.id, err);
 });
 
-aiQueue.on("ready", () => {
-  console.log("AI worker started");
-  drainOrphanedJobs();
-});
+console.log("AI worker started");
+drainOrphanedJobs();
