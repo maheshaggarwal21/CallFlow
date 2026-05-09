@@ -166,7 +166,7 @@ async function processUploadedFile(
 
 export function startFtpServer() {
   const port = parseInt(process.env.FTP_SERVER_PORT || "21", 10);
-  const pasvUrl = process.env.VPS_PUBLIC_IP || "127.0.0.1";
+  const pasvUrl = process.env.VPS_PUBLIC_IP || "168.144.68.199";
   
   const ftpServer = new FtpSrv({
     url: `ftp://0.0.0.0:${port}`,
