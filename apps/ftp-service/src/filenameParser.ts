@@ -47,23 +47,28 @@ function extractPhoneAndIntercom(metaRaw: string): {
   intercomCode: string | null;
   callerPhone: string;
 } {
-  // Strip non-digit chars (the meta field can have trailing dashes captured by
-  // the lazy regex before the separator group takes over)
+  // Strip non-digit chars (lazy regex can capture trailing dashes into meta)
   const digits = metaRaw.replace(/\D/g, "");
 
   if (digits.length === 0) {
     return { intercomCode: null, callerPhone: "Unknown" };
   }
 
-  if (digits.length <= 6) {
-    // Short codes (1–6 digits) are extension / intercom codes, not dialable phones
+  // IC codes are always the first 3 digits (601, 602, 603, 604, 605 …).
+  // The remaining digits are the caller/dialed phone number.
+  // If there are fewer than 3 digits total, the whole thing is an IC code.
+  if (digits.length < 3) {
     return { intercomCode: digits, callerPhone: "Unknown" };
   }
 
-  // 7+ digit strings are the dialed / caller phone number.
-  // Korecall prefixes Malaysian numbers with the +60 country code — keep as-is
-  // so the full number is stored and can be searched.
-  return { intercomCode: null, callerPhone: digits };
+  const ic    = digits.slice(0, 3);
+  const phone = digits.slice(3);
+
+  // Only treat the remainder as a real phone if it has enough digits
+  return {
+    intercomCode: ic,
+    callerPhone:  phone.length >= 7 ? phone : "Unknown",
+  };
 }
 
 export function parseFilename(filename: string): ParsedFilename | null {
