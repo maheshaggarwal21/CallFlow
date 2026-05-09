@@ -7,7 +7,7 @@ export type Turn = { speaker: "Agent" | "Caller"; text: string };
 // correctly, NOT to describe the call.
 // ─────────────────────────────────────────────────────────────────────────────
 export const WHISPER_INITIAL_PROMPT =
-  "Max Music School. Shivani, Ajit. Guitar, Zoom, link, online class, rehearsal, fees, batch, theory class, special class, haan ji, theek hai, shukriya, join karo.";
+  "Max Music School. Shivani, Sandeep Kaur, Jaspreet Kaur. Guitar, Zoom, link, online class, rehearsal, fees, batch, theory class, special class, haan ji, theek hai, shukriya, join karo.";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UNANSWERED CALL PATTERNS
@@ -91,10 +91,10 @@ Use the table below. If the name appears, the gender is FIXED — do not guess.
   Name      Gender    Addresses caller as    Caller addresses them as
   ───────   ──────    ──────────────────     ────────────────────────
   Shivani   Female    Sir / Ma'am            Ma'am / Maam ji
-  Ajit      Male      Ma'am / Sir            Sir / Bhaiya
-  [Slot 3]  Female    Sir / Ma'am            Ma'am
+  Sandeep   Female    Ma'am / Sir            Ma'am / Maam ji
+  Jaspreet  Female    Sir / Ma'am            Ma'am
   [Slot 4]  Male      Ma'am / Sir            Sir
-  [Slot 5]  Female    Sir / Ma'am            Ma'am
+  Geeta     Female    Sir / Ma'am            Ma'am
   [Slot 6]  Male      Ma'am / Sir            Sir
 
 KEY RULE on "Sir" and "Ma'am":
