@@ -112,7 +112,7 @@ async function processUploadedFile(
 
     const parsed       = parseFilename(fileName);
     const durationSecs = await getDurationSeconds(localFilePath);
-    const isMisc       = durationSecs < 30;
+    const isMisc       = durationSecs < 10;
 
     // Upload audio to R2 regardless of whether the filename parsed
     const fileStream = fs.createReadStream(localFilePath);
