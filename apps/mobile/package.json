@@ -12,6 +12,7 @@
     "axios": "^1.7.2",
     "react": "18.2.0",
     "react-native": "0.73.6",
+    "react-native-background-fetch": "^4.4.2",
     "react-native-call-log": "3.0.0",
     "react-native-camera-kit": "^13.0.0",
     "react-native-document-picker": "^9.3.1",

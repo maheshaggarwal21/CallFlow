@@ -8,6 +8,7 @@ export type EmployeeInfo = {
 };
 
 type StoreState = {
+  hydrated: boolean;
   apiKey: string | null;
   token: string | null;
   employee: EmployeeInfo | null;
@@ -18,6 +19,7 @@ type StoreState = {
 };
 
 export const useStore = create<StoreState>((set) => ({
+  hydrated: false,
   apiKey: null,
   token: null,
   employee: null,
@@ -38,19 +40,21 @@ export const useStore = create<StoreState>((set) => ({
 }));
 
 export async function hydrateStore() {
-  const apiKey = await AsyncStorage.getItem("apiKey");
-  const token = await AsyncStorage.getItem("token");
-  const employeeRaw = await AsyncStorage.getItem("employee");
-  const deviceId = await AsyncStorage.getItem("deviceId");
-  const storagePath = await AsyncStorage.getItem("storagePath");
+  const [apiKey, token, employeeRaw, deviceId, storagePath] = await Promise.all([
+    AsyncStorage.getItem("apiKey"),
+    AsyncStorage.getItem("token"),
+    AsyncStorage.getItem("employee"),
+    AsyncStorage.getItem("deviceId"),
+    AsyncStorage.getItem("storagePath"),
+  ]);
 
-  if (apiKey && token && employeeRaw) {
-    useStore.setState({
-      apiKey,
-      token,
-      employee: JSON.parse(employeeRaw),
-      deviceId: deviceId || null,
-      storagePath: storagePath || null,
-    });
-  }
+  // Always set hydrated=true, even if not logged in, so App.tsx stops showing a blank screen
+  useStore.setState({
+    hydrated: true,
+    apiKey: apiKey || null,
+    token: token || null,
+    employee: employeeRaw ? JSON.parse(employeeRaw) : null,
+    deviceId: deviceId || null,
+    storagePath: storagePath || null,
+  });
 }

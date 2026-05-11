@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   PermissionsAndroid,
@@ -10,6 +11,7 @@ import {
   Text,
   View,
 } from "react-native";
+import BackgroundFetch from "react-native-background-fetch";
 import LoginScreen from "./src/screens/LoginScreen";
 import DeviceSetupScreen from "./src/screens/DeviceSetupScreen";
 import SyncStatusScreen from "./src/screens/SyncStatusScreen";
@@ -18,32 +20,49 @@ import { syncCallsOnce } from "./src/services/callSync";
 
 async function requestAndroidPermissions() {
   if (Platform.OS !== "android") return;
-  const androidVersion = typeof Platform.Version === "number" ? Platform.Version : Number(Platform.Version);
-  const manageExternalStorage = (PermissionsAndroid.PERMISSIONS as any).MANAGE_EXTERNAL_STORAGE as
-    | string
-    | undefined;
-  const shouldRequestManage = androidVersion >= 30 && !!manageExternalStorage;
+  const androidVersion =
+    typeof Platform.Version === "number" ? Platform.Version : Number(Platform.Version);
+
+  // Standard permissions via requestMultiple
   const permissions = [
     PermissionsAndroid.PERMISSIONS.READ_CALL_LOG,
     PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
-    PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,   // Android ≤12
-    (PermissionsAndroid.PERMISSIONS as any).READ_MEDIA_AUDIO, // Android 13+
+    PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,            // Android ≤12
+    (PermissionsAndroid.PERMISSIONS as any).READ_MEDIA_AUDIO,        // Android 13+
     PermissionsAndroid.PERMISSIONS.FOREGROUND_SERVICE,
     PermissionsAndroid.PERMISSIONS.CAMERA,
   ].filter(Boolean) as string[];
 
-  if (shouldRequestManage) permissions.push(manageExternalStorage as string);
+  if (permissions.length > 0) {
+    await PermissionsAndroid.requestMultiple(permissions);
+  }
 
-  if (permissions.length === 0) return;
-  const results = await PermissionsAndroid.requestMultiple(permissions);
-  if (shouldRequestManage && manageExternalStorage) {
-    const status = results[manageExternalStorage];
-    if (status !== PermissionsAndroid.RESULTS.GRANTED) {
+  // MANAGE_EXTERNAL_STORAGE (Android 11+) cannot be granted via requestMultiple —
+  // it requires the user to enable "All files access" manually in system settings.
+  if (androidVersion >= 30) {
+    const RNFS = require("react-native-fs");
+    const testPath = RNFS.ExternalStorageDirectoryPath;
+    let hasAccess = false;
+    try {
+      await RNFS.readDir(testPath);
+      hasAccess = true;
+    } catch {
+      hasAccess = false;
+    }
+
+    if (!hasAccess) {
       Alert.alert(
         "All files access needed",
-        "Enable All files access in system settings so recordings can be read.",
+        "Enable 'All files access' for CallFlow in system settings so call recordings can be read.",
         [
-          { text: "Open Settings", onPress: () => Linking.openSettings() },
+          {
+            text: "Open Settings",
+            onPress: () =>
+              Linking.sendIntent(
+                "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION",
+                []
+              ).catch(() => Linking.openSettings()),
+          },
           { text: "Later", style: "cancel" },
         ]
       );
@@ -52,23 +71,56 @@ async function requestAndroidPermissions() {
 }
 
 export default function App() {
-  const token = useStore((s) => s.token);
-  const deviceId = useStore((s) => s.deviceId);
+  const hydrated  = useStore((s) => s.hydrated);
+  const token     = useStore((s) => s.token);
+  const deviceId  = useStore((s) => s.deviceId);
   const storagePath = useStore((s) => s.storagePath);
-  const apiKey = useStore((s) => s.apiKey);
+  const apiKey    = useStore((s) => s.apiKey);
 
+  // Hydrate store from AsyncStorage once on mount
   useEffect(() => {
     hydrateStore();
     requestAndroidPermissions();
   }, []);
 
+  // Configure BackgroundFetch once the user is fully set up.
+  // This replaces setInterval — BackgroundFetch uses WorkManager on Android so
+  // the sync runs even when the app is backgrounded or the screen is off.
   useEffect(() => {
     if (!token || !deviceId || !storagePath || !apiKey) return;
-    const id = setInterval(() => {
-      syncCallsOnce();
-    }, 15 * 60 * 1000);
-    return () => clearInterval(id);
+
+    BackgroundFetch.configure(
+      {
+        minimumFetchInterval: 15,    // minutes
+        enableHeadless: true,        // runs headlessTask in index.js when app is killed
+        startOnBoot: true,
+        stopOnTerminate: false,      // keep running after app swipe-close
+        requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY,
+      },
+      async (taskId) => {
+        await syncCallsOnce();
+        BackgroundFetch.finish(taskId);
+      },
+      async (taskId) => {
+        // Timeout handler — finish immediately so Android doesn't ANR
+        BackgroundFetch.finish(taskId);
+      }
+    );
+
+    return () => {
+      BackgroundFetch.stop();
+    };
   }, [token, deviceId, storagePath, apiKey]);
+
+  // Show a blank screen while AsyncStorage is being read — prevents the login
+  // screen from flashing for already-logged-in users
+  if (!hydrated) {
+    return (
+      <SafeAreaView style={styles.loading}>
+        <ActivityIndicator color="#e8761a" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root}>
@@ -82,7 +134,7 @@ export default function App() {
       {token && deviceId && (
         <View style={styles.readyBox}>
           <Text style={styles.readyTitle}>Device linked</Text>
-          <Text style={styles.readyText}>Sync runs every 15 minutes.</Text>
+          <Text style={styles.readyText}>Sync runs every 15 minutes in background.</Text>
         </View>
       )}
       {token && <SyncStatusScreen />}
@@ -91,6 +143,7 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  loading: { flex: 1, backgroundColor: "#f7f5f0", justifyContent: "center", alignItems: "center" },
   root: { flex: 1, backgroundColor: "#f7f5f0", padding: 16 },
   header: { marginBottom: 12 },
   title: { fontSize: 22, fontWeight: "700", color: "#1a1714" },

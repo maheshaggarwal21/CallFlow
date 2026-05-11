@@ -54,9 +54,20 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       const res = await api.post("/mobile/auth/login", { api_key: apiKey.trim() });
+
+      if (res.data.device_locked) {
+        // Employee already registered on another phone — block and inform
+        Alert.alert(
+          "Device already registered",
+          "This account is already linked to another phone. Ask your admin to reset your device access before logging in here.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
       setAuth(apiKey.trim(), res.data.token, res.data.employee, res.data.device_id || null);
     } catch {
-      Alert.alert("Login failed", "Invalid API key or network issue.");
+      Alert.alert("Login failed", "Invalid API key or server error. Check your key and try again.");
     } finally {
       setLoading(false);
     }

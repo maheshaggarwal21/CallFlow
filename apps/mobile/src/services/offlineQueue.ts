@@ -1,11 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-type QueuedCall = {
+export type QueuedCall = {
   payload: Record<string, any>;
   audioUri?: string;
   queuedAt?: string;
   fileName?: string;
   error?: string;
+  retryCount?: number;
 };
 
 const QUEUE_KEY = "offlineQueue";

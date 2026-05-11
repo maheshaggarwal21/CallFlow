@@ -201,4 +201,18 @@ router.post("/:id/api-key", requireOwner, async (req, res) => {
   return res.json({ api_key: apiKey });
 });
 
+// DELETE /employees/:id/device — owner resets an employee's linked device so they can log in on a new phone
+router.delete("/:id/device", requireOwner, async (req, res) => {
+  const id = req.params.id;
+
+  const empCheck = await pool.query("SELECT id FROM employees WHERE id = $1 LIMIT 1", [id]);
+  if (empCheck.rows.length === 0) {
+    return res.status(404).json({ error: "Employee not found" });
+  }
+
+  await pool.query("DELETE FROM devices WHERE employee_id = $1", [id]);
+
+  return res.json({ ok: true, message: "Device unlinked. Employee can now log in on a new phone." });
+});
+
 export default router;

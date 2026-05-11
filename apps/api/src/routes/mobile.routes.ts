@@ -85,13 +85,30 @@ router.post("/auth/login", mobileLoginLimiter, async (req, res) => {
       color_index: employee.color_index,
     },
     jwtSecret,
-    { expiresIn: "2h" }
+    { expiresIn: "365d" }
   );
 
   const deviceRes = await pool.query(
     "SELECT id FROM devices WHERE employee_id = $1 ORDER BY created_at DESC LIMIT 1",
     [employee.id]
   );
+
+  const existingDeviceId = deviceRes.rows[0]?.id || null;
+
+  // If this employee already has a registered device, block re-login from a new phone.
+  // The owner must reset the device from the web dashboard before a new phone can be linked.
+  if (existingDeviceId) {
+    return res.json({
+      token,
+      employee: {
+        id: employee.id,
+        name: employee.name,
+        color_index: employee.color_index,
+      },
+      device_id: existingDeviceId,
+      device_locked: true,
+    });
+  }
 
   return res.json({
     token,
@@ -100,7 +117,8 @@ router.post("/auth/login", mobileLoginLimiter, async (req, res) => {
       name: employee.name,
       color_index: employee.color_index,
     },
-    device_id: deviceRes.rows[0]?.id || null,
+    device_id: null,
+    device_locked: false,
   });
 });
 
@@ -194,7 +212,10 @@ router.post("/calls", mobileUploadLimiter, upload.single("audio"), async (req, r
       "INSERT INTO ai_jobs (call_id, status) VALUES ($1, 'queued')",
       [insertRes.rows[0].id]
     );
-    await aiQueue.add({ callId: insertRes.rows[0].id });
+    await aiQueue.add(
+      { callId: insertRes.rows[0].id },
+      { jobId: `call-${insertRes.rows[0].id}` }
+    );
   }
 
   await pool.query("UPDATE system_state SET android_last_sync_at = NOW() WHERE id = 1");
