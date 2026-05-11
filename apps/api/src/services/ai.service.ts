@@ -182,70 +182,66 @@ export async function processAiJob(callId: string) {
     [callId]
   );
 
-  const callRes = await pool.query(
-    "SELECT id, audio_storage_key, ai_status FROM calls WHERE id = $1 LIMIT 1",
-    [callId]
-  );
-
-  if (callRes.rows.length === 0) {
-    await pool.query(
-      "UPDATE ai_jobs SET status = 'failed', error_msg = 'Call not found', done_at = NOW() WHERE call_id = $1",
-      [callId]
-    );
-    return;
-  }
-
-  const call = callRes.rows[0];
-  const audioKey = call.audio_storage_key as string | null;
-
-  if (!audioKey) {
-    await pool.query(
-      "UPDATE ai_jobs SET status = 'failed', error_msg = 'Missing audio', done_at = NOW() WHERE call_id = $1",
-      [callId]
-    );
-    await pool.query(
-      "UPDATE calls SET ai_status = 'failed' WHERE id = $1",
-      [callId]
-    );
-    return;
-  }
-
-  const tmpPath = await downloadAudioToFile(audioKey);
-  if (!tmpPath) {
-    await pool.query(
-      "UPDATE ai_jobs SET status = 'failed', error_msg = 'Download failed', done_at = NOW() WHERE call_id = $1",
-      [callId]
-    );
-    await pool.query(
-      "UPDATE calls SET ai_status = 'failed' WHERE id = $1",
-      [callId]
-    );
-    return;
-  }
-
-  // Convert to PCM WAV — KoreCall files are G.711 A-law which Whisper rejects
-  let whisperPath = tmpPath;
+  let tmpPath: string | null = null;
   let convertedPath: string | null = null;
-  let actualDurationSecs = 0;
-  try {
-    const converted = await toPcmWav(tmpPath);
-    convertedPath = converted.path;
-    whisperPath = converted.path;
-    actualDurationSecs = converted.durationSecs;
-  } catch {
-    // ffmpeg not available or conversion failed — try raw file anyway
-    whisperPath = tmpPath;
-  }
 
-  // Persist actual duration now so it's correct even if AI steps fail
-  if (actualDurationSecs > 0) {
-    await pool.query(
-      "UPDATE calls SET duration_secs = $1 WHERE id = $2",
-      [actualDurationSecs, callId]
+  try {
+    const callRes = await pool.query(
+      "SELECT id, audio_storage_key, ai_status FROM calls WHERE id = $1 LIMIT 1",
+      [callId]
     );
-  }
 
-  try {
+    if (callRes.rows.length === 0) {
+      await pool.query(
+        "UPDATE ai_jobs SET status = 'failed', error_msg = 'Call not found', done_at = NOW() WHERE call_id = $1",
+        [callId]
+      );
+      return; // permanent failure — no retry needed
+    }
+
+    const call = callRes.rows[0];
+    const audioKey = call.audio_storage_key as string | null;
+
+    if (!audioKey) {
+      await pool.query(
+        "UPDATE ai_jobs SET status = 'failed', error_msg = 'Missing audio', done_at = NOW() WHERE call_id = $1",
+        [callId]
+      );
+      await pool.query("UPDATE calls SET ai_status = 'failed' WHERE id = $1", [callId]);
+      return; // permanent failure — no retry needed
+    }
+
+    tmpPath = await downloadAudioToFile(audioKey);
+    if (!tmpPath) {
+      await pool.query(
+        "UPDATE ai_jobs SET status = 'failed', error_msg = 'Download failed', done_at = NOW() WHERE call_id = $1",
+        [callId]
+      );
+      await pool.query("UPDATE calls SET ai_status = 'failed' WHERE id = $1", [callId]);
+      return; // permanent failure — no retry needed
+    }
+
+    // Convert to PCM WAV — KoreCall files are G.711 A-law which Whisper rejects
+    let whisperPath = tmpPath;
+    let actualDurationSecs = 0;
+    try {
+      const converted = await toPcmWav(tmpPath);
+      convertedPath = converted.path;
+      whisperPath = converted.path;
+      actualDurationSecs = converted.durationSecs;
+    } catch {
+      // ffmpeg not available or conversion failed — try raw file anyway
+      whisperPath = tmpPath;
+    }
+
+    // Persist actual duration now so it's correct even if AI steps fail
+    if (actualDurationSecs > 0) {
+      await pool.query(
+        "UPDATE calls SET duration_secs = $1 WHERE id = $2",
+        [actualDurationSecs, callId]
+      );
+    }
+
     const transcriptRaw = await transcribeWithDeepgram(whisperPath);
 
     let transcriptJson: Turn[];
@@ -290,17 +286,23 @@ export async function processAiJob(callId: string) {
       "UPDATE ai_jobs SET status = 'done', done_at = NOW() WHERE call_id = $1",
       [callId]
     );
+
   } catch (err: any) {
-    await pool.query(
-      "UPDATE ai_jobs SET status = 'failed', error_msg = $1, done_at = NOW() WHERE call_id = $2",
-      [String(err?.message || "AI failure"), callId]
-    );
-    await pool.query(
-      "UPDATE calls SET ai_status = 'failed' WHERE id = $1",
-      [callId]
-    );
+    // Catches everything: transient DB errors, Deepgram failures, OpenAI errors,
+    // and any previously-uncaught throw that would have left the job stuck in 'processing'.
+    // Re-throw so Bull can retry the job (up to the `attempts` limit in aiQueue config).
+    try {
+      await pool.query(
+        "UPDATE ai_jobs SET status = 'failed', error_msg = $1, done_at = NOW() WHERE call_id = $2",
+        [String(err?.message ?? "AI failure"), callId]
+      );
+      await pool.query("UPDATE calls SET ai_status = 'failed' WHERE id = $1", [callId]);
+    } catch {
+      // DB update itself failed — don't mask the original error
+    }
+    throw err;
   } finally {
-    fs.unlink(tmpPath, () => undefined);
+    if (tmpPath) fs.unlink(tmpPath, () => undefined);
     if (convertedPath) fs.unlink(convertedPath, () => undefined);
   }
 }

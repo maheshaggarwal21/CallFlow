@@ -93,7 +93,7 @@ router.post("/test-call", async (req, res) => {
     "INSERT INTO ai_jobs (call_id, status) VALUES ($1, 'queued')",
     [callId]
   );
-  await aiQueue.add({ callId });
+  await aiQueue.add({ callId }, { jobId: `call-${callId}` });
 
   return res.json({
     call_id: callId,

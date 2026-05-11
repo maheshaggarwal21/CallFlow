@@ -23,4 +23,18 @@ function buildRedisOpts(url: string) {
   };
 }
 
-export const aiQueue = new Queue("ai-jobs", { redis: buildRedisOpts(redisUrl) } as any);
+export const aiQueue = new Queue("ai-jobs", {
+  redis: buildRedisOpts(redisUrl),
+  settings: {
+    // AI jobs take 1–5 min; 30s default causes false stall detection → jobs double-processed
+    lockDuration: 600_000,    // 10 minutes
+    stalledInterval: 30_000,  // check for stalled jobs every 30s
+    maxStalledCount: 1,       // re-queue once after stall, then give up
+  },
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 10_000 },
+    removeOnComplete: 200,
+    removeOnFail: 500,
+  },
+} as any);

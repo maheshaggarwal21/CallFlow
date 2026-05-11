@@ -179,7 +179,7 @@ async function processUploadedFile(
         "INSERT INTO ai_jobs (call_id, status) VALUES ($1, 'queued')",
         [callId]
       );
-      await aiQueue.add({ callId });
+      await aiQueue.add({ callId }, { jobId: `call-${callId}` });
       console.log(`🤖 AI job queued for call: ${callId}`);
     }
 
