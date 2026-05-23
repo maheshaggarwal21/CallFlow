@@ -137,7 +137,16 @@ export default function TeamPage() {
 
                   {/* Name + phone */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 3 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20,
+                        background: emp.role === "owner" ? C.orangeLight : C.bgDeep,
+                        color: emp.role === "owner" ? C.orange : C.muted,
+                        border: `1px solid ${emp.role === "owner" ? C.orangeBdr : C.border}`,
+                        textTransform: "uppercase", letterSpacing: 0.6,
+                      }}>
+                        {emp.role === "owner" ? "Owner" : "Employee"}
+                      </span>
                       <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>{emp.name}</p>
                       <span style={{
                         fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20,
