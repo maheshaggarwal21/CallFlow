@@ -112,4 +112,4 @@ ehthumbs.db
 # Secrets (catch-all)
 secrets/
 
-*.wav
+*.wavreleases/*.apk
