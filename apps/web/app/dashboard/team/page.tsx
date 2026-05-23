@@ -135,21 +135,12 @@ export default function TeamPage() {
                     {init(emp.name)}
                   </div>
 
-                  {/* Name + phone */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
+                  {/* Name + active badge + phone */}
+                  <div style={{ flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "nowrap" }}>
+                      <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, whiteSpace: "nowrap" }}>{emp.name}</p>
                       <span style={{
-                        fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20,
-                        background: emp.role === "owner" ? C.orangeLight : C.bgDeep,
-                        color: emp.role === "owner" ? C.orange : C.muted,
-                        border: `1px solid ${emp.role === "owner" ? C.orangeBdr : C.border}`,
-                        textTransform: "uppercase", letterSpacing: 0.6,
-                      }}>
-                        {emp.role === "owner" ? "Owner" : "Employee"}
-                      </span>
-                      <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>{emp.name}</p>
-                      <span style={{
-                        fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20,
+                        fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20, flexShrink: 0,
                         background: isActive ? C.greenLight : "rgba(100,95,90,0.08)",
                         color: isActive ? C.green : C.muted,
                         border: `1px solid ${isActive ? C.greenBdr : C.border}`,
@@ -158,9 +149,22 @@ export default function TeamPage() {
                         {isActive ? "Active" : "Inactive"}
                       </span>
                     </div>
-                    <p style={{ margin: 0, fontSize: 13, color: C.muted }}>
+                    <p style={{ margin: 0, fontSize: 13, color: C.muted, whiteSpace: "nowrap" }}>
                       {emp.phone ?? "No phone on file"}
                     </p>
+                  </div>
+
+                  {/* Role badge — center */}
+                  <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20,
+                      background: emp.role === "owner" ? C.orangeLight : C.bgDeep,
+                      color: emp.role === "owner" ? C.orange : C.muted,
+                      border: `1px solid ${emp.role === "owner" ? C.orangeBdr : C.border}`,
+                      textTransform: "uppercase", letterSpacing: 0.6,
+                    }}>
+                      {emp.role === "owner" ? "Owner" : "Employee"}
+                    </span>
                   </div>
 
                   {/* Quick stats */}
