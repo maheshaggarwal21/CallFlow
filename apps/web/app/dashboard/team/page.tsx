@@ -135,26 +135,26 @@ export default function TeamPage() {
                     {init(emp.name)}
                   </div>
 
-                  {/* Name + active badge + phone */}
-                  <div style={{ flexShrink: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "nowrap" }}>
-                      <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, whiteSpace: "nowrap" }}>{emp.name}</p>
-                      <span style={{
-                        fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20, flexShrink: 0,
-                        background: isActive ? C.greenLight : "rgba(100,95,90,0.08)",
-                        color: isActive ? C.green : C.muted,
-                        border: `1px solid ${isActive ? C.greenBdr : C.border}`,
-                        textTransform: "uppercase", letterSpacing: 0.6,
-                      }}>
-                        {isActive ? "Active" : "Inactive"}
-                      </span>
-                    </div>
-                    <p style={{ margin: 0, fontSize: 13, color: C.muted, whiteSpace: "nowrap" }}>
-                      {emp.phone ?? "No phone on file"}
-                    </p>
+                  {/* Col: Name + phone — fixed width */}
+                  <div style={{ width: 180, flexShrink: 0 }}>
+                    <p style={{ margin: "0 0 3px", fontSize: 16, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{emp.name}</p>
+                    <p style={{ margin: 0, fontSize: 13, color: C.muted }}>{emp.phone ?? "No phone on file"}</p>
                   </div>
 
-                  {/* Role badge — center */}
+                  {/* Col: Active/Inactive — fixed width */}
+                  <div style={{ width: 90, flexShrink: 0 }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20,
+                      background: isActive ? C.greenLight : "rgba(100,95,90,0.08)",
+                      color: isActive ? C.green : C.muted,
+                      border: `1px solid ${isActive ? C.greenBdr : C.border}`,
+                      textTransform: "uppercase", letterSpacing: 0.6,
+                    }}>
+                      {isActive ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+
+                  {/* Col: Role — centered flex fill */}
                   <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
                     <span style={{
                       fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20,
