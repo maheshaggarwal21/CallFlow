@@ -7,11 +7,9 @@ import path from "path";
 import authRoutes from "./routes/auth.routes";
 import callsRoutes from "./routes/calls.routes";
 import analyticsRoutes from "./routes/analytics.routes";
-import devicesRoutes from "./routes/devices.routes";
 import employeesRoutes from "./routes/employees.routes";
 import intercomsRoutes from "./routes/intercoms.routes";
 import linesRoutes from "./routes/lines.routes";
-import mobileRoutes from "./routes/mobile.routes";
 import systemRoutes from "./routes/system.routes";
 import studentsRoutes from "./routes/students.routes";
 import devRoutes from "./routes/dev.routes";
@@ -57,11 +55,9 @@ app.use(
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/calls", callsRoutes);
 app.use("/api/v1/analytics", analyticsRoutes);
-app.use("/api/v1/devices", devicesRoutes);
 app.use("/api/v1/employees", employeesRoutes);
 app.use("/api/v1/intercoms", intercomsRoutes);
 app.use("/api/v1/lines", linesRoutes);
-app.use("/api/v1/mobile", mobileRoutes);
 app.use("/api/v1/system", systemRoutes);
 app.use("/api/v1/students", studentsRoutes);
 

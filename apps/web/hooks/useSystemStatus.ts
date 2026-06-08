@@ -22,29 +22,20 @@ export function useSystemStatus() {
   );
 
   const ftp = data?.ftp_last_sync_at ?? null;
-  const android = data?.android_last_sync_at ?? null;
-  const aiPending = data?.ai_queue_pending ?? 0;
 
   const now = Date.now();
   const recentThreshold = 20 * 60 * 1000; // 20 minutes
   const ftpAge = ftp ? now - new Date(ftp).getTime() : Infinity;
-  const androidAge = android ? now - new Date(android).getTime() : Infinity;
-  const isLive = ftpAge < recentThreshold || androidAge < recentThreshold;
+  const isLive = ftpAge < recentThreshold;
 
   function syncLabel(): string {
-    if (ftpAge <= androidAge && ftpAge < recentThreshold && ftp)
-      return `FTP · ${timeAgo(ftp)}`;
-    if (androidAge < recentThreshold && android)
-      return `Phone · ${timeAgo(android)}`;
+    if (ftpAge < recentThreshold && ftp) return `FTP · ${timeAgo(ftp)}`;
     if (ftp) return `Last: ${timeAgo(ftp)}`;
-    if (android) return `Last: ${timeAgo(android)}`;
     return "No Sync";
   }
 
   return {
     ftp,
-    android,
-    aiPending,
     syncLabel: syncLabel(),
     isLive,
   };

@@ -12,11 +12,9 @@ export type LoginResponse = {
   user: AuthUser;
 };
 
-export type CallSource = "korecall" | "android_app";
+export type CallSource = "korecall";
 export type CallDirection = "inbound" | "outbound";
-export type CallAiStatus = "pending" | "processing" | "done" | "failed";
 export type ResolutionStatus = "resolved" | "escalated" | null;
-export type Sentiment = "positive" | "negative" | "neutral" | null;
 
 export type EmployeeCallStats = {
   total: number;
@@ -38,19 +36,12 @@ export type Employee = {
 
 export type SystemStatus = {
   ftp_last_sync_at: string | null;
-  android_last_sync_at: string | null;
-  ai_queue_pending: number;
 };
 
 export type EmployeeName = {
   id: string;
   name: string;
   color_index: number;
-};
-
-export type DeviceName = {
-  id: string;
-  device_name: string;
 };
 
 export type Line = {
@@ -100,11 +91,6 @@ export type Call = {
   misc_reason: string | null;
   resolution_status: ResolutionStatus;
   audio_presigned_url?: string | null;
-  ai_status: CallAiStatus;
-  summary: string | null;
-  transcript_raw: string | null;
-  transcript_json: Array<{ speaker: "Agent" | "Caller"; text: string }> | null;
-  sentiment: Sentiment;
   created_at: string;
   updated_at: string;
 };
@@ -143,7 +129,6 @@ export type OverviewStats = {
   direction_split: { inbound_pct: number; outbound_pct: number };
   team_split: Array<{ employee_id: string; name: string; count: number; pct: number; color_index: number }>;
   weekly_activity: Array<{ day_label: string; inbound: number; outbound: number }>;
-  csat_score: number;
   resolved_count: number;
   escalated_count: number;
   no_response_count: number;
@@ -157,7 +142,6 @@ export type EmployeeAnalytics = {
   inbound: number;
   outbound: number;
   avg_duration_secs: number;
-  csat_score: number;
   daily_breakdown: Array<{
     date: string;
     day_label: string;

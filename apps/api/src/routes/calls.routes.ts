@@ -46,8 +46,6 @@ function buildFilters(req: any) {
   if (q.line) add("c.line_number =", q.line);
   if (q.direction) add("c.call_direction =", q.direction);
   if (q.intercom) add("c.intercom_code =", q.intercom);
-  if (q.source) add("c.source =", q.source);
-  if (q.device_id) add("c.device_id =", q.device_id);
 
   if (q.is_misc === "true" || q.is_misc === "false") {
     add("c.is_misc =", q.is_misc === "true");
@@ -62,6 +60,19 @@ function buildFilters(req: any) {
 
   return { filters, values };
 }
+
+// Common SELECT columns (no AI columns — dropped by migration 005)
+const CALL_COLS =
+  "c.id, c.source, c.device_id, c.line_number, c.intercom_code, " +
+  "c.call_direction, c.caller_phone, c.student_name, c.called_at, c.duration_secs, " +
+  "c.employee_id, c.is_misc, c.misc_reason, c.resolution_status, c.created_at, c.updated_at, " +
+  "i.phone_number AS intercom_phone_number, " +
+  "'KoreCall' AS source_label, " +
+  "e.color_index AS color_index, e.name AS employee_name";
+
+const CALL_JOINS =
+  "LEFT JOIN intercoms i ON i.intercom_code = c.intercom_code " +
+  "LEFT JOIN employees e ON e.id = c.employee_id";
 
 router.get("/", async (req, res) => {
   const { filters, values } = buildFilters(req);
@@ -84,20 +95,8 @@ router.get("/", async (req, res) => {
   );
 
   const listRes = await pool.query(
-    "SELECT c.id, c.source, c.device_id, c.line_number, c.intercom_code, " +
-      "c.call_direction, c.caller_phone, c.student_name, c.called_at, c.duration_secs, " +
-      "c.employee_id, c.is_misc, c.misc_reason, c.resolution_status, c.ai_status, " +
-      "c.summary, c.transcript_raw, c.transcript_json, c.sentiment, c.created_at, c.updated_at, " +
-      "i.phone_number AS intercom_phone_number, " +
-      "CASE WHEN c.source = 'korecall' THEN 'KoreCall' ELSE COALESCE(d.device_name, 'Android') END AS source_label, " +
-      "e.color_index AS color_index, e.name AS employee_name " +
-    "FROM calls c " +
-    "LEFT JOIN intercoms i ON i.intercom_code = c.intercom_code " +
-    "LEFT JOIN devices d ON d.id = c.device_id " +
-    "LEFT JOIN employees e ON e.id = c.employee_id " +
-    `${whereClause} ` +
-    "ORDER BY c.called_at DESC " +
-    `LIMIT ${limit} OFFSET ${offset}`,
+    `SELECT ${CALL_COLS} FROM calls c ${CALL_JOINS} ${whereClause} ` +
+    `ORDER BY c.called_at DESC LIMIT ${limit} OFFSET ${offset}`,
     values
   );
 
@@ -113,17 +112,8 @@ router.get("/:id", async (req, res) => {
   const id = req.params.id;
 
   const result = await pool.query(
-    "SELECT c.id, c.source, c.device_id, c.line_number, c.intercom_code, " +
-      "c.call_direction, c.caller_phone, c.student_name, c.called_at, c.duration_secs, " +
-      "c.employee_id, c.is_misc, c.misc_reason, c.resolution_status, c.ai_status, " +
-      "c.summary, c.transcript_raw, c.transcript_json, c.sentiment, c.created_at, c.updated_at, " +
-      "c.audio_storage_key, i.phone_number AS intercom_phone_number, " +
-      "CASE WHEN c.source = 'korecall' THEN 'KoreCall' ELSE COALESCE(d.device_name, 'Android') END AS source_label, " +
-      "e.color_index AS color_index, e.name AS employee_name " +
-    "FROM calls c " +
-    "LEFT JOIN intercoms i ON i.intercom_code = c.intercom_code " +
-    "LEFT JOIN devices d ON d.id = c.device_id " +
-    "LEFT JOIN employees e ON e.id = c.employee_id " +
+    `SELECT ${CALL_COLS}, c.audio_storage_key ` +
+    `FROM calls c ${CALL_JOINS} ` +
     "WHERE c.id = $1 LIMIT 1",
     [id]
   );
@@ -182,20 +172,8 @@ router.post("/search", async (req, res) => {
   );
 
   const listRes = await pool.query(
-    "SELECT c.id, c.source, c.device_id, c.line_number, c.intercom_code, " +
-      "c.call_direction, c.caller_phone, c.student_name, c.called_at, c.duration_secs, " +
-      "c.employee_id, c.is_misc, c.misc_reason, c.resolution_status, c.ai_status, " +
-      "c.summary, c.transcript_raw, c.transcript_json, c.sentiment, c.created_at, c.updated_at, " +
-      "i.phone_number AS intercom_phone_number, " +
-      "CASE WHEN c.source = 'korecall' THEN 'KoreCall' ELSE COALESCE(d.device_name, 'Android') END AS source_label, " +
-      "e.color_index AS color_index, e.name AS employee_name " +
-    "FROM calls c " +
-    "LEFT JOIN intercoms i ON i.intercom_code = c.intercom_code " +
-    "LEFT JOIN devices d ON d.id = c.device_id " +
-    "LEFT JOIN employees e ON e.id = c.employee_id " +
-    `${whereClause} ` +
-    "ORDER BY c.called_at DESC " +
-    `LIMIT ${limit} OFFSET ${offset}`,
+    `SELECT ${CALL_COLS} FROM calls c ${CALL_JOINS} ${whereClause} ` +
+    `ORDER BY c.called_at DESC LIMIT ${limit} OFFSET ${offset}`,
     values
   );
 

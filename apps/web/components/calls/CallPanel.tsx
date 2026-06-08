@@ -3,8 +3,6 @@
 import { useState, useEffect } from "react";
 import useSWR, { mutate } from "swr";
 import { C, fmtL } from "@/lib/colors";
-import { callSentiment } from "@/lib/callSentiment";
-import { aiStatusTag } from "@/lib/tagMaps";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import AudioPlayer from "@/components/ui/AudioPlayer";
 import WABtn from "@/components/ui/WABtn";
@@ -17,23 +15,23 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "summary" | "transcript" | "details";
+type Tab = "details";
 
 export default function CallPanel({ callId, onClose }: Props) {
-  const [tab, setTab] = useState<Tab>("summary");
+  const [tab, setTab] = useState<Tab>("details");
   const [resolving, setResolving] = useState(false);
   const { data: call, isLoading } = useSWR<Call>(
     callId ? `/calls/${callId}` : null,
     fetcher
   );
 
-  useEffect(() => { setTab("summary"); }, [callId]);
+  useEffect(() => { setTab("details"); }, [callId]);
 
   if (!callId) return null;
 
   const isIn   = call?.call_direction === "inbound";
-  const sent   = call ? callSentiment(call) : null;
-  const aiTag  = call ? aiStatusTag(call.ai_status) : null;
+  
+  
 
   const dt     = call ? new Date(call.called_at) : null;
   const sd     = call ? getStudentDisplay(call.caller_phone, call.student_name) : null;
@@ -123,7 +121,7 @@ export default function CallPanel({ callId, onClose }: Props) {
           borderBottom: `1px solid ${C.borderLight}`,
           display: "flex", gap: 4, flexShrink: 0,
         }}>
-          {(["summary", "transcript", "details"] as Tab[]).map((t) => (
+          {(["details"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -158,149 +156,6 @@ export default function CallPanel({ callId, onClose }: Props) {
 
           {!isLoading && call && (
             <>
-              {/* ── SUMMARY TAB ── */}
-              {tab === "summary" && (
-                <>
-                  <AudioPlayer url={call.audio_presigned_url ?? null} storageId={call.id} />
-
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                    {aiTag && (
-                      <Tag
-                        label={aiTag.label}
-                        color={aiTag.color}
-                        bg={aiTag.bg}
-                      />
-                    )}
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={() => updateResolution("resolved")}
-                        disabled={resolving}
-                        style={{
-                          padding: "6px 12px",
-                          borderRadius: 9,
-                          border: `1px solid ${C.greenBdr}`,
-                          background: C.greenLight,
-                          color: C.green,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: resolving ? "not-allowed" : "pointer",
-                        }}
-                      >Resolved</button>
-                      <button
-                        onClick={() => updateResolution("escalated")}
-                        disabled={resolving}
-                        style={{
-                          padding: "6px 12px",
-                          borderRadius: 9,
-                          border: `1px solid ${C.redBdr}`,
-                          background: C.redLight,
-                          color: C.red,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: resolving ? "not-allowed" : "pointer",
-                        }}
-                      >Escalated</button>
-                      {call.resolution_status && (
-                        <button
-                          onClick={() => updateResolution(null)}
-                          disabled={resolving}
-                          style={{
-                            padding: "6px 12px",
-                            borderRadius: 9,
-                            border: `1px solid ${C.border}`,
-                            background: C.bgDeep,
-                            color: C.muted,
-                            fontSize: 12,
-                            fontWeight: 700,
-                            cursor: resolving ? "not-allowed" : "pointer",
-                          }}
-                        >Clear</button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Mini stat boxes */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                    {[
-                      ["Duration", fmtL(call.duration_secs), C.blue],
-                      ["Direction", isIn ? "Inbound" : "Outbound", isIn ? C.green : C.orange],
-                      ["Line", call.line_number ?? "—", C.blue],
-                    ].map(([label, val, color]) => (
-                      <div key={label as string} style={{
-                        background: C.bgDeep, border: `1px solid ${C.border}`,
-                        borderRadius: 10, padding: "12px 8px", textAlign: "center",
-                      }}>
-                        <p style={{ margin: "0 0 4px", fontSize: 10, color: C.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</p>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: color as string }}>{val}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* AI Summary */}
-                  <div style={{ background: C.bgDeep, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                      <span style={{ fontSize: 14 }}>✦</span>
-                      <p style={{ margin: 0, fontSize: 13, color: C.orange, fontWeight: 700, letterSpacing: 0.2 }}>AI Summary</p>
-                    </div>
-                    {call.ai_status !== "done" ? (
-                      <p style={{ margin: 0, color: C.muted, fontSize: 14, lineHeight: 1.6 }}>
-                        Processing — check back in a few minutes.
-                      </p>
-                    ) : (
-                      <p style={{ margin: 0, color: C.textSub, fontSize: 14, lineHeight: 1.75 }}>
-                        {call.summary || "No summary available."}
-                      </p>
-                    )}
-                    {sent && call.ai_status === "done" && (
-                      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                        {!sd?.isUnknown && <WABtn phone={call.caller_phone} size="sm" />}
-                        <span style={{ fontSize: 13, color: sent.color, fontWeight: 600 }}>
-                          {sent.e} {sent.label}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {/* ── TRANSCRIPT TAB ── */}
-              {tab === "transcript" && (
-                call.ai_status !== "done" ? (
-                  <div style={{ textAlign: "center", padding: "48px 0" }}>
-                    <p style={{ color: C.muted, fontSize: 14 }}>Transcript not available yet.</p>
-                  </div>
-                ) : call.transcript_json && call.transcript_json.length > 0 ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>
-                      Call Transcript
-                    </p>
-                    {call.transcript_json.map((turn, i) => {
-                      const isAgent = turn.speaker === "Agent";
-                      return (
-                        <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: isAgent ? "flex-end" : "flex-start" }}>
-                          <div style={{
-                            maxWidth: "82%",
-                            background: isAgent ? C.orangeLight : C.bgDeep,
-                            border: `1px solid ${isAgent ? C.orangeBdr : C.border}`,
-                            borderRadius: isAgent ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                            padding: "10px 14px",
-                          }}>
-                            <p style={{ margin: "0 0 4px", fontSize: 10, fontWeight: 700, color: isAgent ? C.orange : C.muted, textTransform: "uppercase", letterSpacing: 0.6 }}>
-                              {isAgent ? "AGENT" : "CALLER"}
-                            </p>
-                            <p style={{ margin: 0, fontSize: 14, color: C.text, lineHeight: 1.65 }}>{turn.text}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div style={{ textAlign: "center", padding: "48px 0" }}>
-                    <p style={{ color: C.muted, fontSize: 14 }}>No transcript available.</p>
-                  </div>
-                )
-              )}
-
               {/* ── DETAILS TAB ── */}
               {tab === "details" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -316,7 +171,6 @@ export default function CallPanel({ callId, onClose }: Props) {
                     ["Direction", isIn ? "Inbound" : "Outbound"],
                     ["Duration",  fmtL(call.duration_secs)],
                     ["Source",    call.source_label ?? "—"],
-                    ["AI Status", aiTag?.label ?? "Pending"],
                     ...(call.resolution_status ? [["Resolution", call.resolution_status === "resolved" ? "Resolved" : "Escalated"]] : []),
                   ] as [string, string][]).map(([label, val]) => (
                     <div key={label} style={{

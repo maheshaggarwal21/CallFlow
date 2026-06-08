@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { randomBytes, createHash } from "crypto";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requireOwner } from "../middleware/requireOwner";
@@ -23,10 +22,6 @@ const patchSchema = z.object({
   status:   z.enum(["active", "inactive"]).optional(),
   password: z.string().min(8).max(72).optional(),
 });
-
-function sha256(input: string) {
-  return createHash("sha256").update(input).digest("hex");
-}
 
 router.use(requireAuth);
 
@@ -183,36 +178,5 @@ router.patch("/:id", requireOwner, async (req, res) => {
   }
 });
 
-router.post("/:id/api-key", requireOwner, async (req, res) => {
-  const id = req.params.id;
-
-  const apiKey = randomBytes(24).toString("hex");
-  const apiKeyHash = sha256(apiKey);
-
-  const result = await pool.query(
-    "UPDATE employees SET api_key_hash = $1 WHERE id = $2 RETURNING id",
-    [apiKeyHash, id]
-  );
-
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: "Not found" });
-  }
-
-  return res.json({ api_key: apiKey });
-});
-
-// DELETE /employees/:id/device — owner resets an employee's linked device so they can log in on a new phone
-router.delete("/:id/device", requireOwner, async (req, res) => {
-  const id = req.params.id;
-
-  const empCheck = await pool.query("SELECT id FROM employees WHERE id = $1 LIMIT 1", [id]);
-  if (empCheck.rows.length === 0) {
-    return res.status(404).json({ error: "Employee not found" });
-  }
-
-  await pool.query("DELETE FROM devices WHERE employee_id = $1", [id]);
-
-  return res.json({ ok: true, message: "Device unlinked. Employee can now log in on a new phone." });
-});
 
 export default router;

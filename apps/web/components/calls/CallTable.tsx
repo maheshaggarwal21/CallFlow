@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 import { C, eClr, init, fmtS } from "@/lib/colors";
-import { callSentiment } from "@/lib/callSentiment";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import { api } from "@/lib/api";
 import Pagination from "@/components/ui/Pagination";
@@ -106,8 +105,7 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
               key={call.id}
               call={call}
               onMore={onSelect}
-              showSentiment
-              isLast={i === calls.length - 1}
+                            isLast={i === calls.length - 1}
             />
           ))}
         </div>
@@ -148,7 +146,6 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
         {/* Rows */}
         {calls.map((call) => {
           const sd       = getStudentDisplay(call.caller_phone, call.student_name);
-          const sent     = callSentiment(call);
           const empClr   = call.color_index !== null ? eClr(call.color_index) : null;
           const dt       = new Date(call.called_at);
           const isIn     = call.call_direction === "inbound";
@@ -294,15 +291,6 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
                 <p style={{ margin: 0, fontSize: 10, color: C.dim, lineHeight: 1.3 }}>
                   {dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
                 </p>
-              </div>
-
-              {/* Review (sentiment) */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
-                {call.ai_status === "done" ? (
-                  <span title={sent.label} style={{ fontSize: 16, lineHeight: 1, userSelect: "none" }}>{sent.e}</span>
-                ) : (
-                  <span style={{ fontSize: 11, color: C.dim }}>⏳</span>
-                )}
               </div>
 
               {/* WhatsApp */}

@@ -3,10 +3,9 @@
 import { useRouter } from "next/navigation";
 
 const FEATURES = [
-  { icon: "📞", title: "Live Call Tracking",    desc: "Monitor every inbound and outbound call across all lines in real time." },
-  { icon: "🤖", title: "AI Transcription",      desc: "Automatic Whisper transcription, speaker diarization, and sentiment scoring." },
-  { icon: "📊", title: "Team Analytics",        desc: "Per-agent dashboards, CSAT scores, and month-over-month trends at a glance." },
-  { icon: "🔔", title: "Instant Sync",          desc: "KoreCall PBX and Android phone recordings sync automatically via FTP." },
+  { icon: "📞", title: "Call Recording",        desc: "KoreCall PBX recordings received via FTP, stored and indexed automatically." },
+  { icon: "📊", title: "Team Analytics",        desc: "Per-agent dashboards, month-over-month trends at a glance." },
+  { icon: "🔔", title: "Instant Sync",          desc: "KoreCall PBX recordings sync automatically via FTP the moment they arrive." },
 ];
 
 export default function LandingPage() {
@@ -93,7 +92,7 @@ export default function LandingPage() {
             color: "rgba(255,255,255,0.45)",
             lineHeight: 1.6,
           }}>
-            Track calls · AI transcription · Team analytics · Live sync
+            Track calls · Team analytics · Live FTP sync
           </p>
 
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
@@ -181,7 +180,7 @@ export default function LandingPage() {
             Everything in one place
           </h2>
           <p style={{ margin: "14px auto 0", maxWidth: 480, fontSize: 16, color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
-            From raw PBX recordings to AI-powered insights — CallFlow handles the full call lifecycle.
+            From raw PBX recordings to team analytics — CallFlow handles the full call lifecycle.
           </p>
         </div>
 

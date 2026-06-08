@@ -4,7 +4,7 @@ import { C } from "@/lib/colors";
 import { useAuth } from "@/hooks/useAuth";
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
-import type { EmployeeName, Line, Intercom, DeviceName } from "@callflow/shared-types";
+import type { EmployeeName, Line, Intercom } from "@callflow/shared-types";
 
 export interface CallFilterState {
   search:     string;
@@ -14,7 +14,6 @@ export interface CallFilterState {
   dateTo:     string;
   line:       string;
   intercom:   string;
-  source:     string;   // "korecall" | device UUID | ""
 }
 
 interface Props {
@@ -39,21 +38,14 @@ const labelStyle: React.CSSProperties = {
   letterSpacing: 0.8, marginBottom: 4, display: "block",
 };
 
-export function buildSourceParams(source: string): { source?: string; device_id?: string } {
-  if (!source) return {};
-  if (source === "korecall") return { source: "korecall" };
-  return { source: "android_app", device_id: source };
-}
-
 export default function CallFilters({ filters, onChange, showAgent = true }: Props) {
   const { isOwner } = useAuth();
   const { data: employees } = useSWR<EmployeeName[]>(isOwner ? "/employees/names" : null, fetcher);
   const { data: lines }     = useSWR<Line[]>("/lines", fetcher);
   const { data: intercoms } = useSWR<Intercom[]>("/intercoms", fetcher);
-  const { data: devices }   = useSWR<DeviceName[]>("/devices/names", fetcher);
 
   const hasFilter = filters.search || filters.direction || filters.employeeId ||
-                    filters.dateFrom || filters.dateTo || filters.line || filters.intercom || filters.source;
+                    filters.dateFrom || filters.dateTo || filters.line || filters.intercom;
   const showAgentFilter = isOwner && showAgent;
 
   return (
@@ -128,7 +120,7 @@ export default function CallFilters({ filters, onChange, showAgent = true }: Pro
         </select>
       </div>
 
-      {/* Intercom */}
+      {/* Intercom — kept for future use, shows — when no IC code in recording */}
       <div>
         <label style={labelStyle}>Intercom</label>
         <select
@@ -139,22 +131,6 @@ export default function CallFilters({ filters, onChange, showAgent = true }: Pro
           <option value="">All ICs</option>
           {(intercoms ?? []).map((ic) => (
             <option key={ic.id} value={ic.intercom_code}>{ic.intercom_code}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Source */}
-      <div>
-        <label style={labelStyle}>Source</label>
-        <select
-          value={filters.source}
-          onChange={(e) => onChange({ source: e.target.value })}
-          style={inputStyle}
-        >
-          <option value="">All sources</option>
-          <option value="korecall">KoreCall</option>
-          {(devices ?? []).map((d) => (
-            <option key={d.id} value={d.id}>{d.device_name}</option>
           ))}
         </select>
       </div>
@@ -179,7 +155,7 @@ export default function CallFilters({ filters, onChange, showAgent = true }: Pro
       {/* Clear */}
       {hasFilter && (
         <button
-          onClick={() => onChange({ search: "", direction: "", employeeId: "", dateFrom: "", dateTo: "", line: "", intercom: "", source: "" })}
+          onClick={() => onChange({ search: "", direction: "", employeeId: "", dateFrom: "", dateTo: "", line: "", intercom: "" })}
           style={{
             padding: "8px 14px",
             border: `1px solid ${C.border}`,

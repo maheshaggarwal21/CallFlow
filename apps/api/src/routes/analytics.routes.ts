@@ -163,17 +163,6 @@ router.get("/overview", requireOwner, async (req, res) => {
     return { day_label: label, inbound: data.inbound, outbound: data.outbound };
   });
 
-  const employeeScope = typeof req.query.employee_id === "string" ? req.query.employee_id : null;
-  const csatRes = await pool.query(
-    "SELECT " +
-      "ROUND(100.0 * COUNT(*) FILTER (WHERE sentiment = 'positive') / " +
-      "NULLIF(COUNT(*) FILTER (WHERE ai_status = 'done'), 0)) AS csat_score " +
-    "FROM calls " +
-    "WHERE is_misc = FALSE AND called_at >= $1 AND called_at < $2 " +
-    (employeeScope ? "AND employee_id = $3" : ""),
-    employeeScope ? [start.toISOString(), end.toISOString(), employeeScope] : [start.toISOString(), end.toISOString()]
-  );
-
   const resRes = await pool.query(
     "SELECT " +
       "COUNT(*) FILTER (WHERE resolution_status = 'resolved') AS resolved_count, " +
@@ -209,14 +198,12 @@ router.get("/overview", requireOwner, async (req, res) => {
   const recentRes = await pool.query(
     "SELECT c.id, c.source, c.device_id, c.line_number, c.intercom_code, " +
       "c.call_direction, c.caller_phone, c.student_name, c.called_at, c.duration_secs, " +
-      "c.employee_id, c.is_misc, c.misc_reason, c.resolution_status, c.ai_status, " +
-      "c.summary, c.transcript_raw, c.transcript_json, c.sentiment, c.created_at, c.updated_at, " +
+      "c.employee_id, c.is_misc, c.misc_reason, c.resolution_status, c.created_at, c.updated_at, " +
       "i.phone_number AS intercom_phone_number, " +
-      "CASE WHEN c.source = 'korecall' THEN 'KoreCall' ELSE COALESCE(d.device_name, 'Android') END AS source_label, " +
+      "'KoreCall' AS source_label, " +
       "e.color_index AS color_index, e.name AS employee_name " +
     "FROM calls c " +
     "LEFT JOIN intercoms i ON i.intercom_code = c.intercom_code " +
-    "LEFT JOIN devices d ON d.id = c.device_id " +
     "LEFT JOIN employees e ON e.id = c.employee_id " +
     "WHERE c.is_misc = FALSE AND c.called_at >= $1 AND c.called_at < $2 " +
     "ORDER BY c.called_at DESC LIMIT 5",
@@ -238,7 +225,6 @@ router.get("/overview", requireOwner, async (req, res) => {
       color_index: Number(r.color_index || 0),
     })),
     weekly_activity: weeklyActivity,
-    csat_score: Number(csatRes.rows[0]?.csat_score || 0),
     resolved_count: Number(resRes.rows[0]?.resolved_count || 0),
     escalated_count: Number(resRes.rows[0]?.escalated_count || 0),
     no_response_count: Number(resRes.rows[0]?.no_response_count || 0),
@@ -286,9 +272,7 @@ router.get("/employee/:id", async (req, res) => {
       "COUNT(*) AS total_calls, " +
       "COUNT(*) FILTER (WHERE call_direction='inbound') AS inbound, " +
       "COUNT(*) FILTER (WHERE call_direction='outbound') AS outbound, " +
-      "COALESCE(ROUND(AVG(duration_secs)), 0) AS avg_duration_secs, " +
-      "ROUND(100.0 * COUNT(*) FILTER (WHERE sentiment = 'positive') / " +
-        "NULLIF(COUNT(*) FILTER (WHERE ai_status = 'done'), 0)) AS csat_score " +
+      "COALESCE(ROUND(AVG(duration_secs)), 0) AS avg_duration_secs " +
     `FROM calls ${whereClause}`,
     values
   );
@@ -335,7 +319,7 @@ router.get("/employee/:id", async (req, res) => {
     inbound: 0,
     outbound: 0,
     avg_duration_secs: 0,
-    csat_score: 0,
+    
   };
 
   return res.json({
@@ -343,7 +327,7 @@ router.get("/employee/:id", async (req, res) => {
     inbound: Number(row.inbound || 0),
     outbound: Number(row.outbound || 0),
     avg_duration_secs: Number(row.avg_duration_secs || 0),
-    csat_score: Number(row.csat_score || 0),
+    
     daily_breakdown,
   });
 });

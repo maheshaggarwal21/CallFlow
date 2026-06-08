@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import useSWR from "swr";
 import { C, fmtS } from "@/lib/colors";
 import { fetcher } from "@/lib/api";
-import CallFilters, { CallFilterState, buildSourceParams } from "@/components/calls/CallFilters";
+import CallFilters, { CallFilterState } from "@/components/calls/CallFilters";
 import CallTable from "@/components/calls/CallTable";
 import CallPanel from "@/components/calls/CallPanel";
 import StatCard from "@/components/ui/StatCard";
@@ -24,14 +24,11 @@ function buildQuery(filters: CallFilterState, page: number): string {
   if (filters.dateTo)     p.set("date_to",     filters.dateTo);
   if (filters.line)       p.set("line",      filters.line);
   if (filters.intercom)   p.set("intercom",  filters.intercom);
-  const src = buildSourceParams(filters.source);
-  if (src.source)         p.set("source",    src.source);
-  if (src.device_id)      p.set("device_id", src.device_id);
   return `/calls?${p.toString()}`;
 }
 
 const EMPTY_FILTERS: CallFilterState = {
-  search: "", direction: "", employeeId: "", dateFrom: "", dateTo: "", line: "", intercom: "", source: "",
+  search: "", direction: "", employeeId: "", dateFrom: "", dateTo: "", line: "", intercom: "",
 };
 
 

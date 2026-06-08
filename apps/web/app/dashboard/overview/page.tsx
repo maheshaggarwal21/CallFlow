@@ -9,7 +9,6 @@ import type { Call } from "@callflow/shared-types";
 import { toLineChartData } from "@/lib/chartTransforms";
 import PieChart from "@/components/ui/PieChart";
 import LineChart from "@/components/ui/LineChart";
-import GaugeMeter from "@/components/ui/GaugeMeter";
 import type { OverviewStats } from "@callflow/shared-types";
 
 // ── Stat card ───────────────────────────────────────────────────────────────
@@ -52,8 +51,7 @@ const PERIODS: { key: Period; label: string }[] = [
 
 export default function OverviewPage() {
   const [period, setPeriod]                 = useState<Period>("month");
-  const [csatEmployeeId, setCsatEmployeeId] = useState<string>("");
-  const [playingId, setPlayingId]           = useState<string | null>(null);
+    const [playingId, setPlayingId]           = useState<string | null>(null);
   const [fetchingId, setFetchingId]         = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlCache = useRef<Map<string, string>>(new Map());
@@ -125,18 +123,15 @@ export default function OverviewPage() {
   const query = useMemo(() => {
     const p = new URLSearchParams();
     if (dateRange.date_from) p.set("date_from", dateRange.date_from);
-    if ("date_to" in dateRange && dateRange.date_to) p.set("date_to", dateRange.date_to);
-    if (csatEmployeeId) p.set("employee_id", csatEmployeeId);
-    const qs = p.toString();
+    if ("date_to" in dateRange && dateRange.date_to) p.set("date_to", dateRange.date_to);    const qs = p.toString();
     return `/analytics/overview${qs ? `?${qs}` : ""}`;
-  }, [dateRange, csatEmployeeId]);
+  }, [dateRange]);
 
   const { data } = useSWR<OverviewStats>(query, fetcher);
 
   const inPct  = data?.direction_split.inbound_pct  ?? 0;
   const outPct = data?.direction_split.outbound_pct ?? 0;
-  const csat   = data?.csat_score ?? 0;
-
+  
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
 
@@ -272,7 +267,7 @@ export default function OverviewPage() {
       </div>
 
       {/* Weekly Activity LINE CHART + Customer Satisfaction */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
 
         {/* Line chart */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", boxShadow: C.shadow }}>
@@ -290,67 +285,7 @@ export default function OverviewPage() {
               ))}
             </div>
           </div>
-          <div style={{ marginTop: 12 }}>
-            {data?.weekly_activity ? (
-              <LineChart data={toLineChartData(data.weekly_activity)} />
-            ) : (
-              <p style={{ color: C.muted, fontSize: 13 }}>No data</p>
-            )}
-          </div>
-        </div>
-
-        {/* Customer Satisfaction */}
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", boxShadow: C.shadow }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>Customer Satisfaction</p>
-            <select
-              value={csatEmployeeId}
-              onChange={(e) => setCsatEmployeeId(e.target.value)}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 10,
-                border: `1px solid ${C.border}`,
-                background: C.card,
-                fontSize: 12,
-                color: C.textSub,
-              }}
-            >
-              <option value="">Overall</option>
-              {(data?.team_split ?? []).map((e) => (
-                <option key={e.employee_id} value={e.employee_id}>{e.name}</option>
-              ))}
-            </select>
-          </div>
-          <p style={{ margin: "0 0 16px", fontSize: 12, color: C.muted }}>Based on call outcomes</p>
-
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
-            <GaugeMeter value={csat} label={csatEmployeeId ? "Employee CSAT" : "Overall CSAT"} />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            <div style={{
-              padding: "12px 10px", borderRadius: 12, textAlign: "center",
-              background: C.greenLight, border: `1px solid ${C.greenBdr}`,
-            }}>
-              <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: C.green }}>{data?.resolved_count ?? "—"}</p>
-              <p style={{ margin: "3px 0 0", fontSize: 10, color: C.green, fontWeight: 600 }}>Resolved</p>
-            </div>
-            <div style={{
-              padding: "12px 10px", borderRadius: 12, textAlign: "center",
-              background: C.redLight, border: `1px solid ${C.redBdr}`,
-            }}>
-              <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: C.red }}>{data?.escalated_count ?? "—"}</p>
-              <p style={{ margin: "3px 0 0", fontSize: 10, color: C.red, fontWeight: 600 }}>Escalated</p>
-            </div>
-            <div style={{
-              padding: "12px 10px", borderRadius: 12, textAlign: "center",
-              background: C.orangeLight, border: `1px solid ${C.orangeBdr}`,
-            }}>
-              <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: C.orange }}>{data?.no_response_count ?? "—"}</p>
-              <p style={{ margin: "3px 0 0", fontSize: 10, color: C.orange, fontWeight: 600 }}>No Response</p>
-            </div>
-          </div>
-        </div>
+          
       </div>
       {/* Team Breakdown Grid */}
       {data?.team_split && data.team_split.length > 0 && (

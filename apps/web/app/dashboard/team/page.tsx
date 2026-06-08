@@ -2,8 +2,6 @@
 
 import React, { useState } from "react";
 import useSWR, { mutate } from "swr";
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const QRCode = require("react-qr-code").default as React.FC<{ value: string; size?: number; fgColor?: string }>;
 import { C, eClr, init, fmtS } from "@/lib/colors";
 import { api, fetcher } from "@/lib/api";
 import EmployeeModal from "@/components/modals/EmployeeModal";
@@ -13,9 +11,6 @@ export default function TeamPage() {
   const { data: employees, isLoading } = useSWR<Employee[]>("/employees", fetcher);
   const { data: lines } = useSWR<Line[]>("/lines", fetcher);
   const [modal,    setModal]    = useState<"add" | Employee | null>(null);
-  const [apiKeyModal, setApiKeyModal] = useState<{ employee: Employee; apiKey: string } | null>(null);
-  const [apiKeyLoading, setApiKeyLoading] = useState<string | null>(null);
-  const [apiKeyError, setApiKeyError] = useState("");
   const [toggling, setToggling] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -33,20 +28,6 @@ export default function TeamPage() {
       await mutate("/employees");
     } finally {
       setToggling(null);
-    }
-  }
-
-  async function handleGenerateApiKey(emp: Employee, e: React.MouseEvent) {
-    e.stopPropagation();
-    setApiKeyError("");
-    setApiKeyLoading(emp.id);
-    try {
-      const res = await api.post<{ api_key: string }>(`/employees/${emp.id}/api-key`);
-      setApiKeyModal({ employee: emp, apiKey: res.api_key });
-    } catch (err: any) {
-      setApiKeyError(err.message ?? "Failed to generate API key.");
-    } finally {
-      setApiKeyLoading(null);
     }
   }
 
@@ -71,12 +52,6 @@ export default function TeamPage() {
           <span style={{ fontSize: 18, lineHeight: 1 }}>+</span> Add Agent
         </button>
       </div>
-
-      {apiKeyError && (
-        <p style={{ margin: "-8px 0 0", fontSize: 13, color: C.red }}>
-          {apiKeyError}
-        </p>
-      )}
 
       {/* Stat cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
@@ -226,22 +201,6 @@ export default function TeamPage() {
                             }}
                           >Edit</button>
                           <button
-                            onClick={(e) => handleGenerateApiKey(emp, e)}
-                            title="Generate API key"
-                            disabled={apiKeyLoading === emp.id}
-                            style={{
-                              padding: "9px 16px", borderRadius: 10, cursor: "pointer",
-                              border: `1px solid ${C.border}`, background: C.card,
-                              color: C.textSub, fontSize: 13, fontWeight: 600,
-                              display: "flex", alignItems: "center", gap: 6,
-                            }}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M3 3h7v7H3V3zm2 2v3h3V5H5zm8-2h7v7h-7V3zm2 2v3h3V5h-3zM3 13h7v7H3v-7zm2 2v3h3v-3H5zm11-1h2v2h-2v-2zm-3 0h2v2h-2v-2zm3 3h2v2h-2v-2zm-5 0h2v2h-2v-2zm2 2h2v2h-2v-2zm-2 2h2v2h-2v-2zm3-2h2v2h-2v-2z"/>
-                            </svg>
-                            {apiKeyLoading === emp.id ? "Generating..." : "API Key"}
-                          </button>
-                          <button
                             onClick={(e) => toggleStatus(emp, e)}
                             disabled={toggling === emp.id}
                             style={{
@@ -271,63 +230,6 @@ export default function TeamPage() {
           employee={modal === "add" ? undefined : modal}
           onClose={() => setModal(null)}
         />
-      )}
-
-      {/* API key modal */}
-      {apiKeyModal && (
-        <>
-          <div onClick={() => setApiKeyModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(20,15,10,0.35)", backdropFilter: "blur(6px)", zIndex: 200 }} />
-          <div style={{
-            position: "fixed", top: "50%", left: "50%",
-            transform: "translate(-50%, -50%)",
-            background: C.card, border: `1px solid ${C.border}`,
-            borderRadius: 22, padding: "32px 36px",
-            boxShadow: "0 24px 72px rgba(0,0,0,0.14)", zIndex: 201, textAlign: "center",
-            maxWidth: 420,
-          }}>
-            <h3 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 700, color: C.text }}>Employee API Key</h3>
-            <p style={{ margin: "0 0 20px", fontSize: 14, color: C.muted }}>
-              {apiKeyModal.employee.name} — shown once, copy now
-            </p>
-            <div style={{ padding: 16, background: "#fff", borderRadius: 12, display: "inline-block", border: `1px solid ${C.border}` }}>
-              <QRCode value={`api_key=${apiKeyModal.apiKey}`} size={180} fgColor={C.text} />
-            </div>
-            <div style={{ marginTop: 16, padding: "10px 12px", background: C.bgDeep, border: `1px solid ${C.border}`, borderRadius: 10 }}>
-              <p style={{ margin: 0, fontSize: 12, color: C.muted, textTransform: "uppercase", letterSpacing: 0.7, fontWeight: 700 }}>API Key</p>
-              <p style={{ margin: "6px 0 0", fontSize: 13, color: C.text, wordBreak: "break-all" }}>{apiKeyModal.apiKey}</p>
-            </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 18 }}>
-              <button
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard?.writeText(apiKeyModal.apiKey);
-                  } catch {}
-                }}
-                style={{
-                  padding: "8px 18px",
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 10,
-                  background: C.card,
-                  color: C.textSub,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >Copy</button>
-              <button
-                onClick={() => setApiKeyModal(null)}
-                style={{
-                  padding: "8px 18px",
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 10,
-                  background: C.bgDeep,
-                  color: C.textSub,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >Close</button>
-            </div>
-          </div>
-        </>
       )}
     </div>
   );

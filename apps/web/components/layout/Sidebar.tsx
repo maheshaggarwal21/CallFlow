@@ -13,7 +13,7 @@ export default function Sidebar() {
   const router   = useRouter();
   const pathname = usePathname();
   const { name, role, color_index, isOwner } = useAuth();
-  const { syncLabel, aiPending, isLive } = useSystemStatus();
+  const { syncLabel, isLive } = useSystemStatus();
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [empOpen, setEmpOpen]       = useState(true);
   const [hovNav, setHovNav]         = useState<string | null>(null);
@@ -229,18 +229,6 @@ export default function Sidebar() {
           </span>
         </div>
 
-        {aiPending > 0 && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "9px 12px", borderRadius: 10,
-            background: C.orangeLight, border: `1px solid ${C.orangeBdr}`,
-          }}>
-            <div style={{ width: 7, height: 7, borderRadius: "50%", background: C.orange, flexShrink: 0 }} />
-            <span style={{ fontSize: 13, color: C.orange, fontWeight: 600 }}>
-              {aiPending} call{aiPending > 1 ? "s" : ""} in AI queue
-            </span>
-          </div>
-        )}
       </div>
 
       {/* User + logout */}

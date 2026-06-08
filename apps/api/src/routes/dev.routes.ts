@@ -7,7 +7,6 @@ import { z } from "zod";
 import { existsSync, copyFileSync, mkdirSync, readFileSync } from "fs";
 import path from "path";
 import pool from "../db/pool";
-import { aiQueue } from "../queue/aiQueue";
 import { DEV_UPLOADS_DIR, uploadAudioObject } from "../services/storage.service";
 
 const router = Router();
@@ -73,8 +72,8 @@ router.post("/test-call", async (req, res) => {
   const insertRes = await pool.query(
     `INSERT INTO calls
        (source, source_file_key, call_direction, caller_phone, called_at,
-        duration_secs, employee_id, is_misc, audio_storage_key, ai_status)
-     VALUES ('korecall', $1, $2, $3, NOW(), $4, $5, FALSE, $6, 'pending')
+        duration_secs, employee_id, is_misc, audio_storage_key)
+     VALUES ('korecall', $1, $2, $3, NOW(), $4, $5, FALSE, $6)
      RETURNING id`,
     [
       `dev/${audioKey}`,
@@ -88,12 +87,7 @@ router.post("/test-call", async (req, res) => {
 
   const callId = insertRes.rows[0].id as string;
 
-  // Insert ai_jobs row and enqueue
-  await pool.query(
-    "INSERT INTO ai_jobs (call_id, status) VALUES ($1, 'queued')",
-    [callId]
-  );
-  await aiQueue.add({ callId }, { jobId: `call-${callId}` });
+    // No longer enqueue artificial AI jobs since AI pipeline is disabled.
 
   return res.json({
     call_id: callId,

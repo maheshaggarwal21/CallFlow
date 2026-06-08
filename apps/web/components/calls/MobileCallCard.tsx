@@ -1,21 +1,18 @@
 "use client";
 
 import { C, eClr, init, fmtS } from "@/lib/colors";
-import { callSentiment } from "@/lib/callSentiment";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import type { Call } from "@callflow/shared-types";
 
 interface Props {
   call: Call;
   onMore?: (call: Call) => void;
-  showSentiment?: boolean;
-  isLast?: boolean;
+    isLast?: boolean;
 }
 
-export default function MobileCallCard({ call, onMore, showSentiment = true, isLast = false }: Props) {
+export default function MobileCallCard({ call, onMore, isLast = false }: Props) {
   const isIn = call.call_direction === "inbound";
   const empClr = call.color_index !== null ? eClr(call.color_index) : null;
-  const sent = callSentiment(call);
   const sd = getStudentDisplay(call.caller_phone, call.student_name);
   const dt = new Date(call.called_at);
 
@@ -124,7 +121,7 @@ export default function MobileCallCard({ call, onMore, showSentiment = true, isL
           <span style={{ fontSize: 12, color: C.muted }}>
             {dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} | {dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
           </span>
-          {showSentiment && <span style={{ fontSize: 14 }}>{sent.e}</span>}
+          
           <span style={{ fontSize: 14, color: C.dim }}>{">"}</span>
         </div>
       </div>

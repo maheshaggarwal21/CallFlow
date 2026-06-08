@@ -1,4 +1,4 @@
-import { FtpSrv, FileSystem } from "ftp-srv";
+import { FtpSrv } from "ftp-srv";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
@@ -6,7 +6,6 @@ import { parseFile } from "music-metadata";
 import { parseFilename } from "./filenameParser";
 import pool from "./db/pool";
 import { uploadAudioObject } from "./services/storage";
-import { aiQueue } from "./services/aiQueue";
 
 const FTP_ROOT = path.join(os.tmpdir(), "korecall_ftp");
 if (!fs.existsSync(FTP_ROOT)) {
@@ -63,17 +62,16 @@ async function insertCall(data: {
   is_misc: boolean;
   misc_reason: string | null;
   audio_storage_key: string | null;
-  ai_status: "pending" | "failed" | "done";
   resolution_status: "resolved" | "escalated" | "no_response" | null;
 }) {
   const result = await pool.query(
     `INSERT INTO calls (
         source, source_file_key, device_id, line_number, intercom_code,
         call_direction, caller_phone, student_name, called_at, duration_secs,
-        employee_id, is_misc, misc_reason, audio_storage_key, ai_status, resolution_status
+        employee_id, is_misc, misc_reason, audio_storage_key, resolution_status
       ) VALUES (
         'korecall', $1, NULL, $2, $3, $4, $5, $6,
-        $7, $8, $9, $10, $11, $12, $13, $14
+        $7, $8, $9, $10, $11, $12, $13
       )
       ON CONFLICT (source_file_key) DO NOTHING
       RETURNING id`,
@@ -81,7 +79,7 @@ async function insertCall(data: {
       data.source_file_key, data.line_number, data.intercom_code,
       data.call_direction, data.caller_phone, data.student_name,
       data.called_at.toISOString(), data.duration_secs, data.employee_id,
-      data.is_misc, data.misc_reason, data.audio_storage_key, data.ai_status,
+      data.is_misc, data.misc_reason, data.audio_storage_key,
       data.resolution_status,
     ]
   );
@@ -122,15 +120,12 @@ async function processUploadedFile(
     const uploaded   = await uploadAudioObject(r2Key, fileStream, "audio/wav");
     const audioKey   = uploaded ? r2Key : null;
 
-    let callId: string | undefined;
-
     if (parsed) {
       const studentName = await findStudentName(parsed.callerPhone);
       const employeeId  = await findEmployeeId(parsed.lineNumber);
       const miscReason  = isMisc ? "Short duration — possible disconnect" : null;
-      const aiStatus    = isMisc ? "done" : audioKey ? "pending" : "failed";
 
-      callId = await insertCall({
+      await insertCall({
         source_file_key:   sourceKey,
         line_number:       parsed.lineNumber,
         intercom_code:     parsed.intercomCode,
@@ -143,7 +138,6 @@ async function processUploadedFile(
         is_misc:           isMisc,
         misc_reason:       miscReason,
         audio_storage_key: audioKey,
-        ai_status:         aiStatus,
         resolution_status: isMisc ? "no_response" : null,
       });
 
@@ -152,9 +146,8 @@ async function processUploadedFile(
       // Filename doesn't match any known pattern — store with what we can infer
       const { lineNumber, direction } = partialParse(fileName);
       const employeeId = await findEmployeeId(lineNumber);
-      const aiStatus   = audioKey ? "pending" : "failed";
 
-      callId = await insertCall({
+      await insertCall({
         source_file_key:   sourceKey,
         line_number:       lineNumber,
         intercom_code:     null,
@@ -167,20 +160,10 @@ async function processUploadedFile(
         is_misc:           isMisc,
         misc_reason:       "Filename could not be fully parsed",
         audio_storage_key: audioKey,
-        ai_status:         aiStatus,
         resolution_status: isMisc ? "no_response" : null,
       });
 
       console.warn(`⚠️  Stored with partial info: ${fileName}`);
-    }
-
-    if (callId && !isMisc && audioKey) {
-      await pool.query(
-        "INSERT INTO ai_jobs (call_id, status) VALUES ($1, 'queued')",
-        [callId]
-      );
-      await aiQueue.add({ callId }, { jobId: `call-${callId}` });
-      console.log(`🤖 AI job queued for call: ${callId}`);
     }
 
     // Stamp the FTP sync time so the dashboard shows "FTP sync active"
@@ -191,7 +174,7 @@ async function processUploadedFile(
   } catch (err) {
     console.error(`❌ Failed to process ${fileName}:`, err);
   } finally {
-    // ALWAYS clean up the downloaded file from the server disk so we don't run out of space!
+    // ALWAYS clean up the downloaded file from the server disk
     if (fs.existsSync(localFilePath)) {
       try {
         fs.unlinkSync(localFilePath);
@@ -207,7 +190,7 @@ async function processUploadedFile(
 export function startFtpServer() {
   const port = parseInt(process.env.FTP_SERVER_PORT || "21", 10);
   const pasvUrl = process.env.VPS_PUBLIC_IP || "168.144.68.199";
-  
+
   const ftpServer = new FtpSrv({
     url: `ftp://0.0.0.0:${port}`,
     pasv_url: pasvUrl,
@@ -218,14 +201,14 @@ export function startFtpServer() {
 
   ftpServer.on("login", ({ username, password, connection }, resolve, reject) => {
     if (username === process.env.FTP_USER && password === process.env.FTP_PASSWORD) {
-      
+
       // Listen to the STOR (upload complete) event for this connection
-      connection.on('STOR', async (error: Error | null, fileName: string) => {
+      connection.on("STOR", async (error: Error | null, fileName: string) => {
         if (error) {
           console.error("FTP STOR Error:", error);
           return;
         }
-        
+
         const isWav = fileName.toLowerCase().endsWith(".wav");
         if (!isWav) return;
 
