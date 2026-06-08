@@ -6,9 +6,7 @@ import { C, eClr, init, fmtS } from "@/lib/colors";
 import { fetcher, api } from "@/lib/api";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import type { Call } from "@callflow/shared-types";
-import { toLineChartData } from "@/lib/chartTransforms";
 import PieChart from "@/components/ui/PieChart";
-import LineChart from "@/components/ui/LineChart";
 import type { OverviewStats } from "@callflow/shared-types";
 
 // ── Stat card ───────────────────────────────────────────────────────────────
@@ -285,7 +283,7 @@ export default function OverviewPage() {
               ))}
             </div>
           </div>
-          
+        </div>
       </div>
       {/* Team Breakdown Grid */}
       {data?.team_split && data.team_split.length > 0 && (
