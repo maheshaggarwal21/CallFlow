@@ -38,7 +38,7 @@ export default function LoginPage() {
     try {
       const res = await api.post<LoginResponse>("/auth/login", { email, password });
       if (res.user.role === "owner") {
-        router.push("/dashboard/overview");
+        router.push("/dashboard/recordings");
       } else {
         router.push(`/dashboard/employees/${res.user.id}`);
       }

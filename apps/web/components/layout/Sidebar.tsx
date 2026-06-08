@@ -125,6 +125,11 @@ export default function Sidebar() {
       {/* Nav */}
       <nav style={{ flex: 1, padding: "12px 12px", overflowY: "auto" }}>
 
+
+            <SectionLabel label="Calls" />
+            <NavBtn id="recordings" label="Recordings" path="/dashboard/recordings" icon="▷" />
+            <NavBtn id="misc"       label="Misc Calls"  path="/dashboard/misc"       icon="◎" />
+
         {isOwner && (
           <>
             <SectionLabel label="Analytics" />
@@ -198,9 +203,6 @@ export default function Sidebar() {
           </>
         )}
 
-        <SectionLabel label="Calls" />
-        <NavBtn id="recordings" label="Recordings" path="/dashboard/recordings" icon="▷" />
-        <NavBtn id="misc"       label="Misc Calls"  path="/dashboard/misc"       icon="◎" />
 
         {isOwner && (
           <>
