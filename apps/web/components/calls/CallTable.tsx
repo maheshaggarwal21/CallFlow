@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { C, eClr, init, fmtS } from "@/lib/colors";
+import { fmtTime, fmtDate } from "@/lib/datetime";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import { api } from "@/lib/api";
 import Pagination from "@/components/ui/Pagination";
@@ -286,10 +287,10 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
               {/* Time */}
               <div style={{ padding: "0 6px" }}>
                 <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: C.text, lineHeight: 1.3 }}>
-                  {dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                  {fmtTime(dt)}
                 </p>
                 <p style={{ margin: 0, fontSize: 10, color: C.dim, lineHeight: 1.3 }}>
-                  {dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                  {fmtDate(dt)}
                 </p>
               </div>
 

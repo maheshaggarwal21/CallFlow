@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import useSWR, { mutate } from "swr";
 import { C, fmtL } from "@/lib/colors";
+import { fmtTime, fmtDateLong } from "@/lib/datetime";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import AudioPlayer from "@/components/ui/AudioPlayer";
 import WABtn from "@/components/ui/WABtn";
@@ -93,9 +94,9 @@ export default function CallPanel({ callId, onClose }: Props) {
               </p>
               {call && dt && (
                 <p style={{ margin: 0, fontSize: 12, color: C.muted, fontWeight: 500 }}>
-                  {dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                  {fmtDateLong(dt)}
                   {" · "}
-                  {dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                  {fmtTime(dt)}
                   {call.line_number ? ` · ${call.line_number}` : ""}
                   {call.intercom_code ? ` · ${call.intercom_code}` : ""}
                   {call.intercom_phone_number ? ` · ${call.intercom_phone_number}` : ""}
@@ -162,8 +163,8 @@ export default function CallPanel({ callId, onClose }: Props) {
                   {([
                     ["Phone",     call.caller_phone === "Unknown" ? "Unknown" : call.caller_phone],
                     ["Student",   sd?.isUnknown ? "—" : (sd?.label ?? "—")],
-                    ["Date",      dt?.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) ?? "—"],
-                    ["Time",      dt?.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) ?? "—"],
+                    ["Date",      dt ? fmtDateLong(dt) : "—"],
+                    ["Time",      dt ? fmtTime(dt) : "—"],
                     ["Line",      call.line_number ?? "—"],
                     ["Intercom",  call.intercom_code ?? "—"],
                     ["Intercom Phone", call.intercom_phone_number ?? "—"],

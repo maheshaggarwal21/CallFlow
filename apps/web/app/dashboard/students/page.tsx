@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import useSWR, { mutate } from "swr";
 import { C } from "@/lib/colors";
+import { fmtDateLong } from "@/lib/datetime";
 import { api, fetcher } from "@/lib/api";
 import type { Student } from "@callflow/shared-types";
 
@@ -198,7 +199,7 @@ export default function StudentsPage() {
                     {s.notes ?? <span style={{ color: C.dim }}>—</span>}
                   </td>
                   <td style={{ padding: "12px 16px", fontSize: 12, color: C.muted }}>
-                    {new Date(s.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    {fmtDateLong(s.created_at)}
                   </td>
                   <td style={{ padding: "12px 16px", fontSize: 12 }}>
                     <div style={{ display: "flex", gap: 8 }}>

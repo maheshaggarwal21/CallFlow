@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { C, eClr, init, fmtS } from "@/lib/colors";
 import { fetcher, api } from "@/lib/api";
 import { getStudentDisplay } from "@/lib/studentLabel";
+import { fmtTime, fmtDate } from "@/lib/datetime";
 import type { Call } from "@callflow/shared-types";
 import PieChart from "@/components/ui/PieChart";
 import type { OverviewStats } from "@callflow/shared-types";
@@ -422,8 +423,8 @@ export default function OverviewPage() {
                 </div>
                 <span style={{ fontSize: 12, fontWeight: 600, color: C.textSub, padding: "0 8px" }}>{fmtS(call.duration_secs)}</span>
                 <div style={{ padding: "0 8px" }}>
-                  <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: C.text }}>{dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</p>
-                  <p style={{ margin: 0, fontSize: 10, color: C.dim }}>{dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</p>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: C.text }}>{fmtTime(dt)}</p>
+                  <p style={{ margin: 0, fontSize: 10, color: C.dim }}>{fmtDate(dt)}</p>
                 </div>
               </div>
             );

@@ -1,6 +1,7 @@
 "use client";
 
 import { C, eClr, init, fmtS } from "@/lib/colors";
+import { fmtTime, fmtDate } from "@/lib/datetime";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import type { Call } from "@callflow/shared-types";
 
@@ -119,7 +120,7 @@ export default function MobileCallCard({ call, onMore, isLast = false }: Props) 
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12, color: C.muted }}>
-            {dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} | {dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+            {fmtTime(dt)} | {fmtDate(dt)}
           </span>
           
           <span style={{ fontSize: 14, color: C.dim }}>{">"}</span>

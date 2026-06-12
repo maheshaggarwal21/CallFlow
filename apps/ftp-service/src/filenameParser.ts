@@ -23,13 +23,19 @@ const MAIN_RE = new RegExp(
 
 function buildCalledAt(ts: string): Date | null {
   if (!/^\d{14}$/.test(ts)) return null;
+  // The KoreCall PBX writes the timestamp in local wall-clock time (IST).
+  // We pin the offset to +05:30 so JS does NOT reinterpret it in the server's
+  // own timezone (Vercel/VPS run in UTC, which previously shifted every call
+  // +5:30 in storage and again on display). With the offset, the stored instant
+  // is correct and renders back to the right IST time on the frontend.
   const iso =
     ts.slice(0, 4) + "-" +
     ts.slice(4, 6) + "-" +
     ts.slice(6, 8) + "T" +
     ts.slice(8, 10) + ":" +
     ts.slice(10, 12) + ":" +
-    ts.slice(12, 14);
+    ts.slice(12, 14) +
+    "+05:30";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d;
 }
