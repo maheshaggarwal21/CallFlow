@@ -63,6 +63,8 @@ This **runs** an FTP server (`ftp-srv`), it does not poll a remote one. On the `
 ### Web (`apps/web/`)
 - App Router under `app/` (`login/`, `dashboard/`), shared UI in `components/` (`calls`, `employees`, `layout`, `modals`, `ui`), `hooks/` (`useAuth`, `useSystemStatus`), helpers in `lib/`.
 - **All API calls go through `lib/api.ts`** (`api.get/post/patch/delete/postForm` + SWR `fetcher`). It always sends `credentials: "include"` (cookie auth) and on a `401` (except `/auth/login`) redirects to `/login`. Don't hand-roll `fetch`; extend this helper.
+- **Dashboard** (`dashboard/overview/`, owner-only) has a period selector with presets (Today, Yesterday, Last 7 Days, This Month, Last Month, All Time) **plus a "Custom Range"** option that reveals From/To date pickers; the selected range drives `date_from`/`date_to` on `/analytics/overview`, which skips MoM deltas whenever an explicit range is passed.
+- **Recordings** (`dashboard/recordings/`) uses `CallFilters` (phone, From/To dates, type, line, intercom, agent), `CallTable` (per-row inline play/pause fetching presigned URLs on demand), and `CallPanel` (the `›` detail drawer). The drawer renders `components/ui/AudioPlayer` — a seekable player (play/pause + progress scrubber) that restores playback position per-call from `sessionStorage`.
 
 ### Database
 Schema lives in `apps/api/src/db/migrations/*.sql`. Core tables: `employees`, `lines`, `intercoms`, `devices`, `calls`, `students`, `system_state`. The FTP ingest joins `students` (by phone) and `lines` (line → `employee_id`) to attribute each call.
@@ -85,6 +87,7 @@ Per-app `.env` files (templates in `.env.example`). The essentials:
 
 ## Reference docs
 
+- `README.md` — comprehensive onboarding + reference: architecture, full DB schema, per-app setup, env vars, and a complete REST API reference. Kept in sync with the code; use it as the canonical human-facing doc.
 - `CALLFLOW_PLAN_V6.md` — authoritative feature/spec/bug list and full DB schema.
 - `context.md` — working rules and project status.
 - `AGENTS.md` — broader agent guide. **Partially stale**: it still describes the removed mobile app, the AI/Bull/Redis queue, AWS S3 (now R2), Next.js 14 (now 15), docker-compose, and links several files that no longer exist (`problems.md`, `implementation-plan.md`, `developer-a-checklist.md`, `call.jsx`). Prefer this CLAUDE.md and the code for current reality.

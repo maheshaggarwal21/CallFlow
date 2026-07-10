@@ -37,7 +37,7 @@ function StatCard({ label, value, sub, icon, delta, accent = C.orange }: {
   );
 }
 
-type Period = "today" | "yesterday" | "week" | "month" | "last_month" | "all";
+type Period = "today" | "yesterday" | "week" | "month" | "last_month" | "all" | "custom";
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: "today",      label: "Today" },
@@ -46,10 +46,13 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "month",      label: "This Month" },
   { key: "last_month", label: "Last Month" },
   { key: "all",        label: "All Time" },
+  { key: "custom",     label: "Custom Range" },
 ];
 
 export default function OverviewPage() {
   const [period, setPeriod]                 = useState<Period>("month");
+  const [customFrom, setCustomFrom]         = useState<string>("");
+  const [customTo, setCustomTo]             = useState<string>("");
     const [playingId, setPlayingId]           = useState<string | null>(null);
   const [fetchingId, setFetchingId]         = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -113,11 +116,16 @@ export default function OverviewPage() {
         const e = new Date(today.getFullYear(), today.getMonth(), 0);
         return { date_from: fmt(startOfDay(s)), date_to: fmt(endOfDay(e)) };
       }
+      case "custom":
+        return {
+          date_from: customFrom || "2000-01-01",
+          ...(customTo ? { date_to: customTo } : {}),
+        };
       case "all":
       default:
         return { date_from: "2000-01-01" };
     }
-  }, [period]);
+  }, [period, customFrom, customTo]);
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -140,25 +148,60 @@ export default function OverviewPage() {
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: C.text, letterSpacing: -0.5 }}>Dashboard</h1>
           <p style={{ margin: "5px 0 0", fontSize: 15, color: C.muted, fontWeight: 400 }}>Overview · Max Music School</p>
         </div>
-        <select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value as Period)}
-          style={{
-            padding: "8px 36px 8px 14px", borderRadius: 20,
-            border: `1px solid ${C.border}`,
-            background: C.card, color: C.text,
-            fontSize: 14, fontWeight: 600,
-            cursor: "pointer", appearance: "none",
-            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238a8278' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "right 12px center",
-            outline: "none", boxShadow: C.shadow,
-          }}
-        >
-          {PERIODS.map((p) => (
-            <option key={p.key} value={p.key}>{p.label}</option>
-          ))}
-        </select>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {period === "custom" && (
+            <>
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo || undefined}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                aria-label="From date"
+                style={{
+                  padding: "8px 12px", borderRadius: 20,
+                  border: `1px solid ${C.border}`,
+                  background: C.card, color: C.text,
+                  fontSize: 14, fontWeight: 600,
+                  outline: "none", boxShadow: C.shadow, cursor: "pointer",
+                }}
+              />
+              <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>to</span>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={(e) => setCustomTo(e.target.value)}
+                aria-label="To date"
+                style={{
+                  padding: "8px 12px", borderRadius: 20,
+                  border: `1px solid ${C.border}`,
+                  background: C.card, color: C.text,
+                  fontSize: 14, fontWeight: 600,
+                  outline: "none", boxShadow: C.shadow, cursor: "pointer",
+                }}
+              />
+            </>
+          )}
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value as Period)}
+            style={{
+              padding: "8px 36px 8px 14px", borderRadius: 20,
+              border: `1px solid ${C.border}`,
+              background: C.card, color: C.text,
+              fontSize: 14, fontWeight: 600,
+              cursor: "pointer", appearance: "none",
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238a8278' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 12px center",
+              outline: "none", boxShadow: C.shadow,
+            }}
+          >
+            {PERIODS.map((p) => (
+              <option key={p.key} value={p.key}>{p.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Stat cards */}

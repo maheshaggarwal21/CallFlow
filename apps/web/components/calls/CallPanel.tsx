@@ -157,6 +157,9 @@ export default function CallPanel({ callId, onClose }: Props) {
 
           {!isLoading && call && (
             <>
+              {/* ── RECORDING PLAYER ── */}
+              <AudioPlayer url={call.audio_presigned_url ?? null} storageId={call.id} />
+
               {/* ── DETAILS TAB ── */}
               {tab === "details" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
