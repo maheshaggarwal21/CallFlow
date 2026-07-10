@@ -289,7 +289,7 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
                 <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: C.text, lineHeight: 1.3 }}>
                   {fmtTime(dt)}
                 </p>
-                <p style={{ margin: 0, fontSize: 10, color: C.muted, lineHeight: 1.3 }}>
+                <p style={{ margin: 0, fontSize: 10, color: C.textSub, lineHeight: 1.3 }}>
                   {fmtDate(dt)}
                 </p>
               </div>
