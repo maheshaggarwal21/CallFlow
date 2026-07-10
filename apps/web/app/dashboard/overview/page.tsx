@@ -140,21 +140,25 @@ export default function OverviewPage() {
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: C.text, letterSpacing: -0.5 }}>Dashboard</h1>
           <p style={{ margin: "5px 0 0", fontSize: 15, color: C.muted, fontWeight: 400 }}>Overview · Max Music School</p>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {PERIODS.map((p) => {
-            const isA = period === p.key;
-            return (
-              <button key={p.key} onClick={() => setPeriod(p.key)} style={{
-                padding: "8px 16px", borderRadius: 20,
-                border: `1px solid ${isA ? C.orange : C.border}`,
-                background: isA ? C.orange : "transparent",
-                color: isA ? "#fff" : C.muted,
-                cursor: "pointer", fontSize: 14, fontWeight: isA ? 700 : 500,
-                transition: "all 0.15s", whiteSpace: "nowrap",
-              }}>{p.label}</button>
-            );
-          })}
-        </div>
+        <select
+          value={period}
+          onChange={(e) => setPeriod(e.target.value as Period)}
+          style={{
+            padding: "8px 36px 8px 14px", borderRadius: 20,
+            border: `1px solid ${C.border}`,
+            background: C.card, color: C.text,
+            fontSize: 14, fontWeight: 600,
+            cursor: "pointer", appearance: "none",
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238a8278' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 12px center",
+            outline: "none", boxShadow: C.shadow,
+          }}
+        >
+          {PERIODS.map((p) => (
+            <option key={p.key} value={p.key}>{p.label}</option>
+          ))}
+        </select>
       </div>
 
       {/* Stat cards */}
@@ -424,7 +428,7 @@ export default function OverviewPage() {
                 <span style={{ fontSize: 12, fontWeight: 600, color: C.textSub, padding: "0 8px" }}>{fmtS(call.duration_secs)}</span>
                 <div style={{ padding: "0 8px" }}>
                   <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: C.text }}>{fmtTime(dt)}</p>
-                  <p style={{ margin: 0, fontSize: 10, color: C.dim }}>{fmtDate(dt)}</p>
+                  <p style={{ margin: 0, fontSize: 10, color: C.muted }}>{fmtDate(dt)}</p>
                 </div>
               </div>
             );
