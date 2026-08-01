@@ -112,5 +112,13 @@ ehthumbs.db
 # Secrets (catch-all)
 secrets/
 
+# Clock-drift repair output (see apps/api/src/fixClockDrift.ts).
+# The hourly cron writes a rollback JSON per run and keeps the newest 30, so
+# these accumulate on the server and are runtime state, not source.
+apps/api/backups/
+apps/api/logs/
+clock-drift-backup-*.json
+legacy-offset-backup-*.json
+
 *.wavreleases/*.apk
 .claude
