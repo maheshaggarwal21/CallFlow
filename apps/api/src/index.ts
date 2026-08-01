@@ -24,11 +24,22 @@ const app = express();
 // not nginx's 127.0.0.1 (which would bucket all users together).
 app.set("trust proxy", 1);
 
-// Allow both local dev and the deployed frontend domain
+// Allow both local dev and the deployed frontend domain.
+// Setting WEB_ORIGIN REPLACES the default rather than adding to it, so the
+// localhost fallback below is dead in every deployed environment — hence the
+// explicit dev-only entries.
 const allowedOrigins = (process.env.WEB_ORIGIN || "http://localhost:3000")
   .split(",")
   .map((o) => o.trim().replace(/\/$/, ""))  // strip any accidental trailing slash
   .filter(Boolean);
+
+// Local dev talks to a deployed API often enough to be worth allowing, but only
+// off-production — never widen the production allowlist to include localhost.
+if (process.env.NODE_ENV !== "production") {
+  for (const o of ["http://localhost:3000", "http://127.0.0.1:3000"]) {
+    if (!allowedOrigins.includes(o)) allowedOrigins.push(o);
+  }
+}
 
 app.use(
   cors({
@@ -36,7 +47,12 @@ app.use(
       // Allow requests with no Origin header (curl, mobile app, server-to-server)
       if (!origin) return cb(null, true);
       if (allowedOrigins.includes(origin)) return cb(null, true);
-      cb(new Error(`CORS: origin ${origin} not allowed`));
+      // Disallowed origin is a CLIENT problem, so answer without the
+      // Access-Control-Allow-Origin header and let the browser block it.
+      // Passing an Error here instead made every stray request — including
+      // internet background noise hitting the bare IP — surface as an
+      // unhandled 500 with a stack trace in the error log.
+      cb(null, false);
     },
     credentials: true,
   })
