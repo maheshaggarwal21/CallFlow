@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, use } from "react";
+import { useEffect, useMemo, useState, use } from "react";
 import useSWR from "swr";
 import { C, eClr, init, fmtS } from "@/lib/colors";
 import { fetcher } from "@/lib/api";
@@ -8,19 +8,11 @@ import { useAuth } from "@/hooks/useAuth";
 import CallTable from "@/components/calls/CallTable";
 import CallPanel from "@/components/calls/CallPanel";
 import BarChart from "@/components/ui/BarChart";
+import PeriodSelect from "@/components/ui/PeriodSelect";
 import { toBarChartData } from "@/lib/chartTransforms";
+import { usePeriodRange } from "@/hooks/usePeriodRange";
+import { activityPhrase, periodPhrase } from "@/lib/period";
 import type { Employee, EmployeeAnalytics, Call, Paginated } from "@callflow/shared-types";
-
-type Period = "today" | "yesterday" | "week" | "month" | "last_month" | "all";
-
-const PERIODS: { key: Period; label: string }[] = [
-  { key: "today",      label: "Today" },
-  { key: "yesterday",  label: "Yesterday" },
-  { key: "week",       label: "Last 7 Days" },
-  { key: "month",      label: "This Month" },
-  { key: "last_month", label: "Last Month" },
-  { key: "all",        label: "All Time" },
-];
 
 const PAGE_SIZE = 25;
 
@@ -29,63 +21,17 @@ export default function EmployeePage({ params }: { params: Promise<{ id: string 
   const { id: myId, isOwner, isLoading: authLoading } = useAuth();
   const effectiveId = isOwner ? id : myId;
 
-  const [period,         setPeriod]         = useState<Period>("today");
+  const { period, range, params: rangeParams, selectProps } = usePeriodRange();
   const [page,           setPage]           = useState(1);
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
 
-  const dateRange = useMemo(() => {
-    const today = new Date();
-    const endOfDay = (d: Date) => {
-      const copy = new Date(d);
-      copy.setHours(23, 59, 59, 999);
-      return copy;
-    };
-    const startOfDay = (d: Date) => {
-      const copy = new Date(d);
-      copy.setHours(0, 0, 0, 0);
-      return copy;
-    };
-    const format = (d: Date) => d.toISOString().slice(0, 10);
-
-    switch (period) {
-      case "today": {
-        const start = startOfDay(today);
-        const end = endOfDay(today);
-        return { date_from: format(start), date_to: format(end) };
-      }
-      case "yesterday": {
-        const y = new Date(today);
-        y.setDate(y.getDate() - 1);
-        return { date_from: format(startOfDay(y)), date_to: format(endOfDay(y)) };
-      }
-      case "week": {
-        const start = new Date(today);
-        start.setDate(start.getDate() - 6);
-        return { date_from: format(startOfDay(start)), date_to: format(endOfDay(today)) };
-      }
-      case "month": {
-        const start = new Date(today.getFullYear(), today.getMonth(), 1);
-        return { date_from: format(startOfDay(start)), date_to: format(endOfDay(today)) };
-      }
-      case "last_month": {
-        const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        const end = new Date(today.getFullYear(), today.getMonth(), 0);
-        return { date_from: format(startOfDay(start)), date_to: format(endOfDay(end)) };
-      }
-      case "all":
-      default:
-        return {};
-    }
-  }, [period]);
+  // Page 3 of "All Time" is meaningless once the range narrows to a single day.
+  useEffect(() => { setPage(1); }, [rangeParams, effectiveId]);
 
   const analyticsQuery = useMemo(() => {
     if (!effectiveId) return null;
-    const p = new URLSearchParams();
-    if (dateRange.date_from) p.set("date_from", dateRange.date_from);
-    if (dateRange.date_to) p.set("date_to", dateRange.date_to);
-    const qs = p.toString();
-    return `/analytics/employee/${effectiveId}${qs ? `?${qs}` : ""}`;
-  }, [effectiveId, dateRange]);
+    return `/analytics/employee/${effectiveId}${rangeParams ? `?${rangeParams}` : ""}`;
+  }, [effectiveId, rangeParams]);
 
   const { data: employee } = useSWR<Employee>(effectiveId ? `/employees/${effectiveId}` : null, fetcher);
   const { data: analytics } = useSWR<EmployeeAnalytics>(analyticsQuery, fetcher);
@@ -97,10 +43,10 @@ export default function EmployeePage({ params }: { params: Promise<{ id: string 
     p.set("offset",      String((page - 1) * PAGE_SIZE));
     p.set("employee_id", effectiveId);
     p.set("is_misc",     "false");
-    if (dateRange.date_from) p.set("date_from", dateRange.date_from);
-    if (dateRange.date_to) p.set("date_to", dateRange.date_to);
+    if (range.date_from) p.set("date_from", range.date_from);
+    if (range.date_to) p.set("date_to", range.date_to);
     return `/calls?${p.toString()}`;
-  }, [page, effectiveId, dateRange]);
+  }, [page, effectiveId, range]);
 
   const { data: callsData, isLoading } = useSWR<Paginated<Call>>(callQuery, fetcher, { keepPreviousData: true });
 
@@ -136,25 +82,13 @@ export default function EmployeePage({ params }: { params: Promise<{ id: string 
           </div>
         </div>
 
-        {/* Period picker */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {PERIODS.map((p) => {
-            const isA = p.key === period;
-            return (
-              <button key={p.key} onClick={() => setPeriod(p.key)} style={{
-                padding: "8px 16px", borderRadius: 20, border: `1px solid ${isA ? C.orange : C.border}`,
-                background: isA ? C.orange : "transparent", color: isA ? "#fff" : C.muted,
-                fontWeight: isA ? 700 : 500, fontSize: 14, cursor: "pointer", transition: "all 0.15s",
-              }}>{p.label}</button>
-            );
-          })}
-        </div>
+        <PeriodSelect {...selectProps} />
       </div>
 
       {/* Stat cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
         {[
-          { label: "Total Calls",  value: analytics?.total_calls ?? "—",                       sub: "In selected range", icon: "📞", accent: C.orange },
+          { label: "Total Calls",  value: analytics?.total_calls ?? "—",                       sub: `Calls ${periodPhrase(period)}`, icon: "📞", accent: C.orange },
           { label: "Inbound",      value: analytics?.inbound ?? "—",                            sub: "Answered",          icon: "📥", accent: C.green },
           { label: "Outbound",     value: analytics?.outbound ?? "—",                           sub: "Dialed",            icon: "📤", accent: C.teal },
           { label: "Avg Duration", value: analytics ? fmtS(analytics.avg_duration_secs) : "—", sub: "Per call",          icon: "⏱", accent: C.blue },
@@ -168,12 +102,12 @@ export default function EmployeePage({ params }: { params: Promise<{ id: string 
       </div>
 
       {/* Daily breakdown */}
-      {analytics?.daily_breakdown && analytics.daily_breakdown.length > 0 && (
+      {analytics && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "24px 28px", boxShadow: C.shadow }}>
           <div style={{ marginBottom: 20 }}>
-            <p style={{ margin: "0 0 3px", fontSize: 15, fontWeight: 700, color: C.text }}>Daily Breakdown</p>
+            <p style={{ margin: "0 0 3px", fontSize: 15, fontWeight: 700, color: C.text }}>Activity Breakdown</p>
             <p style={{ margin: 0, fontSize: 13, color: C.muted }}>
-              Weekly call distribution for {employee.name.split(" ")[0]}
+              {activityPhrase(period)} for {employee.name.split(" ")[0]}
             </p>
           </div>
           <BarChart data={toBarChartData(analytics.daily_breakdown)} />

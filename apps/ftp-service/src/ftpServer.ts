@@ -3,7 +3,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
 import { parseFile } from "music-metadata";
-import { parseFilename } from "./filenameParser";
+import { parseFilename, extractCalledAt } from "./filenameParser";
 import pool from "./db/pool";
 import { uploadAudioObject } from "./services/storage";
 
@@ -146,6 +146,10 @@ async function processUploadedFile(
       // Filename doesn't match any known pattern — store with what we can infer
       const { lineNumber, direction } = partialParse(fileName);
       const employeeId = await findEmployeeId(lineNumber);
+      // Prefer the timestamp embedded in the filename. Falling back to `new Date()`
+      // dates the call to its *upload* time, which is wrong by however long the PBX
+      // had been queueing — routinely 15+ hours after an overnight outage.
+      const calledAt = extractCalledAt(fileName) ?? new Date();
 
       await insertCall({
         source_file_key:   sourceKey,
@@ -154,7 +158,7 @@ async function processUploadedFile(
         call_direction:    direction,
         caller_phone:      "Unknown",
         student_name:      null,
-        called_at:         new Date(),
+        called_at:         calledAt,
         duration_secs:     durationSecs,
         employee_id:       employeeId,
         is_misc:           isMisc,

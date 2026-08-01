@@ -115,11 +115,29 @@ export type LineStatus = {
   call_count_today: number;
 };
 
+/**
+ * One bucket of call volume. The granularity follows the selected date range
+ * (hourly for a single day, daily up to two months, monthly beyond), so
+ * `day_label` is a display label — "2p", "01 Aug" or "Aug 26" — not always a day.
+ */
+export type ActivityPoint = {
+  /** Bucket key: `YYYY-MM-DD HH`, `YYYY-MM-DD` or `YYYY-MM`, aligned to IST. */
+  date: string;
+  day_label: string;
+  inbound: number;
+  outbound: number;
+  total: number;
+};
+
+/** Resolved analytics window, as instants. */
+export type AnalyticsRange = { from: string; to: string };
+
 export type OverviewStats = {
   total_calls: number;
   inbound: number;
   outbound: number;
   avg_duration_secs: number;
+  /** Change vs the equal-length window immediately before the selected range. */
   mom_delta: {
     total_pct: number | null;
     inbound_pct: number | null;
@@ -128,13 +146,17 @@ export type OverviewStats = {
   };
   direction_split: { inbound_pct: number; outbound_pct: number };
   team_split: Array<{ employee_id: string; name: string; count: number; pct: number; color_index: number }>;
-  weekly_activity: Array<{ day_label: string; inbound: number; outbound: number }>;
+  /** Non-misc calls in range with no employee attached (unassigned line). */
+  unassigned_count: number;
+  unassigned_pct: number;
+  weekly_activity: ActivityPoint[];
   resolved_count: number;
   escalated_count: number;
   no_response_count: number;
   top_line: { line_number: string; call_count: number } | null;
   line_status: LineStatus[];
   recent_calls: Call[];
+  range: AnalyticsRange;
 };
 
 export type EmployeeAnalytics = {
@@ -142,13 +164,8 @@ export type EmployeeAnalytics = {
   inbound: number;
   outbound: number;
   avg_duration_secs: number;
-  daily_breakdown: Array<{
-    date: string;
-    day_label: string;
-    inbound: number;
-    outbound: number;
-    total: number;
-  }>;
+  daily_breakdown: ActivityPoint[];
+  range: AnalyticsRange;
 };
 
 export type MiscCountStats = {

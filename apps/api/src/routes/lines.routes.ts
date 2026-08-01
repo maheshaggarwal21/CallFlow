@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requireOwner } from "../middleware/requireOwner";
+import { IST_TODAY_START } from "../lib/dateRange";
 
 const router = Router();
 
@@ -24,8 +25,8 @@ router.get("/", async (_req, res) => {
       "SELECT line_number, COUNT(*) AS cnt " +
       "FROM calls " +
       "WHERE line_number IS NOT NULL " +
-        "AND called_at >= CURRENT_DATE " +
-        "AND called_at < CURRENT_DATE + INTERVAL '1 day' " +
+        `AND called_at >= ${IST_TODAY_START} ` +
+        `AND called_at < ${IST_TODAY_START} + INTERVAL '1 day' ` +
       "GROUP BY line_number " +
     ") c ON c.line_number = l.line_number " +
     "ORDER BY l.line_number ASC"

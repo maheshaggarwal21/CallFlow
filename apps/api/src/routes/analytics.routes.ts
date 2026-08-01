@@ -2,35 +2,95 @@ import { Router } from "express";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requireOwner } from "../middleware/requireOwner";
+import {
+  IST_TODAY_START,
+  bucketKeyExpr,
+  enumerateBuckets,
+  pickBucket,
+  resolveRange,
+} from "../lib/dateRange";
 
 const router = Router();
 
 router.use(requireAuth);
 
-function parseMonth(month?: string) {
-  if (!month) return null;
-  const parts = month.split("-");
-  if (parts.length !== 2) return null;
-  const year = Number(parts[0]);
-  const monthIndex = Number(parts[1]) - 1;
-  if (Number.isNaN(year) || Number.isNaN(monthIndex) || monthIndex < 0 || monthIndex > 11) {
-    return null;
+type ActivityPoint = {
+  date: string;
+  day_label: string;
+  inbound: number;
+  outbound: number;
+  total: number;
+};
+
+/**
+ * Call volume bucketed across `[start, end)`, aligned to IST day boundaries.
+ *
+ * The granularity follows the selected range (hourly for a single day, daily up
+ * to two months, monthly beyond) so the chart always sums to the stat cards
+ * above it — the old version hard-coded "current Mon–Sun week" regardless of
+ * the filter, which is why a "Today" selection showed a full week of bars.
+ */
+async function buildActivitySeries(
+  start: Date,
+  end: Date,
+  employeeId?: string | null
+): Promise<ActivityPoint[]> {
+  const values: any[] = [start.toISOString(), end.toISOString()];
+  let scope = "";
+  if (employeeId) {
+    values.push(employeeId);
+    scope = ` AND employee_id = $${values.length}`;
   }
-  const start = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0));
-  const end = new Date(Date.UTC(year, monthIndex + 1, 1, 0, 0, 0));
-  return { start, end };
+  const where = `WHERE is_misc = FALSE AND called_at >= $1 AND called_at < $2${scope}`;
+
+  let spanStart = start;
+  let spanEnd = end;
+
+  // "All Time" spans decades of empty calendar; clamp wide ranges to the window
+  // that actually holds calls before enumerating buckets.
+  if (pickBucket(start, end) === "month") {
+    const bounds = await pool.query(
+      `SELECT MIN(called_at) AS min_at, MAX(called_at) AS max_at FROM calls ${where}`,
+      values
+    );
+    const minAt = bounds.rows[0]?.min_at ? new Date(bounds.rows[0].min_at) : null;
+    const maxAt = bounds.rows[0]?.max_at ? new Date(bounds.rows[0].max_at) : null;
+    if (!minAt || !maxAt) return [];
+    spanStart = new Date(Math.max(start.getTime(), minAt.getTime()));
+    spanEnd = new Date(Math.min(end.getTime(), maxAt.getTime() + 1));
+  }
+
+  const bucket = pickBucket(spanStart, spanEnd);
+  const keyExpr = bucketKeyExpr(bucket);
+
+  const rowsRes = await pool.query(
+    `SELECT ${keyExpr} AS bucket_key, ` +
+      "COUNT(*) FILTER (WHERE call_direction='inbound') AS inbound, " +
+      "COUNT(*) FILTER (WHERE call_direction='outbound') AS outbound, " +
+      "COUNT(*) AS total " +
+    `FROM calls ${where} ` +
+    `GROUP BY ${keyExpr} ORDER BY 1 ASC`,
+    values
+  );
+
+  const byKey = new Map<string, { inbound: number; outbound: number; total: number }>();
+  rowsRes.rows.forEach((r) => {
+    byKey.set(String(r.bucket_key), {
+      inbound: Number(r.inbound || 0),
+      outbound: Number(r.outbound || 0),
+      total: Number(r.total || 0),
+    });
+  });
+
+  return enumerateBuckets(spanStart, spanEnd, bucket).map(({ key, label }) => {
+    const d = byKey.get(key) || { inbound: 0, outbound: 0, total: 0 };
+    return { date: key, day_label: label, inbound: d.inbound, outbound: d.outbound, total: d.total };
+  });
 }
 
-function getWeekRange() {
-  const now = new Date();
-  const utc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const day = utc.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day; // Monday start
-  const start = new Date(utc);
-  start.setUTCDate(utc.getUTCDate() + diff);
-  const end = new Date(start);
-  end.setUTCDate(start.getUTCDate() + 7);
-  return { start, end };
+function pctDelta(current: number, previous: number): number | null {
+  if (previous <= 0) return null;
+  return Math.round(((current - previous) / previous) * 100);
 }
 
 router.get("/misc-count", async (_req, res) => {
@@ -56,68 +116,44 @@ router.get("/overview", requireOwner, async (req, res) => {
   const dateFromParam = typeof req.query.date_from === "string" ? req.query.date_from : null;
   const dateToParam   = typeof req.query.date_to   === "string" ? req.query.date_to   : null;
 
-  let start: Date, end: Date, skipMomDelta: boolean;
+  const { start, end } = resolveRange(dateFromParam, dateToParam);
 
-  if (dateFromParam || dateToParam) {
-    const now = new Date();
-    start = dateFromParam ? new Date(dateFromParam + "T00:00:00.000Z") : new Date(0);
-    end   = dateToParam   ? new Date(dateToParam   + "T23:59:59.999Z") : now;
-    skipMomDelta = true;
-  } else {
-    const monthParam = typeof req.query.month === "string" ? req.query.month : undefined;
-    const monthRange = parseMonth(monthParam);
-    const now = new Date();
-    start = monthRange?.start || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    end   = monthRange?.end   || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-    skipMomDelta = false;
-  }
+  // Compare against the equal-length window immediately before the selection so
+  // the delta stays meaningful for every preset, not just whole months.
+  const spanMs = Math.max(end.getTime() - start.getTime(), 1);
+  const prevEnd = start;
+  const prevStart = new Date(start.getTime() - spanMs);
 
-  const prevStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1));
-  const prevEnd   = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const TOTALS_SQL =
+    "SELECT " +
+      "COUNT(*) AS total, " +
+      "COUNT(*) FILTER (WHERE call_direction='inbound') AS inbound, " +
+      "COUNT(*) FILTER (WHERE call_direction='outbound') AS outbound, " +
+      "COALESCE(ROUND(AVG(duration_secs)), 0) AS avg_duration_secs " +
+    "FROM calls WHERE is_misc = FALSE AND called_at >= $1 AND called_at < $2";
 
   const [totalsRes, prevRes] = await Promise.all([
-    pool.query(
-      "SELECT " +
-        "COUNT(*) AS total, " +
-        "COUNT(*) FILTER (WHERE call_direction='inbound') AS inbound, " +
-        "COUNT(*) FILTER (WHERE call_direction='outbound') AS outbound, " +
-        "COALESCE(ROUND(AVG(duration_secs)), 0) AS avg_duration_secs " +
-      "FROM calls WHERE is_misc = FALSE AND called_at >= $1 AND called_at < $2",
-      [start.toISOString(), end.toISOString()]
-    ),
-    pool.query(
-      "SELECT " +
-        "COUNT(*) AS total, " +
-        "COUNT(*) FILTER (WHERE call_direction='inbound') AS inbound, " +
-        "COUNT(*) FILTER (WHERE call_direction='outbound') AS outbound, " +
-        "COALESCE(ROUND(AVG(duration_secs)), 0) AS avg_duration_secs " +
-      "FROM calls WHERE is_misc = FALSE AND called_at >= $1 AND called_at < $2",
-      [prevStart.toISOString(), prevEnd.toISOString()]
-    ),
+    pool.query(TOTALS_SQL, [start.toISOString(), end.toISOString()]),
+    pool.query(TOTALS_SQL, [prevStart.toISOString(), prevEnd.toISOString()]),
   ]);
 
   const totals = totalsRes.rows[0];
   const prev = prevRes.rows[0];
 
-  const totalCalls = Number(totals.total || 0);
-  const inbound = Number(totals.inbound || 0);
-  const outbound = Number(totals.outbound || 0);
+  const totalCalls  = Number(totals.total || 0);
+  const inbound     = Number(totals.inbound || 0);
+  const outbound    = Number(totals.outbound || 0);
   const avgDuration = Number(totals.avg_duration_secs || 0);
 
-  const prevTotal = Number(prev.total || 0);
-  const prevInbound = Number(prev.inbound || 0);
+  const prevTotal    = Number(prev.total || 0);
+  const prevInbound  = Number(prev.inbound || 0);
   const prevOutbound = Number(prev.outbound || 0);
-  const prevAvg = Number(prev.avg_duration_secs || 0);
+  const prevAvg      = Number(prev.avg_duration_secs || 0);
 
-  const momDelta = skipMomDelta ? {
-    total_pct: null as number | null,
-    inbound_pct: null as number | null,
-    outbound_pct: null as number | null,
-    avg_duration_secs: 0,
-  } : {
-    total_pct: prevTotal > 0 ? Math.round(((totalCalls - prevTotal) / prevTotal) * 100) : null,
-    inbound_pct: prevInbound > 0 ? Math.round(((inbound - prevInbound) / prevInbound) * 100) : null,
-    outbound_pct: prevOutbound > 0 ? Math.round(((outbound - prevOutbound) / prevOutbound) * 100) : null,
+  const momDelta = {
+    total_pct: pctDelta(totalCalls, prevTotal),
+    inbound_pct: pctDelta(inbound, prevInbound),
+    outbound_pct: pctDelta(outbound, prevOutbound),
     avg_duration_secs: Math.round(avgDuration - prevAvg),
   };
 
@@ -126,9 +162,10 @@ router.get("/overview", requireOwner, async (req, res) => {
     outbound_pct: totalCalls > 0 ? Math.round((outbound / totalCalls) * 100) : 0,
   };
 
+  // Percentages are taken against every non-misc call in range (not just the
+  // attributed ones) so the agent bars and the donut centre agree.
   const teamRes = await pool.query(
-    "SELECT c.employee_id, e.name, e.color_index, COUNT(*) AS count, " +
-      "ROUND(100.0 * COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0)) AS pct " +
+    "SELECT c.employee_id, e.name, e.color_index, COUNT(*) AS count " +
     "FROM calls c " +
     "JOIN employees e ON e.id = c.employee_id " +
     "WHERE c.is_misc = FALSE AND c.called_at >= $1 AND c.called_at < $2 " +
@@ -137,38 +174,28 @@ router.get("/overview", requireOwner, async (req, res) => {
     [start.toISOString(), end.toISOString()]
   );
 
-  const { start: weekStart, end: weekEnd } = getWeekRange();
-  const weeklyRes = await pool.query(
-    "SELECT date_trunc('day', called_at) AS day, " +
-      "COUNT(*) FILTER (WHERE call_direction='inbound') AS inbound, " +
-      "COUNT(*) FILTER (WHERE call_direction='outbound') AS outbound " +
-    "FROM calls " +
-    "WHERE is_misc = FALSE AND called_at >= $1 AND called_at < $2 " +
-    "GROUP BY day ORDER BY day ASC",
-    [weekStart.toISOString(), weekEnd.toISOString()]
-  );
-
-  const weeklyMap = new Map<string, { inbound: number; outbound: number }>();
-  weeklyRes.rows.forEach((row) => {
-    const key = new Date(row.day).toISOString().slice(0, 10);
-    weeklyMap.set(key, { inbound: Number(row.inbound || 0), outbound: Number(row.outbound || 0) });
+  const teamSplit = teamRes.rows.map((r) => {
+    const count = Number(r.count || 0);
+    return {
+      employee_id: r.employee_id,
+      name: r.name,
+      count,
+      pct: totalCalls > 0 ? Math.round((count / totalCalls) * 100) : 0,
+      color_index: Number(r.color_index || 0),
+    };
   });
 
-  const weekLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const weeklyActivity = weekLabels.map((label, idx) => {
-    const day = new Date(weekStart);
-    day.setUTCDate(weekStart.getUTCDate() + idx);
-    const key = day.toISOString().slice(0, 10);
-    const data = weeklyMap.get(key) || { inbound: 0, outbound: 0 };
-    return { day_label: label, inbound: data.inbound, outbound: data.outbound };
-  });
+  const attributed = teamSplit.reduce((sum, t) => sum + t.count, 0);
+  const unassignedCount = Math.max(totalCalls - attributed, 0);
+
+  const weeklyActivity = await buildActivitySeries(start, end);
 
   const resRes = await pool.query(
     "SELECT " +
       "COUNT(*) FILTER (WHERE resolution_status = 'resolved') AS resolved_count, " +
       "COUNT(*) FILTER (WHERE resolution_status = 'escalated') AS escalated_count, " +
       "COUNT(*) FILTER (WHERE resolution_status = 'no_response') AS no_response_count " +
-    "FROM calls WHERE called_at >= $1 AND called_at < $2",
+    "FROM calls WHERE is_misc = FALSE AND called_at >= $1 AND called_at < $2",
     [start.toISOString(), end.toISOString()]
   );
 
@@ -188,8 +215,8 @@ router.get("/overview", requireOwner, async (req, res) => {
       "SELECT line_number, COUNT(*) AS cnt " +
       "FROM calls " +
       "WHERE line_number IS NOT NULL " +
-        "AND called_at >= CURRENT_DATE " +
-        "AND called_at < CURRENT_DATE + INTERVAL '1 day' " +
+        `AND called_at >= ${IST_TODAY_START} ` +
+        `AND called_at < ${IST_TODAY_START} + INTERVAL '1 day' ` +
       "GROUP BY line_number " +
     ") c ON c.line_number = l.line_number " +
     "ORDER BY l.line_number ASC"
@@ -217,13 +244,9 @@ router.get("/overview", requireOwner, async (req, res) => {
     avg_duration_secs: avgDuration,
     mom_delta: momDelta,
     direction_split: directionSplit,
-    team_split: teamRes.rows.map((r) => ({
-      employee_id: r.employee_id,
-      name: r.name,
-      count: Number(r.count || 0),
-      pct: Number(r.pct || 0),
-      color_index: Number(r.color_index || 0),
-    })),
+    team_split: teamSplit,
+    unassigned_count: unassignedCount,
+    unassigned_pct: totalCalls > 0 ? Math.round((unassignedCount / totalCalls) * 100) : 0,
     weekly_activity: weeklyActivity,
     resolved_count: Number(resRes.rows[0]?.resolved_count || 0),
     escalated_count: Number(resRes.rows[0]?.escalated_count || 0),
@@ -237,6 +260,7 @@ router.get("/overview", requireOwner, async (req, res) => {
       call_count_today: Number(r.call_count_today || 0),
     })),
     recent_calls: recentRes.rows,
+    range: { from: start.toISOString(), to: end.toISOString() },
   });
 });
 
@@ -251,21 +275,18 @@ router.get("/employee/:id", async (req, res) => {
   }
 
   const dateFrom = typeof req.query.date_from === "string" ? req.query.date_from : null;
-  const dateTo = typeof req.query.date_to === "string" ? req.query.date_to : null;
+  const dateTo   = typeof req.query.date_to   === "string" ? req.query.date_to   : null;
 
-  const filters: string[] = ["employee_id = $1", "is_misc = FALSE"];
-  const values: any[] = [id];
+  // Same range resolution as /overview — an unfiltered request means all time
+  // here, so only clamp when the caller actually sent a range.
+  const hasRange = Boolean(dateFrom || dateTo);
+  const { start, end } = hasRange
+    ? resolveRange(dateFrom, dateTo)
+    : { start: new Date(0), end: new Date(Date.now() + 24 * 60 * 60 * 1000) };
 
-  if (dateFrom) {
-    values.push(dateFrom);
-    filters.push(`called_at >= $${values.length}`);
-  }
-  if (dateTo) {
-    values.push(dateTo);
-    filters.push(`called_at <= $${values.length}`);
-  }
-
-  const whereClause = `WHERE ${filters.join(" AND ")}`;
+  const values = [id, start.toISOString(), end.toISOString()];
+  const whereClause =
+    "WHERE employee_id = $1 AND is_misc = FALSE AND called_at >= $2 AND called_at < $3";
 
   const totalsRes = await pool.query(
     "SELECT " +
@@ -277,58 +298,17 @@ router.get("/employee/:id", async (req, res) => {
     values
   );
 
-  const { start: weekStart, end: weekEnd } = getWeekRange();
-  const weeklyRes = await pool.query(
-    "SELECT date_trunc('day', called_at) AS day, " +
-      "COUNT(*) FILTER (WHERE call_direction='inbound') AS inbound, " +
-      "COUNT(*) FILTER (WHERE call_direction='outbound') AS outbound, " +
-      "COUNT(*) AS total " +
-    "FROM calls " +
-    "WHERE employee_id = $1 AND is_misc = FALSE AND called_at >= $2 AND called_at < $3 " +
-    "GROUP BY day ORDER BY day ASC",
-    [id, weekStart.toISOString(), weekEnd.toISOString()]
-  );
+  const daily_breakdown = await buildActivitySeries(start, end, id);
 
-  const weeklyMap = new Map<string, { inbound: number; outbound: number; total: number }>();
-  weeklyRes.rows.forEach((row) => {
-    const key = new Date(row.day).toISOString().slice(0, 10);
-    weeklyMap.set(key, {
-      inbound: Number(row.inbound || 0),
-      outbound: Number(row.outbound || 0),
-      total: Number(row.total || 0),
-    });
-  });
-
-  const weekLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const daily_breakdown = weekLabels.map((label, idx) => {
-    const day = new Date(weekStart);
-    day.setUTCDate(weekStart.getUTCDate() + idx);
-    const key = day.toISOString().slice(0, 10);
-    const data = weeklyMap.get(key) || { inbound: 0, outbound: 0, total: 0 };
-    return {
-      date: key,
-      day_label: label,
-      inbound: data.inbound,
-      outbound: data.outbound,
-      total: data.total,
-    };
-  });
-
-  const row = totalsRes.rows[0] || {
-    total_calls: 0,
-    inbound: 0,
-    outbound: 0,
-    avg_duration_secs: 0,
-    
-  };
+  const row = totalsRes.rows[0] || {};
 
   return res.json({
     total_calls: Number(row.total_calls || 0),
     inbound: Number(row.inbound || 0),
     outbound: Number(row.outbound || 0),
     avg_duration_secs: Number(row.avg_duration_secs || 0),
-    
     daily_breakdown,
+    range: { from: start.toISOString(), to: end.toISOString() },
   });
 });
 

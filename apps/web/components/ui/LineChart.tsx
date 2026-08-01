@@ -10,6 +10,8 @@ type Props = {
   height?: number;
   colors?: [string, string];
   labels?: [string, string];
+  /** Off when the surrounding card already renders its own legend. */
+  showLegend?: boolean;
 };
 
 export default function LineChart({
@@ -17,6 +19,7 @@ export default function LineChart({
   height = 160,
   colors = [C.orange, C.green],
   labels = ["Inbound", "Outbound"],
+  showLegend = true,
 }: Props) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
@@ -176,14 +179,16 @@ export default function LineChart({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 18, marginTop: 8 }}>
-        {series.map((s) => (
-          <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: s.color }} />
-            <span style={{ fontSize: 13, color: C.muted, fontWeight: 500 }}>{s.label}</span>
-          </div>
-        ))}
-      </div>
+      {showLegend && (
+        <div style={{ display: "flex", gap: 18, marginTop: 8 }}>
+          {series.map((s) => (
+            <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: s.color }} />
+              <span style={{ fontSize: 13, color: C.muted, fontWeight: 500 }}>{s.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

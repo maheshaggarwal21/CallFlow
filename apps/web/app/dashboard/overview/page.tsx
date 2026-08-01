@@ -6,8 +6,13 @@ import { C, eClr, init, fmtS } from "@/lib/colors";
 import { fetcher, api } from "@/lib/api";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import { fmtTime, fmtDate } from "@/lib/datetime";
+import { activityPhrase, periodPhrase } from "@/lib/period";
+import { usePeriodRange } from "@/hooks/usePeriodRange";
+import { toLineChartData } from "@/lib/chartTransforms";
 import type { Call } from "@callflow/shared-types";
 import PieChart from "@/components/ui/PieChart";
+import LineChart from "@/components/ui/LineChart";
+import PeriodSelect from "@/components/ui/PeriodSelect";
 import type { OverviewStats } from "@callflow/shared-types";
 
 // ── Stat card ───────────────────────────────────────────────────────────────
@@ -30,30 +35,16 @@ function StatCard({ label, value, sub, icon, delta, accent = C.orange }: {
       <p style={{ margin: 0, fontSize: 34, fontWeight: 700, color: C.text, lineHeight: 1, letterSpacing: -1 }}>{value}</p>
       {(sub || delta !== undefined) && (
         <p style={{ margin: "8px 0 0", fontSize: 13, color: delta != null ? (delta >= 0 ? C.green : C.red) : C.muted, fontWeight: 400 }}>
-          {delta != null ? `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% vs last month` : sub}
+          {delta != null ? `${delta >= 0 ? "+" : ""}${delta}% vs previous period` : sub}
         </p>
       )}
     </div>
   );
 }
 
-type Period = "today" | "yesterday" | "week" | "month" | "last_month" | "all" | "custom";
-
-const PERIODS: { key: Period; label: string }[] = [
-  { key: "today",      label: "Today" },
-  { key: "yesterday",  label: "Yesterday" },
-  { key: "week",       label: "Last 7 Days" },
-  { key: "month",      label: "This Month" },
-  { key: "last_month", label: "Last Month" },
-  { key: "all",        label: "All Time" },
-  { key: "custom",     label: "Custom Range" },
-];
-
 export default function OverviewPage() {
-  const [period, setPeriod]                 = useState<Period>("month");
-  const [customFrom, setCustomFrom]         = useState<string>("");
-  const [customTo, setCustomTo]             = useState<string>("");
-    const [playingId, setPlayingId]           = useState<string | null>(null);
+  const { period, params, selectProps } = usePeriodRange();
+  const [playingId, setPlayingId]           = useState<string | null>(null);
   const [fetchingId, setFetchingId]         = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlCache = useRef<Map<string, string>>(new Map());
@@ -90,55 +81,41 @@ export default function OverviewPage() {
     audio.onerror = () => setPlayingId(null);
   }
 
-  const dateRange = useMemo(() => {
-    const today = new Date();
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
-    const startOfDay = (d: Date) => { const c = new Date(d); c.setHours(0, 0, 0, 0); return c; };
-    const endOfDay   = (d: Date) => { const c = new Date(d); c.setHours(23, 59, 59, 999); return c; };
-
-    switch (period) {
-      case "today":
-        return { date_from: fmt(startOfDay(today)), date_to: fmt(endOfDay(today)) };
-      case "yesterday": {
-        const y = new Date(today); y.setDate(y.getDate() - 1);
-        return { date_from: fmt(startOfDay(y)), date_to: fmt(endOfDay(y)) };
-      }
-      case "week": {
-        const s = new Date(today); s.setDate(s.getDate() - 6);
-        return { date_from: fmt(startOfDay(s)), date_to: fmt(endOfDay(today)) };
-      }
-      case "month": {
-        const s = new Date(today.getFullYear(), today.getMonth(), 1);
-        return { date_from: fmt(startOfDay(s)), date_to: fmt(endOfDay(today)) };
-      }
-      case "last_month": {
-        const s = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        const e = new Date(today.getFullYear(), today.getMonth(), 0);
-        return { date_from: fmt(startOfDay(s)), date_to: fmt(endOfDay(e)) };
-      }
-      case "custom":
-        return {
-          date_from: customFrom || "2000-01-01",
-          ...(customTo ? { date_to: customTo } : {}),
-        };
-      case "all":
-      default:
-        return { date_from: "2000-01-01" };
-    }
-  }, [period, customFrom, customTo]);
-
-  const query = useMemo(() => {
-    const p = new URLSearchParams();
-    if (dateRange.date_from) p.set("date_from", dateRange.date_from);
-    if ("date_to" in dateRange && dateRange.date_to) p.set("date_to", dateRange.date_to);    const qs = p.toString();
-    return `/analytics/overview${qs ? `?${qs}` : ""}`;
-  }, [dateRange]);
+  const query = useMemo(
+    () => `/analytics/overview${params ? `?${params}` : ""}`,
+    [params]
+  );
 
   const { data } = useSWR<OverviewStats>(query, fetcher);
 
   const inPct  = data?.direction_split.inbound_pct  ?? 0;
   const outPct = data?.direction_split.outbound_pct ?? 0;
-  
+  const phrase = periodPhrase(period);
+
+  // Unattributed calls are part of `total_calls` (the donut centre), so they get
+  // their own segment — otherwise the agent bars never add up to the total.
+  const splitRows = useMemo(() => {
+    const rows = (data?.team_split ?? []).map((e) => ({
+      key: e.employee_id,
+      name: e.name,
+      count: e.count,
+      pct: e.pct,
+      color: eClr(e.color_index).t,
+      chip: eClr(e.color_index),
+    }));
+    if (data && data.unassigned_count > 0) {
+      rows.push({
+        key: "unassigned",
+        name: "Unassigned",
+        count: data.unassigned_count,
+        pct: data.unassigned_pct,
+        color: C.dim,
+        chip: { t: C.muted, bg: C.bgDeep, br: C.border },
+      });
+    }
+    return rows;
+  }, [data]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
 
@@ -148,65 +125,12 @@ export default function OverviewPage() {
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: C.text, letterSpacing: -0.5 }}>Dashboard</h1>
           <p style={{ margin: "5px 0 0", fontSize: 15, color: C.muted, fontWeight: 400 }}>Overview · Max Music School</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          {period === "custom" && (
-            <>
-              <input
-                type="date"
-                value={customFrom}
-                max={customTo || undefined}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                aria-label="From date"
-                style={{
-                  padding: "8px 12px", borderRadius: 20,
-                  border: `1px solid ${C.border}`,
-                  background: C.card, color: C.text,
-                  fontSize: 14, fontWeight: 600,
-                  outline: "none", boxShadow: C.shadow, cursor: "pointer",
-                }}
-              />
-              <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>to</span>
-              <input
-                type="date"
-                value={customTo}
-                min={customFrom || undefined}
-                onChange={(e) => setCustomTo(e.target.value)}
-                aria-label="To date"
-                style={{
-                  padding: "8px 12px", borderRadius: 20,
-                  border: `1px solid ${C.border}`,
-                  background: C.card, color: C.text,
-                  fontSize: 14, fontWeight: 600,
-                  outline: "none", boxShadow: C.shadow, cursor: "pointer",
-                }}
-              />
-            </>
-          )}
-          <select
-            value={period}
-            onChange={(e) => setPeriod(e.target.value as Period)}
-            style={{
-              padding: "8px 36px 8px 14px", borderRadius: 20,
-              border: `1px solid ${C.border}`,
-              background: C.card, color: C.text,
-              fontSize: 14, fontWeight: 600,
-              cursor: "pointer", appearance: "none",
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238a8278' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 12px center",
-              outline: "none", boxShadow: C.shadow,
-            }}
-          >
-            {PERIODS.map((p) => (
-              <option key={p.key} value={p.key}>{p.label}</option>
-            ))}
-          </select>
-        </div>
+        <PeriodSelect {...selectProps} />
       </div>
 
       {/* Stat cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
-        <StatCard label="Total Calls"  value={data?.total_calls ?? "—"} icon="📞" accent={C.orange} delta={data?.mom_delta.total_pct ?? null} sub="Up 12% vs last month" />
+        <StatCard label="Total Calls"  value={data?.total_calls ?? "—"} icon="📞" accent={C.orange} delta={data?.mom_delta.total_pct ?? null} sub={`calls ${phrase}`} />
         <StatCard label="Inbound"      value={data?.inbound ?? "—"}     icon="📥" accent={C.green}  delta={data?.mom_delta.inbound_pct ?? null} />
         <StatCard label="Outbound"     value={data?.outbound ?? "—"}    icon="📤" accent={C.teal}   delta={data?.mom_delta.outbound_pct ?? null} />
         <StatCard label="Avg Duration" value={data ? fmtS(data.avg_duration_secs) : "—"} icon="⏱" accent={C.blue} sub="average call length" />
@@ -218,7 +142,7 @@ export default function OverviewPage() {
         {/* Call Direction Split */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", boxShadow: C.shadow }}>
           <p style={{ margin: "0 0 2px", fontSize: 14, fontWeight: 700, color: C.text }}>Call Direction Split</p>
-          <p style={{ margin: "0 0 18px", fontSize: 12, color: C.muted }}>Inbound vs outbound this month</p>
+          <p style={{ margin: "0 0 18px", fontSize: 12, color: C.muted }}>Inbound vs outbound {phrase}</p>
           <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
             <PieChart
               segments={[
@@ -256,52 +180,49 @@ export default function OverviewPage() {
         {/* Team Split */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", boxShadow: C.shadow }}>
           <p style={{ margin: "0 0 2px", fontSize: 14, fontWeight: 700, color: C.text }}>Team Call Split</p>
-          <p style={{ margin: "0 0 18px", fontSize: 12, color: C.muted }}>Calls handled per agent this month</p>
-          {data?.team_split && data.team_split.length > 0 ? (
+          <p style={{ margin: "0 0 18px", fontSize: 12, color: C.muted }}>Calls handled per agent {phrase}</p>
+          {splitRows.length > 0 ? (
             <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
               <PieChart
-                segments={data.team_split.map((e) => ({ value: e.count, color: eClr(e.color_index).t + "cc" }))}
+                segments={splitRows.map((e) => ({ value: e.count, color: e.color + "cc" }))}
                 size={120}
                 innerRadius={0.62}
-                label={String(data.total_calls)}
+                label={String(data?.total_calls ?? 0)}
                 sublabel="total"
               />
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
-                {data.team_split.map((entry) => {
-                  const clr = eClr(entry.color_index);
-                  return (
-                    <div key={entry.employee_id}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, alignItems: "center" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                          <div style={{
-                            width: 20, height: 20, borderRadius: 6,
-                            background: clr.bg, border: `1.5px solid ${clr.br}`,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 8, fontWeight: 800, color: clr.t,
-                          }}>{init(entry.name)}</div>
-                          <span style={{ fontSize: 12, color: C.textSub }}>{entry.name.split(" ")[0]}</span>
-                        </div>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{entry.count}</span>
+                {splitRows.map((entry) => (
+                  <div key={entry.key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                        <div style={{
+                          width: 20, height: 20, borderRadius: 6,
+                          background: entry.chip.bg, border: `1.5px solid ${entry.chip.br}`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 8, fontWeight: 800, color: entry.chip.t,
+                        }}>{entry.key === "unassigned" ? "—" : init(entry.name)}</div>
+                        <span style={{ fontSize: 12, color: C.textSub }}>{entry.name.split(" ")[0]}</span>
                       </div>
-                      <div style={{ height: 4, background: C.bgDeep, borderRadius: 4 }}>
-                        <div style={{ width: `${entry.pct}%`, height: "100%", background: clr.t + "bb", borderRadius: 4, transition: "width 0.4s" }} />
-                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{entry.count}</span>
                     </div>
-                  );
-                })}
+                    <div style={{ height: 4, background: C.bgDeep, borderRadius: 4 }}>
+                      <div style={{ width: `${entry.pct}%`, height: "100%", background: entry.color + "bb", borderRadius: 4, transition: "width 0.4s" }} />
+                    </div>
+                  </div>
+                ))}
 
-                {data.team_split[0] && (
+                {data?.team_split[0] && (
                   <div style={{
                     marginTop: 4, padding: "8px 10px",
                     background: C.orangeLight, border: `1px solid ${C.orangeBdr}`, borderRadius: 8,
                   }}>
                     <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: C.orange, textTransform: "uppercase", letterSpacing: 0.6 }}>KEY INSIGHT</p>
                     <p style={{ margin: "3px 0 0", fontSize: 11, color: C.textSub }}>
-                      {data.team_split[0].name.split(" ")[0]} leads with {data.team_split[0].count} calls this month
+                      {data.team_split[0].name.split(" ")[0]} leads with {data.team_split[0].count} calls {phrase}
                     </p>
                     {data.top_line && (
                       <p style={{ margin: "1px 0 0", fontSize: 11, color: C.textSub }}>
-                        {data.top_line.line_number} is the highest traffic line this month
+                        {data.top_line.line_number} is the highest traffic line {phrase}
                       </p>
                     )}
                   </div>
@@ -312,15 +233,13 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      {/* Weekly Activity LINE CHART + Customer Satisfaction */}
+      {/* Activity chart */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
-
-        {/* Line chart */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", boxShadow: C.shadow }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 2 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
             <div>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>Weekly Activity</p>
-              <p style={{ margin: "2px 0 0", fontSize: 12, color: C.muted }}>Call volume this week</p>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>Activity</p>
+              <p style={{ margin: "2px 0 0", fontSize: 12, color: C.muted }}>{activityPhrase(period)}</p>
             </div>
             <div style={{ display: "flex", gap: 14 }}>
               {[{ label: "Inbound", color: C.orange }, { label: "Outbound", color: C.green }].map(l => (
@@ -331,13 +250,18 @@ export default function OverviewPage() {
               ))}
             </div>
           </div>
+          {data ? (
+            <LineChart data={toLineChartData(data.weekly_activity)} showLegend={false} />
+          ) : (
+            <p style={{ margin: 0, fontSize: 12, color: C.muted }}>Loading…</p>
+          )}
         </div>
       </div>
       {/* Team Breakdown Grid */}
       {data?.team_split && data.team_split.length > 0 && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", boxShadow: C.shadow }}>
           <p style={{ margin: "0 0 2px", fontSize: 14, fontWeight: 700, color: C.text }}>Team Breakdown</p>
-          <p style={{ margin: "0 0 16px", fontSize: 12, color: C.muted }}>Calls handled per agent this month</p>
+          <p style={{ margin: "0 0 16px", fontSize: 12, color: C.muted }}>Calls handled per agent {phrase}</p>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
             {data.team_split.map((emp) => {

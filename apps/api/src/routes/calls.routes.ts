@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { getAudioPresignedUrl } from "../services/storage.service";
+import { rangeEnd, rangeStart } from "../lib/dateRange";
 
 const router = Router();
 
@@ -41,8 +42,13 @@ function buildFilters(req: any) {
 
   const q = req.query;
 
-  if (q.date_from) add("c.called_at >=", q.date_from);
-  if (q.date_to) add("c.called_at <=", q.date_to);
+  // Date params are IST calendar dates. `date_to` is resolved to the *next* IST
+  // midnight and compared exclusively, otherwise a bare "2026-08-01" would
+  // collapse to midnight and drop that whole day from the results.
+  const from = rangeStart(typeof q.date_from === "string" ? q.date_from : null);
+  const to = rangeEnd(typeof q.date_to === "string" ? q.date_to : null);
+  if (from) add("c.called_at >=", from.toISOString());
+  if (to) add("c.called_at <", to.toISOString());
   if (q.line) add("c.line_number =", q.line);
   if (q.direction) add("c.call_direction =", q.direction);
   if (q.intercom) add("c.intercom_code =", q.intercom);

@@ -14,10 +14,13 @@ const DT_FRAG = "20\\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\\d|3[01])\\d{6}";
 //   {line:2d}--{A|B}-{phone:digits}---{timestamp:14d}-{tail}.wav
 // e.g. 03--B-09465658112---20250524112115-Unknown.wav
 //
-// Phone is captured as (\d+) — variable length, digits only, guaranteed to be
-// taken from between the direction marker and the triple-dash separator.
+// Phone is captured as (\d*) — variable length, digits only, taken from between
+// the direction marker and the triple-dash separator. It is allowed to be EMPTY:
+// the PBX emits `03--B----20260730144854-Unknown.wav` when caller ID is withheld.
+// Those still carry a valid timestamp, so they must parse (a `\d+` here sent them
+// down the partialParse path, which stamped called_at with the *ingest* time).
 const MAIN_RE = new RegExp(
-  "^(\\d{2})--([AB])-(\\d+)---(" + DT_FRAG + ")-(.+)\\.wav$",
+  "^(\\d{2})--([AB])-(\\d*)---(" + DT_FRAG + ")-(.+)\\.wav$",
   "i"
 );
 
@@ -38,6 +41,17 @@ function buildCalledAt(ts: string): Date | null {
     "+05:30";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Last-resort timestamp recovery: pull the 14-digit fragment out of *any*
+ * filename shape. Used by the ingest fallback so an unrecognised filename still
+ * gets its real call time instead of the moment it happened to be uploaded —
+ * which is hours off whenever the PBX has queued a backlog.
+ */
+export function extractCalledAt(filename: string): Date | null {
+  const m = filename.match(new RegExp("(" + DT_FRAG + ")"));
+  return m ? buildCalledAt(m[1]) : null;
 }
 
 export function parseFilename(filename: string): ParsedFilename | null {
