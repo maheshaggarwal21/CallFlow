@@ -63,6 +63,7 @@ const MIN_IN_HOURS_RATIO = 0.8;
 // Two runs this close in offset belong to the same uncorrected-clock era.
 const ERA_TOLERANCE_MS = 30 * 60 * 1000;
 
+const AUDIO_EXT = /\.(wav|webm|mp3)$/i;
 const DT_FRAG = /---?-?(20\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{6})-/;
 
 type Rec = { sourceKey: string; nominal: Date; uploadedAt: Date };
@@ -98,6 +99,7 @@ function nominalToDate(ts: string): Date {
  */
 async function listRecordings(s3: S3Client, sinceDays: number): Promise<Rec[]> {
   const cutoff = new Date(Date.now() - sinceDays * 86400e3);
+  const recompressGuard = new Date(+cutoff - 2 * 86400e3);
   const prefixes = new Set<string>();
   for (let d = new Date(cutoff); d <= new Date(); d = new Date(+d + 15 * 86400e3)) {
     prefixes.add(`korecall/${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}/`);
@@ -113,14 +115,21 @@ async function listRecordings(s3: S3Client, sinceDays: number): Promise<Rec[]> {
         Bucket: process.env.R2_BUCKET, Prefix, ContinuationToken: token, MaxKeys: 1000,
       }));
       for (const o of page.Contents ?? []) {
-        if (!o.Key || !o.LastModified || !o.Key.endsWith(".wav")) continue;
+        // The FTP service stores compressed .webm/.mp3 (or .wav on fallback)
+        if (!o.Key || !o.LastModified || !AUDIO_EXT.test(o.Key)) continue;
         if (o.LastModified < cutoff) continue;
         const m = o.Key.split("/").pop()!.match(DT_FRAG);
         if (!m) continue;
+        const nominal = nominalToDate(m[1]);
+        // A call stamped well before the window but uploaded inside it was
+        // re-uploaded later (recompress.ts), not mis-clocked — real drift is
+        // at most ~38h. Without this, re-compressed files look like drift.
+        if (nominal < recompressGuard) continue;
         out.push({
-          // `source_file_key` in the DB is the path WITHOUT the `korecall/` prefix.
-          sourceKey: o.Key.replace(/^korecall\//, ""),
-          nominal: nominalToDate(m[1]),
+          // `source_file_key` in the DB is the original .wav path WITHOUT the
+          // `korecall/` prefix, whatever format was actually stored.
+          sourceKey: o.Key.replace(/^korecall\//, "").replace(AUDIO_EXT, ".wav"),
+          nominal,
           uploadedAt: o.LastModified,
         });
       }

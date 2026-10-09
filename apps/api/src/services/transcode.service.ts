@@ -61,6 +61,33 @@ function runFfmpeg(args: string[]): Promise<void> {
   });
 }
 
+/** Encode `input` to `format` (mono, 16 kbps) at `output`. */
+export function encodeFile(input: string, output: string, format: PlayFormat): Promise<void> {
+  return runFfmpeg([
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-i", input,
+    "-ac", "1",
+    ...PLAY_FORMATS[format].codecArgs,
+    "-f", PLAY_FORMATS[format].muxer,
+    output,
+  ]);
+}
+
+const FFPROBE = process.env.FFPROBE_PATH || "ffprobe";
+
+/** Duration in seconds via ffprobe, or 0 if it can't be read. */
+export function probeDuration(file: string): Promise<number> {
+  return new Promise((resolve) => {
+    const proc = spawn(FFPROBE, [
+      "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file,
+    ], { stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    proc.stdout.on("data", (c) => { out += c; });
+    proc.on("error", () => resolve(0));
+    proc.on("close", () => resolve(Number(out.trim()) || 0));
+  });
+}
+
 function pruneCache() {
   const cutoff = Date.now() - CACHE_TTL_MS;
   for (const name of readdirSync(CACHE_DIR)) {
@@ -100,14 +127,7 @@ export function getConvertedAudio(
     if (!src) return null;
     const tmp = `${out}.${process.pid}.part`;
     try {
-      await runFfmpeg([
-        "-hide_banner", "-loglevel", "error", "-y",
-        "-i", src,
-        "-ac", "1",
-        ...PLAY_FORMATS[format].codecArgs,
-        "-f", PLAY_FORMATS[format].muxer,
-        tmp,
-      ]);
+      await encodeFile(src, tmp, format);
       renameSync(tmp, out);
       return out;
     } catch (err) {

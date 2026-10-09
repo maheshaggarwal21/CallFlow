@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
 import { createWriteStream, existsSync, mkdirSync, copyFileSync, readFileSync } from "fs";
 import { pipeline } from "stream/promises";
@@ -125,5 +125,18 @@ export async function downloadAudioToFile(key: string): Promise<string | null> {
     return tmpPath;
   } catch {
     return null;
+  }
+}
+
+/** Deletes one object from R2. No-op (true) when R2 isn't configured. */
+export async function deleteAudioObject(key: string): Promise<boolean> {
+  const s3 = getClient();
+  const bucket = process.env.R2_BUCKET;
+  if (!s3 || !bucket) return true;
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch {
+    return false;
   }
 }

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 #
-# Cron wrapper for retention — deletes R2 recordings older than the retention
-# window (default 90 days) and clears their links in `calls`. See
-# src/retention.ts for exactly what is and isn't deleted.
+# Nightly storage upkeep:
+#   1. retention  — deletes R2 recordings older than the retention window
+#                   (default 90 days) and clears their links in `calls`
+#   2. recompress — converts any WAV still stored and older than 16 days to the
+#                   Settings-page format (only pre-2026-10-09 recordings or FTP
+#                   compression fallbacks; usually nothing to do)
+# See src/retention.ts and src/recompress.ts for the details and safeguards.
 #
 # Install (as the user that owns the CallFlow checkout):
 #   chmod +x apps/api/scripts/retention-cron.sh
@@ -30,15 +34,23 @@ fi
 
 cd "$APP_DIR"
 
-if [ ! -f dist/retention.js ]; then
-  echo "$(date -Is) FATAL: dist/retention.js missing — run 'npm run build' in $APP_DIR" >> "$LOG"
-  exit 1
-fi
+for f in dist/retention.js dist/recompress.js; do
+  if [ ! -f "$f" ]; then
+    echo "$(date -Is) FATAL: $f missing — run 'npm run build' in $APP_DIR" >> "$LOG"
+    exit 1
+  fi
+done
+
+run_upkeep() {
+  node dist/retention.js --apply --quiet \
+    --days "${RETENTION_DAYS:-90}" \
+    --max-delete "${RETENTION_MAX_DELETE:-3000}"
+  # One CPU on the droplet: cap the night's work so it can't run into the
+  # morning's FTP uploads; anything left over is picked up the next night.
+  node dist/recompress.js --apply --quiet \
+    --limit "${RECOMPRESS_LIMIT:-2000}" \
+    --concurrency 1
+}
 
 # Skip the run if the previous one is somehow still going.
-exec flock -n "$LOCK" node dist/retention.js \
-  --apply \
-  --quiet \
-  --days "${RETENTION_DAYS:-90}" \
-  --max-delete "${RETENTION_MAX_DELETE:-3000}" \
-  >> "$LOG" 2>&1
+exec flock -n "$LOCK" bash -c "$(declare -f run_upkeep); cd '$APP_DIR'; run_upkeep" >> "$LOG" 2>&1
