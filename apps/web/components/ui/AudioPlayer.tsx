@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, type ReactNode } from "react";
 import { C, fmtS } from "@/lib/colors";
 
 interface Props {
@@ -8,22 +8,34 @@ interface Props {
   /** Stable ID (e.g. call UUID) used as the sessionStorage key.
    *  Must NOT be the URL — presigned URLs change on every fetch. */
   storageId?: string;
+  /** Short format name shown between the timestamps, e.g. "Opus". */
+  formatLabel?: string;
+  /** Rendered at the right of the controls (e.g. a format menu). */
+  accessory?: ReactNode;
+  /** Fired when the browser can't load/decode `url`. */
+  onError?: () => void;
 }
 
 function storageKey(id: string) {
   return `audio-pos:${id}`;
 }
 
-export default function AudioPlayer({ url, storageId }: Props) {
+export default function AudioPlayer({ url, storageId, formatLabel, accessory, onError }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   // Track position in a ref so the beforeunload/cleanup handler always has the latest value
   const currentRef = useRef(0);
+  // Mirrors `playing` so a URL swap (format switch) can carry on playing
+  const playingRef = useRef(false);
+  const resumeRef = useRef(false);
+
+  useEffect(() => { playingRef.current = playing; }, [playing]);
 
   // When URL changes: reset state, restore any saved position for this URL
   useEffect(() => {
+    resumeRef.current = playingRef.current;
     setPlaying(false);
     setCurrent(0);
     currentRef.current = 0;
@@ -43,6 +55,10 @@ export default function AudioPlayer({ url, storageId }: Props) {
         setCurrent(t);
         currentRef.current = t;
       }
+    }
+    if (resumeRef.current) {
+      resumeRef.current = false;
+      el.play().then(() => setPlaying(true)).catch(() => {});
     }
   }
 
@@ -117,6 +133,7 @@ export default function AudioPlayer({ url, storageId }: Props) {
         onLoadedMetadata={handleMetadata}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
+        onError={() => { setPlaying(false); onError?.(); }}
         preload="metadata"
       />
 
@@ -158,9 +175,16 @@ export default function AudioPlayer({ url, storageId }: Props) {
           />
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
             <span style={{ fontSize: 11, color: C.muted }}>{fmtS(Math.floor(current))}</span>
+            {formatLabel && (
+              <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase" }}>
+                {formatLabel}
+              </span>
+            )}
             <span style={{ fontSize: 11, color: C.muted }}>{fmtS(Math.floor(duration))}</span>
           </div>
         </div>
+
+        {accessory}
       </div>
     </div>
   );

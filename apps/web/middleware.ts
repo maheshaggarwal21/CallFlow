@@ -7,6 +7,7 @@ const OWNER_ONLY_PATHS = [
   "/dashboard/intercoms",
   "/dashboard/team",
   "/dashboard/students",
+  "/dashboard/settings",
 ];
 
 export function middleware(request: NextRequest) {

@@ -38,6 +38,15 @@ export type SystemStatus = {
   ftp_last_sync_at: string | null;
 };
 
+export type AudioFormat = "mp3" | "opus";
+
+/** Format of the file actually stored in R2 for a call. */
+export type StoredAudioFormat = AudioFormat | "wav";
+
+export type SystemSettings = {
+  audio_format: AudioFormat;
+};
+
 export type EmployeeName = {
   id: string;
   name: string;
@@ -90,7 +99,13 @@ export type Call = {
   is_misc: boolean;
   misc_reason: string | null;
   resolution_status: ResolutionStatus;
+  /** Short-lived link to the stored recording, whatever its format. */
   audio_presigned_url?: string | null;
+  audio_format?: StoredAudioFormat | null;
+  /** Short-lived links per playback format. The stored format points straight
+   *  at R2; the other is an API path (relative to the API base) that converts
+   *  on demand. */
+  audio_urls?: Record<AudioFormat, string> | null;
   created_at: string;
   updated_at: string;
 };

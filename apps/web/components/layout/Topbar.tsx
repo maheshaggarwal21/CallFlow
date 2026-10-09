@@ -15,6 +15,7 @@ const PAGE_LABELS: Record<string, string> = {
   intercoms:  "Intercoms",
   team:       "Team",
   students:   "Students",
+  settings:   "Settings",
   employees:  "Employees",
 };
 

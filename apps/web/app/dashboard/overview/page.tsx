@@ -4,6 +4,7 @@ import { useMemo, useState, useRef } from "react";
 import useSWR from "swr";
 import { C, eClr, init, fmtS } from "@/lib/colors";
 import { fetcher, api } from "@/lib/api";
+import { playbackCandidates, playWithFallback } from "@/lib/audioPlayback";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import { fmtTime, fmtDate } from "@/lib/datetime";
 import { activityPhrase, periodPhrase } from "@/lib/period";
@@ -47,7 +48,7 @@ export default function OverviewPage() {
   const [playingId, setPlayingId]           = useState<string | null>(null);
   const [fetchingId, setFetchingId]         = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const urlCache = useRef<Map<string, string>>(new Map());
+  const urlCache = useRef<Map<string, { urls: string[]; at: number }>>(new Map());
 
   async function handlePlay(call: Call) {
     if (playingId === call.id) {
@@ -58,27 +59,28 @@ export default function OverviewPage() {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.onended = null;
+      audioRef.current.onerror = null;
     }
-    let audioUrl: string | null = urlCache.current.get(call.id) ?? call.audio_presigned_url ?? null;
-    if (!audioUrl) {
+    // Links are signed for 15 min, so reuse them for 10 at most
+    const cached = urlCache.current.get(call.id);
+    let urls: string[] = cached && Date.now() - cached.at < 10 * 60_000 ? cached.urls : [];
+    if (urls.length === 0) {
       setFetchingId(call.id);
       try {
         const data = await api.get<Call>(`/calls/${call.id}`);
-        audioUrl = data.audio_presigned_url ?? null;
-        if (audioUrl) urlCache.current.set(call.id, audioUrl);
+        urls = playbackCandidates(data);
+        if (urls.length) urlCache.current.set(call.id, { urls, at: Date.now() });
       } catch {
         // no audio
       } finally {
         setFetchingId(null);
       }
     }
-    if (!audioUrl) return;
-    const audio = new Audio(audioUrl);
+    // Opus by default, MP3 if this browser can't play it (see lib/audioPlayback)
+    const audio = playWithFallback(urls, () => setPlayingId(null));
+    if (!audio) return;
     audioRef.current = audio;
-    audio.play().catch(() => {});
     setPlayingId(call.id);
-    audio.onended = () => setPlayingId(null);
-    audio.onerror = () => setPlayingId(null);
   }
 
   const query = useMemo(

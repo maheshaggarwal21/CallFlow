@@ -6,6 +6,7 @@ import { parseFile } from "music-metadata";
 import { parseFilename, extractCalledAt } from "./filenameParser";
 import pool from "./db/pool";
 import { uploadAudioObject } from "./services/storage";
+import { AudioFormat, AUDIO_FORMATS, transcode, checkFfmpeg } from "./transcode";
 
 const FTP_ROOT = path.join(os.tmpdir(), "korecall_ftp");
 if (!fs.existsSync(FTP_ROOT)) {
@@ -39,6 +40,45 @@ async function findEmployeeId(lineNumber: string): Promise<string | null> {
     [lineNumber]
   );
   return result.rows[0]?.employee_id || null;
+}
+
+async function getAudioFormat(): Promise<AudioFormat> {
+  try {
+    const result = await pool.query("SELECT audio_format FROM system_state WHERE id = 1");
+    const fmt = result.rows[0]?.audio_format;
+    return fmt === "mp3" ? "mp3" : "opus";
+  } catch {
+    // Column missing (migration 007 not applied) or DB hiccup — default to Opus
+    return "opus";
+  }
+}
+
+/**
+ * Compress the WAV to the owner-selected format. Returns the compressed file's
+ * path, or null if anything went wrong — the caller then uploads the original
+ * WAV, so a broken/missing ffmpeg can never cost us a recording.
+ */
+async function compressAudio(
+  wavPath: string,
+  wavDurationSecs: number,
+  format: AudioFormat
+): Promise<string | null> {
+  const outPath = wavPath.replace(/\.wav$/i, "") + AUDIO_FORMATS[format].ext;
+  try {
+    await transcode(wavPath, outPath, format);
+
+    // Guard against truncated output: the compressed file must be as long as
+    // the original (allow 2s for encoder padding / rounding).
+    const outDuration = await getDurationSeconds(outPath);
+    if (outDuration <= 0 || (wavDurationSecs > 0 && Math.abs(outDuration - wavDurationSecs) > 2)) {
+      throw new Error(`duration mismatch: wav ${wavDurationSecs}s vs ${format} ${outDuration}s`);
+    }
+    return outPath;
+  } catch (err) {
+    console.warn(`⚠️  Compression to ${format} failed, keeping WAV: ${(err as Error).message}`);
+    if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+    return null;
+  }
 }
 
 async function hasCallBySourceKey(sourceKey: string): Promise<boolean> {
@@ -103,6 +143,7 @@ async function processUploadedFile(
   fileName: string,
   sourceKey: string
 ) {
+  let compressedPath: string | null = null;
   try {
     if (await hasCallBySourceKey(sourceKey)) {
       console.log(`⏭️  Already processed: ${sourceKey}`);
@@ -114,11 +155,20 @@ async function processUploadedFile(
     const durationSecs = await getDurationSeconds(localFilePath);
     const isMisc       = durationSecs < 10;
 
-    // Upload audio to R2 regardless of whether the filename parsed
-    const fileStream = fs.createReadStream(localFilePath);
-    const r2Key      = `korecall/${sourceKey}`;
-    const uploaded   = await uploadAudioObject(r2Key, fileStream, "audio/wav");
-    const audioKey   = uploaded ? r2Key : null;
+    // Compress (falls back to the original WAV on failure), then upload to R2
+    // regardless of whether the filename parsed. source_file_key keeps the
+    // original .wav name so dedup is unaffected by the stored format.
+    const format = await getAudioFormat();
+    compressedPath = await compressAudio(localFilePath, durationSecs, format);
+
+    const uploadPath  = compressedPath ?? localFilePath;
+    const contentType = compressedPath ? AUDIO_FORMATS[format].contentType : "audio/wav";
+    const r2Key       = compressedPath
+      ? `korecall/${sourceKey.replace(/\.wav$/i, "")}${AUDIO_FORMATS[format].ext}`
+      : `korecall/${sourceKey}`;
+    const fileStream  = fs.createReadStream(uploadPath);
+    const uploaded    = await uploadAudioObject(r2Key, fileStream, contentType);
+    const audioKey    = uploaded ? r2Key : null;
 
     if (parsed) {
       const studentName = await findStudentName(parsed.callerPhone);
@@ -178,12 +228,14 @@ async function processUploadedFile(
   } catch (err) {
     console.error(`❌ Failed to process ${fileName}:`, err);
   } finally {
-    // ALWAYS clean up the downloaded file from the server disk
-    if (fs.existsSync(localFilePath)) {
-      try {
-        fs.unlinkSync(localFilePath);
-      } catch (cleanErr) {
-        console.error(`Could not delete temp file ${localFilePath}`, cleanErr);
+    // ALWAYS clean up the downloaded (and compressed) files from the server disk
+    for (const p of [localFilePath, compressedPath]) {
+      if (p && fs.existsSync(p)) {
+        try {
+          fs.unlinkSync(p);
+        } catch (cleanErr) {
+          console.error(`Could not delete temp file ${p}`, cleanErr);
+        }
       }
     }
   }
@@ -241,5 +293,10 @@ export function startFtpServer() {
 
   ftpServer.listen().then(() => {
     console.log(`📡 FTP server listening on port ${port} and saving temp files to ${FTP_ROOT}`);
+  });
+
+  checkFfmpeg().then((ok) => {
+    if (ok) console.log("🎚️  ffmpeg found — recordings will be compressed before upload");
+    else console.warn("⚠️  ffmpeg NOT found — recordings will be stored as uncompressed WAV (install ffmpeg or set FFMPEG_PATH)");
   });
 }

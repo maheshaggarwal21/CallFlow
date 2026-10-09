@@ -5,6 +5,7 @@ import { C, eClr, init, fmtS } from "@/lib/colors";
 import { fmtTime, fmtDate } from "@/lib/datetime";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import { api } from "@/lib/api";
+import { playbackCandidates, playWithFallback } from "@/lib/audioPlayback";
 import Pagination from "@/components/ui/Pagination";
 import { WAIconInline } from "@/components/ui/WABtn";
 import MobileCallCard from "@/components/calls/MobileCallCard";
@@ -30,7 +31,7 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
   const [playingId, setPlayingId]   = useState<string | null>(null);
   const [fetchingId, setFetchingId] = useState<string | null>(null);
   const audioRef   = useRef<HTMLAudioElement | null>(null);
-  const urlCache   = useRef<Map<string, string>>(new Map());
+  const urlCache   = useRef<Map<string, { urls: string[]; at: number }>>(new Map());
   const [isMobile, setIsMobile] = useState(false);
 
   // Stop audio when component unmounts or calls list changes
@@ -56,18 +57,19 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.onended = null;
+      audioRef.current.onerror = null;
     }
 
-    // Use cached URL, inline URL, or fetch on-demand from /calls/:id
-    let audioUrl: string | null =
-      urlCache.current.get(call.id) ?? call.audio_presigned_url ?? null;
+    // Links are signed for 15 min, so reuse them for 10 at most
+    const cached = urlCache.current.get(call.id);
+    let urls: string[] = cached && Date.now() - cached.at < 10 * 60_000 ? cached.urls : [];
 
-    if (!audioUrl) {
+    if (urls.length === 0) {
       setFetchingId(call.id);
       try {
         const data = await api.get<Call>(`/calls/${call.id}`);
-        audioUrl = data.audio_presigned_url ?? null;
-        if (audioUrl) urlCache.current.set(call.id, audioUrl);
+        urls = playbackCandidates(data);
+        if (urls.length) urlCache.current.set(call.id, { urls, at: Date.now() });
       } catch {
         // silently ignore — no audio available
       } finally {
@@ -75,14 +77,11 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
       }
     }
 
-    if (!audioUrl) return;
-
-    const audio = new Audio(audioUrl);
+    // Opus by default, MP3 if this browser can't play it (see lib/audioPlayback)
+    const audio = playWithFallback(urls, () => setPlayingId(null));
+    if (!audio) return;
     audioRef.current = audio;
-    audio.play().catch(() => {});
     setPlayingId(call.id);
-    audio.onended = () => setPlayingId(null);
-    audio.onerror = () => setPlayingId(null);
   }
 
   if (calls.length === 0) {

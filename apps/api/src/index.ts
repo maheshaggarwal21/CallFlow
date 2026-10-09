@@ -11,6 +11,7 @@ import employeesRoutes from "./routes/employees.routes";
 import intercomsRoutes from "./routes/intercoms.routes";
 import linesRoutes from "./routes/lines.routes";
 import systemRoutes from "./routes/system.routes";
+import audioRoutes from "./routes/audio.routes";
 import studentsRoutes from "./routes/students.routes";
 import devRoutes from "./routes/dev.routes";
 import { DEV_UPLOADS_DIR } from "./services/storage.service";
@@ -70,6 +71,7 @@ app.use(
 
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/calls", callsRoutes);
+app.use("/api/v1/audio", audioRoutes);
 app.use("/api/v1/analytics", analyticsRoutes);
 app.use("/api/v1/employees", employeesRoutes);
 app.use("/api/v1/intercoms", intercomsRoutes);

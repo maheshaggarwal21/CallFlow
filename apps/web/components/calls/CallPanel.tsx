@@ -6,6 +6,10 @@ import { C, fmtL } from "@/lib/colors";
 import { fmtTime, fmtDateLong } from "@/lib/datetime";
 import { getStudentDisplay } from "@/lib/studentLabel";
 import AudioPlayer from "@/components/ui/AudioPlayer";
+import AudioFormatMenu from "@/components/calls/AudioFormatMenu";
+import {
+  FORMAT_LABEL, audioUrlFor, effectiveFormat, loadPlayChoice, savePlayChoice, type PlayChoice,
+} from "@/lib/audioPlayback";
 import WABtn from "@/components/ui/WABtn";
 import { api, fetcher } from "@/lib/api";
 import Tag from "@/components/ui/Tag";
@@ -21,12 +25,22 @@ type Tab = "details";
 export default function CallPanel({ callId, onClose }: Props) {
   const [tab, setTab] = useState<Tab>("details");
   const [resolving, setResolving] = useState(false);
+  const [playChoice, setPlayChoice] = useState<PlayChoice>("auto");
+  // Set when the chosen format failed to load for this call and we fell back to MP3
+  const [fellBack, setFellBack] = useState(false);
   const { data: call, isLoading } = useSWR<Call>(
     callId ? `/calls/${callId}` : null,
     fetcher
   );
 
-  useEffect(() => { setTab("details"); }, [callId]);
+  useEffect(() => { setTab("details"); setFellBack(false); }, [callId]);
+  useEffect(() => { setPlayChoice(loadPlayChoice()); }, []);
+
+  function changePlayChoice(choice: PlayChoice) {
+    setPlayChoice(choice);
+    setFellBack(false);
+    savePlayChoice(choice);
+  }
 
   if (!callId) return null;
 
@@ -36,6 +50,9 @@ export default function CallPanel({ callId, onClose }: Props) {
 
   const dt     = call ? new Date(call.called_at) : null;
   const sd     = call ? getStudentDisplay(call.caller_phone, call.student_name) : null;
+
+  const playFormat = call ? (fellBack ? "mp3" : effectiveFormat(call, playChoice)) : null;
+  const autoFormat = call ? effectiveFormat(call, "auto") : null;
 
   async function updateResolution(status: "resolved" | "escalated" | null) {
     if (!call) return;
@@ -158,7 +175,26 @@ export default function CallPanel({ callId, onClose }: Props) {
           {!isLoading && call && (
             <>
               {/* ── RECORDING PLAYER ── */}
-              <AudioPlayer url={call.audio_presigned_url ?? null} storageId={call.id} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <AudioPlayer
+                  url={playFormat ? audioUrlFor(call, playFormat) : null}
+                  storageId={call.id}
+                  formatLabel={playFormat ? FORMAT_LABEL[playFormat] : undefined}
+                  onError={() => { if (playFormat !== "mp3" && call.audio_urls) setFellBack(true); }}
+                  accessory={call.audio_urls ? (
+                    <AudioFormatMenu
+                      choice={playChoice}
+                      onChange={changePlayChoice}
+                      autoLabel={autoFormat === "wav" ? "the original WAV" : FORMAT_LABEL[autoFormat ?? "opus"]}
+                    />
+                  ) : undefined}
+                />
+                {fellBack && (
+                  <p style={{ margin: 0, fontSize: 12, color: C.muted }}>
+                    This browser couldn&apos;t play that format, so it switched to MP3.
+                  </p>
+                )}
+              </div>
 
               {/* ── DETAILS TAB ── */}
               {tab === "details" && (

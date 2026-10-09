@@ -211,6 +211,7 @@ export default function Sidebar() {
             <NavBtn id="intercoms" label="Intercoms"  path="/dashboard/intercoms"  icon="☎" />
             <NavBtn id="team"      label="Team"       path="/dashboard/team"       icon="◯" />
             <NavBtn id="students"  label="Students"   path="/dashboard/students"   icon="◈" />
+            <NavBtn id="settings"  label="Settings"   path="/dashboard/settings"   icon="⚙" />
           </>
         )}
       </nav>

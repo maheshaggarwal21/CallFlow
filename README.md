@@ -96,7 +96,7 @@ The API and FTP service both talk to the **same PostgreSQL database** and the **
 
 - **Language:** TypeScript across all apps.
 - **API:** Node.js, Express 4, `pg` (raw parameterized SQL — no ORM), `zod` (validation), `jsonwebtoken`, `bcryptjs`, `express-rate-limit`, `multer` (CSV upload), `csv-parse`.
-- **FTP service:** `ftp-srv` (FTP server), `music-metadata` (duration), `pg`, AWS S3 SDK.
+- **FTP service:** `ftp-srv` (FTP server), `music-metadata` (duration), `ffmpeg` (system binary, compression), `pg`, AWS S3 SDK.
 - **Storage:** Cloudflare R2 via `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` (`region: "auto"`, `forcePathStyle: true`). Local `dev-uploads/` fallback when R2 is unconfigured.
 - **Database:** PostgreSQL (external; the `.env.example` points at a Supabase instance).
 - **Web:** Next.js 15 (App Router), React 18, SWR (data fetching/caching), inline-style design system.
@@ -217,6 +217,7 @@ Each app reads its own `.env` from its own directory (via `dotenv`). Templates l
 | `FTP_USER` | **yes** | Username the PBX authenticates with. |
 | `FTP_PASSWORD` | **yes** | Password the PBX authenticates with. |
 | `FTP_SERVER_PORT` | no | FTP control port (default `21`). |
+| `FFMPEG_PATH` | no | Path to the ffmpeg binary (default `ffmpeg` on `PATH`). Without ffmpeg, recordings are stored as uncompressed WAV. |
 | `VPS_PUBLIC_IP` | **yes in production** | Public IP advertised for passive-mode data connections. Passive FTP breaks without the correct public IP. |
 | `DATABASE_URL` | **yes** | PostgreSQL connection string (same DB as the API). |
 | `R2_ENDPOINT` / `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | recommended | R2 credentials for audio upload. **Note:** the FTP service uploads to R2 only — if R2 is unconfigured, `audio_storage_key` is stored as `NULL` (no local fallback on this side). |
@@ -272,6 +273,7 @@ npm run dev        # next dev, http://localhost:3000
 ```bash
 cd apps/ftp-service
 npm install
+# ffmpeg is required for compression (Ubuntu: sudo apt install ffmpeg; macOS: brew install ffmpeg)
 # create apps/ftp-service/.env
 npm run dev        # starts the FTP server
 ```
@@ -301,7 +303,7 @@ Schema is defined by plain SQL files in `apps/api/src/db/migrations/`, applied i
 | `devices` | Legacy table kept for FK integrity. No devices API is mounted. |
 | `calls` | The central record: source, line, direction, caller phone, student name, `called_at`, duration, employee, `is_misc`, `resolution_status`, `audio_storage_key`, `source_file_key` (unique — dedup key). |
 | `students` | Student directory (name, unique `phone`, notes). Joined by phone during ingestion to attribute a caller to a student. |
-| `system_state` | Single-row table (`id = 1`) holding `ftp_last_sync_at` (drives the dashboard "FTP sync active" indicator). |
+| `system_state` | Single-row table (`id = 1`) holding `ftp_last_sync_at` (drives the dashboard "FTP sync active" indicator) and `audio_format` (`mp3` \| `opus`, owner-selected compression for new recordings). |
 
 ### `calls` — key columns
 
@@ -329,6 +331,7 @@ Schema is defined by plain SQL files in `apps/api/src/db/migrations/`, applied i
 | `004_no_response.sql` | Adds `'no_response'` to the `resolution_status` CHECK; back-fills misc calls. |
 | `005_remove_ai.sql` | Drops `ai_jobs`, `call_segments`, and the `summary`/`transcript_*`/`sentiment`/`ai_status` columns from `calls`. |
 | `006_remove_android.sql` | Drops `system_state.android_last_sync_at`. |
+| `007_audio_format.sql` | Adds `system_state.audio_format` (`mp3` default, or `opus`). |
 
 ---
 
@@ -341,11 +344,12 @@ On each `STOR` (upload-complete) event for a `.wav`:
 1. **Dedup check** — skip if a `calls` row already exists for the `source_file_key`.
 2. **Parse the filename** (`filenameParser.ts`).
 3. **Read duration** with `music-metadata`. Calls `< 10s` are flagged `is_misc` (reason: "Short duration — possible disconnect") and given `resolution_status = 'no_response'`.
-4. **Upload audio to R2** under key `korecall/<sourceKey>`. If upload fails / R2 is unconfigured, `audio_storage_key` is `NULL`.
-5. **Attribute** the call — look up `student_name` by caller phone and `employee_id` by line number.
-6. **Insert** the `calls` row with `ON CONFLICT (source_file_key) DO NOTHING`.
-7. **Stamp** `system_state.ftp_last_sync_at = NOW()`.
-8. **Always** `unlink` the temp file in a `finally` block.
+4. **Compress** with ffmpeg to the owner-selected `system_state.audio_format` — MP3 or Opus/WebM, both 16 kbps mono (~25% of the WAV). The output's duration must match the WAV (±2s); on any failure (no ffmpeg, bad input, mismatch) the original WAV is uploaded instead.
+5. **Upload audio to R2** under key `korecall/<sourceKey>` with the extension swapped to `.mp3` / `.webm` (or the original `.wav` on fallback). If upload fails / R2 is unconfigured, `audio_storage_key` is `NULL`.
+6. **Attribute** the call — look up `student_name` by caller phone and `employee_id` by line number.
+7. **Insert** the `calls` row with `ON CONFLICT (source_file_key) DO NOTHING`.
+8. **Stamp** `system_state.ftp_last_sync_at = NOW()`.
+9. **Always** `unlink` the temp WAV and compressed file in a `finally` block.
 
 Filenames that don't fully match still insert a best-effort row via `partialParse` (line + direction inferred from the leading digits and A/B marker; `caller_phone = 'Unknown'`).
 
@@ -463,6 +467,8 @@ Audio is stored in **Cloudflare R2**, accessed through the **AWS S3 SDK** (so "S
 | Method | Path | Auth | Response |
 |--------|------|------|----------|
 | `GET` | `/system/status` | required | `{ ftp_last_sync_at }` — drives the dashboard sync indicator. |
+| `GET` | `/system/settings` | owner | `{ audio_format }` — compression format for new recordings. |
+| `PATCH` | `/system/settings` | owner | Body `{ audio_format: "mp3" \| "opus" }`. Returns `{ audio_format }`. Applies to recordings uploaded afterwards. |
 
 ### Dev — `/dev` (only when `NODE_ENV !== "production"`)
 

@@ -120,7 +120,7 @@ export async function downloadAudioToFile(key: string): Promise<string | null> {
     const body = response.Body;
     if (!body || typeof body === "string") return null;
 
-    const tmpPath = path.join(os.tmpdir(), `callflow-${randomUUID()}.wav`);
+    const tmpPath = path.join(os.tmpdir(), `callflow-${randomUUID()}${path.extname(key) || ".wav"}`);
     await pipeline(body as NodeJS.ReadableStream, createWriteStream(tmpPath));
     return tmpPath;
   } catch {
