@@ -86,10 +86,17 @@ async function convert(row: Row, format: PlayFormat): Promise<Result> {
       [newKey, row.id, oldKey]
     );
     if (upd.rowCount !== 1) {
-      await deleteAudioObject(newKey);
+      // Another run (e.g. the nightly cron) may have converted this call first
+      // and now points at the very key we just uploaded — only clean up our
+      // object if nothing references it.
+      const cur = await pool.query("SELECT 1 FROM calls WHERE audio_storage_key = $1 LIMIT 1", [newKey]);
+      if (cur.rowCount === 0) await deleteAudioObject(newKey);
       return { ok: false, before, after, reason: "row changed underneath us" };
     }
-    if (!(await deleteAudioObject(oldKey))) {
+    const stillUsed = await pool.query("SELECT 1 FROM calls WHERE audio_storage_key = $1 LIMIT 1", [oldKey]);
+    if (stillUsed.rowCount) {
+      log(`WARN ${oldKey} is still referenced by another call; leaving it in place`);
+    } else if (!(await deleteAudioObject(oldKey))) {
       log(`WARN converted ${row.id} but could not delete ${oldKey} (orphan; retention will remove it)`);
     }
     return { ok: true, before, after };
