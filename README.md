@@ -462,6 +462,19 @@ Audio is stored in **Cloudflare R2**, accessed through the **AWS S3 SDK** (so "S
 | `PATCH` | `/students/:id` | `{ name?, phone?, notes? }` | Updated student. `409` on duplicate phone. |
 | `DELETE` | `/students/:id` | — | `{ id }`. |
 
+### Reports — `/reports` (all endpoints require **owner**)
+
+| Method | Path | Body / query | Returns |
+|---|---|---|---|
+| `GET` | `/reports/schedules` | — | All email schedules (`send_time` as `HH:MM` IST). |
+| `POST` / `PATCH` | `/reports/schedules` / `/reports/schedules/:id` | Full schedule: `name, employee_ids[], frequency (daily\|weekly\|monthly), send_time, weekday (weekly), recipients[], subject_template, body_template, combine_employees, is_active` | The schedule. `combine_employees: true` mails all selected employees in one email (logged as one run with `employee_id` NULL). `400 { message }` on validation. |
+| `DELETE` | `/reports/schedules/:id` | — | `204`; its run history is deleted too. |
+| `POST` | `/reports/schedules/:id/send-now` | — | `{ results[] }` — mails the period so far immediately (test send). |
+| `GET` | `/reports/preview` | `employee_id` + `frequency`, or `date_from`/`date_to` | `{ vars }` — every report figure as a template variable. |
+| `GET` | `/reports/runs` | `limit` (≤200) | Recent sends with status and error. |
+
+The scheduler (`services/report.service.ts`) ticks every 60 s inside the API, **only when `NODE_ENV=production`**. A report due at `send_time` is still sent if the API comes back within an hour; each send is claimed by a unique `report_runs (schedule_id, employee_id, period_key)` row, so it is never mailed twice, and failures retry after 10 min (3 attempts). Mail goes through Resend (`RESEND_API_KEY`, `REPORT_MAIL_FROM`); without a key, development prints the mail and production marks the run failed. Valid numbers: `0`+10 digits, `91`+10 digits, or a 10-digit mobile starting 6–9; calls under 10 s are included and also counted separately.
+
 ### System — `/system`
 
 | Method | Path | Auth | Response |
@@ -501,6 +514,7 @@ Next.js 15 App Router under `apps/web/app/`.
 | `/dashboard/intercoms` | owner | Manage intercom phone numbers. |
 | `/dashboard/team` | owner | Team management. |
 | `/dashboard/students` | owner | Student directory + CSV import. |
+| `/dashboard/reports` | owner | Email report schedules (employees, time, recipients, editable template with live preview) and an on-screen per-employee report. |
 
 ### Key components & conventions
 

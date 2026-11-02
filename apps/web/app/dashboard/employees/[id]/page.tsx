@@ -78,7 +78,7 @@ export default function EmployeePage({ params }: { params: Promise<{ id: string 
             <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: C.text, letterSpacing: -0.5 }}>
               {employee.name}
             </h1>
-            <p style={{ margin: "3px 0 0", fontSize: 14, color: C.muted }}>Agent Dashboard</p>
+            <p style={{ margin: "3px 0 0", fontSize: 14, color: C.muted }}>Agent Dashboard · ID {employee.employee_code}</p>
           </div>
         </div>
 

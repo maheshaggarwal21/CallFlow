@@ -39,7 +39,7 @@ npm run lint        # next lint
 
 **FTP service** (`apps/ftp-service/`) and **shared-types** (`packages/shared-types/`) use the same `dev` / `build` / `start` pattern (`build` only for shared-types).
 
-There is **no test suite** in any app. There is **no docker-compose** (older docs reference one that no longer exists); Postgres is external (the `.env.example` points at a Supabase instance).
+There is **no test suite** in any app (two `node:test` files: `lib/reportSchedule.test.ts` and `lib/asyncErrors.test.ts`; run with `npm run build && node --test dist/lib/*.test.js` in `apps/api`). There is **no docker-compose** (older docs reference one that no longer exists); Postgres is external (the `.env.example` points at a Supabase instance).
 
 ### Two build gotchas
 - **Build `packages/shared-types` before building/dev-ing web** — web resolves `@callflow/shared-types` from its `dist/`, so a stale or missing build breaks the import.
@@ -48,12 +48,14 @@ There is **no test suite** in any app. There is **no docker-compose** (older doc
 ## Architecture
 
 ### API (`apps/api/src/`)
-- `index.ts` mounts routes under `/api/v1/*` (auth, calls, analytics, employees, intercoms, lines, system, students). `dev.routes.ts` and a local `/dev-audio` static mount are enabled only when `NODE_ENV !== "production"`. Note: `devices.routes.ts` exists on disk but is **not mounted** — the devices table is kept for FK integrity but no devices API is exposed.
+- `index.ts` mounts routes under `/api/v1/*` (auth, calls, analytics, employees, intercoms, lines, system, students, reports). `dev.routes.ts` and a local `/dev-audio` static mount are enabled only when `NODE_ENV !== "production"`. Note: `devices.routes.ts` exists on disk but is **not mounted** — the devices table is kept for FK integrity but no devices API is exposed.
 - **DB**: a single `pg` pool in `db/pool.ts`, shared by API and FTP service. Queries are parameterized inline in route files; there is no ORM.
 - **Storage** (`services/storage.service.ts`): Cloudflare R2 accessed through the **AWS S3 SDK** (`region: "auto"`, `forcePathStyle: true`). `isR2Configured()` decides at runtime whether to use R2 or fall back to a local `dev-uploads/` directory served via `/dev-audio`. Audio is delivered to the browser as presigned URLs. So "S3" in code means R2.
 - **On-demand audio conversion**: only one format is stored per recording. `GET /calls/:id` returns `audio_urls.{opus,mp3}` — the stored format is the R2 presigned URL; the other is a signed `/audio/:id/:format` path (`routes/audio.routes.ts`, HMAC with `JWT_SECRET`, 15 min, no cookie auth because `<audio>` can't send headers) that ffmpeg-converts via `services/transcode.service.ts` and caches in `$TMPDIR/callflow-audio-cache` for 6h. **The API host needs ffmpeg too**, not just the FTP service.
 - **Retention** (`src/retention.ts`, cron via `scripts/retention-cron.sh`, nightly 21:00 UTC): deletes R2 audio older than 90 days and nulls `calls.audio_storage_key`; call rows are kept. Dry run by default, `--apply` to delete; refuses `--days` < 30 or more than `--max-delete` (default 3000) objects, so a catch-up run needs the cap raised by hand. Never deletes an object still referenced by a call inside the window (clock-drift-fixed rows keep their old R2 folder).
 - **Recompress** (`src/recompress.ts`, also run nightly by `retention-cron.sh`, capped at 2000): converts WAVs still in R2 to the Settings format — upload new object, swap `audio_storage_key` only if unchanged, then delete the WAV. Only touches calls older than 16 days, because re-uploading resets R2 `LastModified`, which `fixClockDrift.ts` reads; that script in turn ignores objects whose filename date is older than its window + 2 days, and maps `.webm`/`.mp3` keys back to the `.wav` `source_file_key`.
+- **Email reports** (`routes/reports.routes.ts`, `services/report.service.ts`, `lib/reportSchedule.ts`): a 60 s in-process scheduler (production only) mails per-employee reports via Resend (`services/mail.service.ts`, plain `fetch`). `report_runs` has a unique `(schedule_id, employee_id, period_key)` that doubles as the send lock — don't remove it.
+- **Async errors** (`lib/asyncErrors.ts`, imported by `index.ts`): patches Express 4 so a rejected `async` handler goes to `next(err)` and the final `errorHandler` answers `500 { error }`. Without it, any failed query killed the whole process. Route handlers don't need their own try/catch for this. Remove the patch if upgrading to Express 5.
 - **CORS**: `WEB_ORIGIN` is a comma-separated allowlist; requests with no `Origin` (curl/server-to-server) are allowed. `trust proxy` is on for correct rate-limit keying behind nginx.
 
 ### Auth & RBAC

@@ -113,7 +113,7 @@ export default function TeamPage() {
                   {/* Col: Name + phone — fixed width */}
                   <div style={{ width: 180, flexShrink: 0 }}>
                     <p style={{ margin: "0 0 3px", fontSize: 16, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{emp.name}</p>
-                    <p style={{ margin: 0, fontSize: 13, color: C.muted }}>{emp.phone ?? "No phone on file"}</p>
+                    <p style={{ margin: 0, fontSize: 13, color: C.muted }}>ID {emp.employee_code} · {emp.phone ?? "No phone on file"}</p>
                   </div>
 
                   {/* Col: Active/Inactive — fixed width */}

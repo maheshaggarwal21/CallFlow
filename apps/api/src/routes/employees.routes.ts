@@ -34,7 +34,7 @@ router.get("/names", async (_req, res) => {
 
 router.get("/", requireOwner, async (_req, res) => {
   const result = await pool.query(
-    "SELECT e.id, e.name, e.email, e.phone, e.role, e.status, e.color_index, " +
+    "SELECT e.id, e.name, e.email, e.phone, e.role, e.status, e.color_index, e.employee_code, " +
       "COALESCE(s.total, 0) AS stats_total, " +
       "COALESCE(s.inbound, 0) AS stats_inbound, " +
       "COALESCE(s.outbound, 0) AS stats_outbound, " +
@@ -59,6 +59,7 @@ router.get("/", requireOwner, async (_req, res) => {
     role: row.role,
     status: row.status,
     color_index: row.color_index,
+    employee_code: row.employee_code,
     call_stats: {
       total: Number(row.stats_total),
       inbound: Number(row.stats_inbound),
@@ -80,7 +81,7 @@ router.get("/:id", async (req, res) => {
   }
 
   const result = await pool.query(
-    "SELECT id, name, email, phone, role, status, color_index FROM employees WHERE id = $1 LIMIT 1",
+    "SELECT id, name, email, phone, role, status, color_index, employee_code FROM employees WHERE id = $1 LIMIT 1",
     [id]
   );
 
@@ -108,7 +109,7 @@ router.post("/", requireOwner, async (req, res) => {
     const result = await pool.query(
       "INSERT INTO employees (name, email, phone, role, password_hash, color_index) " +
         "VALUES ($1, $2, $3, $4, $5, $6) " +
-        "RETURNING id, name, email, phone, role, status, color_index",
+        "RETURNING id, name, email, phone, role, status, color_index, employee_code",
       [name, email, phone || null, role || "employee", passwordHash, nextIndex]
     );
     return res.status(201).json(result.rows[0]);
@@ -161,7 +162,7 @@ router.patch("/:id", requireOwner, async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE employees SET ${fields.join(", ")} WHERE id = $${values.length} ` +
-        "RETURNING id, name, email, phone, role, status, color_index",
+        "RETURNING id, name, email, phone, role, status, color_index, employee_code",
       values
     );
 

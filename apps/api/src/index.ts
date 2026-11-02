@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import { errorHandler } from "./lib/asyncErrors";
 import rateLimit from "express-rate-limit";
 import path from "path";
 import authRoutes from "./routes/auth.routes";
@@ -13,8 +14,10 @@ import linesRoutes from "./routes/lines.routes";
 import systemRoutes from "./routes/system.routes";
 import audioRoutes from "./routes/audio.routes";
 import studentsRoutes from "./routes/students.routes";
+import reportsRoutes from "./routes/reports.routes";
 import devRoutes from "./routes/dev.routes";
 import { DEV_UPLOADS_DIR } from "./services/storage.service";
+import { startReportScheduler } from "./services/report.service";
 
 dotenv.config();
 
@@ -78,6 +81,7 @@ app.use("/api/v1/intercoms", intercomsRoutes);
 app.use("/api/v1/lines", linesRoutes);
 app.use("/api/v1/system", systemRoutes);
 app.use("/api/v1/students", studentsRoutes);
+app.use("/api/v1/reports", reportsRoutes);
 
 // Dev-only: serve local audio files + test helpers (disabled in production)
 if (process.env.NODE_ENV !== "production") {
@@ -95,7 +99,10 @@ app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
+app.use(errorHandler);
+
 const port = Number(process.env.PORT || 4000);
 app.listen(port, () => {
   console.log(`API listening on port ${port}`);
+  startReportScheduler();
 });

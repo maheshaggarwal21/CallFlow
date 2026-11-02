@@ -134,6 +134,7 @@ export default function Sidebar() {
           <>
             <SectionLabel label="Analytics" />
             <NavBtn id="overview" label="Dashboard" path="/dashboard/overview" icon="⊞" exact />
+            <NavBtn id="reports"  label="Reports"   path="/dashboard/reports"  icon="✉" />
 
             {/* Employees with expandable sub-list */}
             <button

@@ -31,6 +31,7 @@ export type Employee = {
   role: UserRole;
   status: "active" | "inactive";
   color_index: number;
+  employee_code: number;
   call_stats?: EmployeeCallStats;
 };
 
@@ -189,3 +190,44 @@ export type MiscCountStats = {
   disconnected_count: number;
   no_response_count: number;
 };
+
+export type ReportFrequency = "daily" | "weekly" | "monthly";
+
+export type ReportSchedule = {
+  id: string;
+  name: string;
+  employee_ids: string[];
+  frequency: ReportFrequency;
+  /** IST wall clock, "HH:MM" */
+  send_time: string;
+  /** Weekly only, 0 = Sunday */
+  weekday: number | null;
+  recipients: string[];
+  subject_template: string;
+  body_template: string;
+  /** true = all selected employees in one email, false = one email each */
+  combine_employees: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReportScheduleInput = Omit<ReportSchedule, "id" | "created_at" | "updated_at">;
+
+export type ReportRun = {
+  id: string;
+  schedule_id: string;
+  schedule_name: string;
+  /** null for a combined (one email for everyone) send */
+  employee_id: string | null;
+  employee_name: string;
+  period_key: string;
+  status: "sending" | "sent" | "failed";
+  attempts: number;
+  error: string | null;
+  sent_at: string | null;
+  created_at: string;
+};
+
+/** Report figures as display strings, keyed by template variable name. */
+export type ReportPreview = { vars: Record<string, string> };
