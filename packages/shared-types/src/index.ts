@@ -231,3 +231,26 @@ export type ReportRun = {
 
 /** Report figures as display strings, keyed by template variable name. */
 export type ReportPreview = { vars: Record<string, string> };
+
+/** GET /reports/data — the report dashboard; same figures as the emailed report. */
+export type ReportPerson = {
+  id?: string; name: string; code: string; line: string;
+  calls: number; inb: number; out: number; dur: number; avg: number; lt10: number;
+  gapMin: number | null; gapMax: number | null; invalid: number;
+  len: [number, number][]; // [in, out] for 10 / 11 / 12 digits / other
+  b: number[];             // calls per length band: <30s, 30–60s, 1–2, 2–3, 3–5, 5–10, 10–15, 15+ min
+  hours: number[];         // calls per hour, aligned with ReportData.hours
+  short: number; meaningful: number; invPct: number;
+  funnel: number[];        // dialled, 10s+, 30s+, 1 min+, 3 min+
+  status: [string, "ok" | "bad" | "neu"];
+};
+export type ReportData = {
+  title: string; period: string;
+  hours: number[]; // IST hours of day on the x-axis
+  team: { calls: number; inb: number; out: number; dur: number; invalid: number; b: number[]; hours: number[]; funnel: number[]; avg: number | null; peakHour: number | null };
+  people: ReportPerson[]; // only people with calls, by talk time
+  idle: string[];
+  top: string | null;     // employee code of the top performer
+  insights: string[];     // HTML (<b> only, names escaped server-side)
+  canCompare: boolean;
+};

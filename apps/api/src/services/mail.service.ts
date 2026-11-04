@@ -5,11 +5,15 @@
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-export async function sendMail(m: { to: string[]; subject: string; text: string }) {
+export async function sendMail(m: {
+  to: string[]; subject: string; text: string;
+  html?: string; // defaults to the text, escaped
+  attachments?: { filename: string; content: Buffer; contentId?: string }[]; // contentId → inline image, <img src="cid:…">
+}) {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
     if (process.env.NODE_ENV === "production") throw new Error("RESEND_API_KEY is not set");
-    console.log(`[mail:dev] To: ${m.to.join(", ")}\nSubject: ${m.subject}\n\n${m.text}\n`);
+    console.log(`[mail:dev] To: ${m.to.join(", ")}\nSubject: ${m.subject}\nAttachments: ${m.attachments?.map((a) => a.filename).join(", ") || "none"}\n\n${m.text}\n`);
     return;
   }
 
@@ -21,7 +25,8 @@ export async function sendMail(m: { to: string[]; subject: string; text: string 
       to: m.to,
       subject: m.subject,
       text: m.text,
-      html: `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(m.text)}</div>`,
+      attachments: m.attachments?.map((a) => ({ filename: a.filename, content: a.content.toString("base64"), ...(a.contentId && { content_id: a.contentId }) })),
+      html: m.html ?? `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(m.text)}</div>`,
     }),
     signal: AbortSignal.timeout(15_000),
   });

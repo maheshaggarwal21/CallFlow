@@ -3,7 +3,8 @@ export const API_BASE = BASE;
 
 async function request<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  as: "json" | "text" | "blob" = "json"
 ): Promise<T> {
   const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers = new Headers(options.headers);
@@ -35,11 +36,13 @@ async function request<T>(
   }
 
   if (res.status === 204) return undefined as T;
-  return res.json();
+  return res[as]() as Promise<T>;
 }
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  getText: (path: string) => request<string>(path, {}, "text"),
+  getBlob: (path: string) => request<Blob>(path, {}, "blob"),
 
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, {

@@ -2,6 +2,9 @@ import pool from "../db/pool";
 import { IST_TZ } from "../lib/dateRange";
 import { dueSendAt, reportWindow, type Frequency } from "../lib/reportSchedule";
 import { sendMail } from "./mail.service";
+import { textToPdf } from "../lib/textPdf";
+import { htmlToPdf, reportHtml, svgToPng, type PdfInput, type PdfPerson } from "../lib/reportPdf";
+import { dropCharts, reportEmailHtml } from "../lib/reportEmail";
 
 // Client rule (Nov 2026): 0 + 10 digits, 91 + 10 digits (inbound caller ID), or
 // a bare 10-digit mobile. Checked against live data: "0 + 9 digit" numbers are
@@ -51,6 +54,14 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
 export async function buildEmployeeReport(
   employeeId: string, start: Date, end: Date, reportType: string, periodLabel: string
 ): Promise<Record<string, string> | null> {
+  const s = await employeeStats(employeeId, start, end);
+  return s && reportVars(s, reportType, periodLabel);
+}
+
+type EmployeeStats = { id: string; name: string; employee_code: number; lines: string | null; r: any; hours: number[] };
+
+/** Raw figures for one employee over [start, end). Null when the employee no longer exists. */
+export async function employeeStats(employeeId: string, start: Date, end: Date): Promise<EmployeeStats | null> {
   const emp = await pool.query(
     `SELECT e.name, e.employee_code,
             (SELECT string_agg(line_number, ', ' ORDER BY line_number) FROM lines WHERE employee_id = e.id) AS lines
@@ -100,15 +111,25 @@ export async function buildEmployeeReport(
      FROM c`,
     [employeeId, start.toISOString(), end.toISOString()]
   );
+  const byHour = await pool.query(
+    `SELECT EXTRACT(HOUR FROM called_at AT TIME ZONE '${IST_TZ}')::int AS h, COUNT(*)::int AS n
+     FROM calls WHERE employee_id = $1 AND called_at >= $2 AND called_at < $3 GROUP BY 1`,
+    [employeeId, start.toISOString(), end.toISOString()]
+  );
+  const hours = Array<number>(24).fill(0);
+  for (const row of byHour.rows) hours[row.h] = row.n;
+  return { ...emp.rows[0], id: employeeId, r, hours };
+}
 
-  const e = emp.rows[0];
+function reportVars(s: EmployeeStats, reportType: string, periodLabel: string): Record<string, string> {
+  const r = s.r;
   const n = (k: string) => String(r[k]);
   return {
     report_type: reportType,
     period: periodLabel,
-    name: e.name,
-    employee_id: String(e.employee_code),
-    lines: e.lines ?? "—",
+    name: s.name,
+    employee_id: String(s.employee_code),
+    lines: s.lines ?? "—",
     total_calls: n("total"),
     inbound: n("inbound"),
     outbound: n("outbound"),
@@ -133,6 +154,54 @@ export async function buildEmployeeReport(
     min_gap: hms(r.min_gap),
     max_gap: hms(r.max_gap),
   };
+}
+
+export function pdfPerson(s: EmployeeStats): PdfPerson {
+  const r = s.r;
+  return {
+    id: s.id, name: s.name, code: String(s.employee_code), line: s.lines ?? "—",
+    calls: r.total, inb: r.inbound, out: r.outbound, dur: r.total_secs, avg: Math.round(r.avg_secs ?? 0), lt10: r.under_10s,
+    gapMin: r.min_gap, gapMax: r.max_gap, invalid: r.invalid_out,
+    len: [[r.d10_in, r.d10_out], [r.d11_in, r.d11_out], [r.d12_in, r.d12_out], [r.dother_in, r.dother_out]],
+    b: [r.b_lt_30s, r.b_30_60s, r.b_1_2m, r.b_2_3m, r.b_3_5m, r.b_5_10m, r.b_10_15m, r.b_gt_15m],
+    hours: s.hours,
+  };
+}
+
+/** The designed PDF; the plain-text one if Chrome is missing or fails, so the mail still goes out. */
+export async function attachmentPdf(design: PdfInput, bodies: string[]): Promise<Buffer> {
+  try {
+    return await htmlToPdf(reportHtml(design));
+  } catch (e) {
+    console.error("[reports] designed PDF failed, attaching text PDF instead:", e);
+    return textToPdf(bodies);
+  }
+}
+
+/**
+ * Designed email body with its hourly charts as inline PNGs; a chart that fails to render is left out,
+ * and if the design itself fails the plain template text is sent as before.
+ */
+export async function designedEmail(design: PdfInput): Promise<{ html?: string; images: { filename: string; content: Buffer; contentId: string }[] }> {
+  let built: ReturnType<typeof reportEmailHtml>;
+  try {
+    built = reportEmailHtml(design);
+  } catch (e) {
+    console.error("[reports] designed email failed, sending plain text:", e);
+    return { images: [] };
+  }
+  const { html, charts } = built;
+  const images: { filename: string; content: Buffer; contentId: string }[] = [];
+  const failed: string[] = [];
+  for (const c of charts) {
+    try {
+      images.push({ filename: `${c.cid}.png`, content: await svgToPng(c.svg, c.width, c.height), contentId: c.cid });
+    } catch (e) {
+      failed.push(c.cid);
+      console.error(`[reports] chart ${c.cid} failed, sending without it:`, e);
+    }
+  }
+  return { html: dropCharts(html, failed), images };
 }
 
 /**
@@ -177,18 +246,31 @@ async function deliver(
   if (!runId) return { employee_id: runEmployeeId, status: "skipped" };
 
   try {
-    const reports: Record<string, string>[] = [];
+    const stats: EmployeeStats[] = [];
     for (const id of employeeIds) {
-      const vars = await buildEmployeeReport(id, window.start, window.end, REPORT_TYPE[s.frequency], window.label);
-      if (vars) reports.push(vars);
+      const st = await employeeStats(id, window.start, window.end);
+      if (st) stats.push(st);
     }
-    if (!reports.length) throw new Error("Employee no longer exists");
+    if (!stats.length) throw new Error("Employee no longer exists");
+    const reports = stats.map((st) => reportVars(st, REPORT_TYPE[s.frequency], window.label));
     // Combined subject lists everyone in {{name}}; other variables come from the first report
     const subjectVars = { ...reports[0], name: reports.map((r) => r.name).join(", ") };
+    const subject = renderTemplate(s.subject_template, subjectVars);
+    const bodies = reports.map((v) => renderTemplate(s.body_template, v));
+    const design = { title: `${REPORT_TYPE[s.frequency]} Call Report`, period: window.label, people: stats.map(pdfPerson) };
+    const email = await designedEmail(design);
     await sendMail({
       to: s.recipients,
-      subject: renderTemplate(s.subject_template, subjectVars),
-      text: reports.map((v) => renderTemplate(s.body_template, v)).join(SEPARATOR),
+      subject,
+      text: bodies.join(SEPARATOR), // the template text stays as the plain-text part
+      html: email.html,
+      attachments: [
+        ...email.images,
+        {
+          filename: `${subject.replace(/[^\w .-]+/g, "-").trim().slice(0, 120) || "Report"}.pdf`,
+          content: await attachmentPdf(design, bodies),
+        },
+      ],
     });
     await pool.query(
       "UPDATE report_runs SET status = 'sent', stats = $2, sent_at = NOW(), updated_at = NOW() WHERE id = $1",

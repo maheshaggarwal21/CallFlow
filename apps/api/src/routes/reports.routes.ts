@@ -5,8 +5,12 @@ import { requireAuth } from "../middleware/auth";
 import { requireOwner } from "../middleware/requireOwner";
 import { resolveRange } from "../lib/dateRange";
 import { rangeLabel, reportWindow } from "../lib/reportSchedule";
+import { htmlToPdf, reportData, reportHtml, type PdfInput, type PdfPerson } from "../lib/reportPdf";
 import {
+  activeEmployeeIds,
   buildEmployeeReport,
+  employeeStats,
+  pdfPerson,
   sendScheduledReport,
   type ReportSchedule,
 } from "../services/report.service";
@@ -98,6 +102,58 @@ router.post("/schedules/:id/send-now", async (req, res) => {
   return res.json({ results });
 });
 
+/** A schedule's period so far (`frequency`) or an explicit `date_from`/`date_to` IST range. */
+function reportPeriod(q: Record<string, unknown>) {
+  const frequency = z.enum(["daily", "weekly", "monthly"]).safeParse(q.frequency);
+  if (frequency.success) {
+    const { start, end, label } = reportWindow(frequency.data, new Date());
+    return { start, end, label, type: { daily: "Daily", weekly: "Weekly", monthly: "Monthly" }[frequency.data] };
+  }
+  const { start, end } = resolveRange(typeof q.date_from === "string" ? q.date_from : null, typeof q.date_to === "string" ? q.date_to : null);
+  // An open-ended range ("All Time") starts at 1970; label it by its end only
+  const label = start.getTime() === 0 ? `Up to ${rangeLabel(end, end)}` : rangeLabel(start, end);
+  return { start, end, label, type: "Custom" };
+}
+
+/** Report input for one employee or `all` active ones over the requested period; null if the employee is unknown. */
+async function loadReport(q: Record<string, unknown>): Promise<PdfInput | null | "bad-id"> {
+  const who = String(q.employee_id ?? "all");
+  if (who !== "all" && !z.string().uuid().safeParse(who).success) return "bad-id";
+  const { start, end, label, type } = reportPeriod(q);
+  const ids = who === "all"
+    ? await activeEmployeeIds((await pool.query("SELECT id FROM employees")).rows.map((r) => r.id))
+    : [who];
+  const people: PdfPerson[] = [];
+  for (const id of ids) {
+    const st = await employeeStats(id, start, end);
+    if (st) people.push(pdfPerson(st));
+  }
+  if (who !== "all" && !people.length) return null;
+  return { title: type === "Custom" ? "Call Report" : `${type} Call Report`, period: label, people };
+}
+
+const badId = { error: "employee_id must be an id or 'all'", message: "employee_id must be an id or 'all'" };
+const notFound = { error: "Employee not found", message: "Employee not found" };
+
+/** The report dashboard's numbers (same as the emailed PDF and body). */
+router.get("/data", async (req, res) => {
+  const input = await loadReport(req.query);
+  if (input === "bad-id") return res.status(400).json(badId);
+  if (!input) return res.status(404).json(notFound);
+  res.json(reportData(input));
+});
+
+/** The designed report as HTML, or `format=pdf` to download the same PDF the emails attach. */
+router.get("/view", async (req, res) => {
+  const input = await loadReport(req.query);
+  if (input === "bad-id") return res.status(400).json(badId);
+  if (!input) return res.status(404).json(notFound);
+  const html = reportHtml(input);
+  if (req.query.format !== "pdf") return res.type("html").send(html);
+  const filename = `Call Report - ${input.period}`.replace(/[^\w .-]+/g, "-").slice(0, 120);
+  res.type("pdf").attachment(`${filename}.pdf`).send(await htmlToPdf(html));
+});
+
 /**
  * Figures for one employee, as template variables. Either a schedule's period
  * so far (`frequency`) or an explicit `date_from`/`date_to` IST range.
@@ -107,21 +163,7 @@ router.get("/preview", async (req, res) => {
   if (!z.string().uuid().safeParse(employeeId).success) {
     return res.status(400).json({ error: "employee_id is required", message: "employee_id is required" });
   }
-  const frequency = z.enum(["daily", "weekly", "monthly"]).safeParse(req.query.frequency);
-  const dateFrom = typeof req.query.date_from === "string" ? req.query.date_from : null;
-  const dateTo = typeof req.query.date_to === "string" ? req.query.date_to : null;
-
-  let start: Date, end: Date, label: string, type: string;
-  if (frequency.success) {
-    ({ start, end, label } = reportWindow(frequency.data, new Date()));
-    type = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" }[frequency.data];
-  } else {
-    ({ start, end } = resolveRange(dateFrom, dateTo));
-    // An open-ended range ("All Time") starts at 1970; label it by its end only
-    label = start.getTime() === 0 ? `Up to ${rangeLabel(end, end)}` : rangeLabel(start, end);
-    type = "Custom";
-  }
-
+  const { start, end, label, type } = reportPeriod(req.query);
   const vars = await buildEmployeeReport(employeeId, start, end, type, label);
   if (!vars) return res.status(404).json({ error: "Employee not found" });
   return res.json({ vars });

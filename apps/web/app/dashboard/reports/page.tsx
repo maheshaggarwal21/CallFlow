@@ -1,14 +1,12 @@
 "use client";
 
 import { useRef, useState, type CSSProperties } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { C } from "@/lib/colors";
 import { api, fetcher } from "@/lib/api";
 import { fmtDate, fmtTime } from "@/lib/datetime";
-import { usePeriodRange } from "@/hooks/usePeriodRange";
 import Card from "@/components/ui/Card";
-import StatCard from "@/components/ui/StatCard";
-import PeriodSelect from "@/components/ui/PeriodSelect";
 import type {
   EmployeeName,
   ReportFrequency,
@@ -100,7 +98,6 @@ const chip = (on: boolean): CSSProperties => ({
 });
 
 export default function ReportsPage() {
-  const [tab, setTab] = useState<"schedules" | "view">("schedules");
   const { data: employees = [] } = useSWR<EmployeeName[]>("/employees/names", fetcher);
 
   return (
@@ -112,15 +109,13 @@ export default function ReportsPage() {
         </p>
       </div>
 
-      <div role="tablist" style={{ display: "flex", gap: 8 }}>
-        {(["schedules", "view"] as const).map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} style={chip(tab === t)}>
-            {t === "schedules" ? "Email schedules" : "View report"}
-          </button>
-        ))}
+      <div style={{ display: "flex", gap: 8 }}>
+        <span style={chip(true)}>Email schedules</span>
+        {/* The report itself is its own dashboard: Overview, Team and a page per person */}
+        <Link href="/dashboard/reports/view" style={{ ...chip(false), textDecoration: "none" }}>View report →</Link>
       </div>
 
-      {tab === "schedules" ? <SchedulesTab employees={employees} /> : <ViewReportTab employees={employees} />}
+      <SchedulesTab employees={employees} />
     </div>
   );
 }
@@ -488,83 +483,5 @@ function ScheduleForm({ employees, initial, onDone }: {
         </div>
       </div>
     </Card>
-  );
-}
-
-// ── View report ──────────────────────────────────────────────────────────────
-
-function ViewReportTab({ employees }: { employees: EmployeeName[] }) {
-  const [employeeId, setEmployeeId] = useState("");
-  const { params, selectProps } = usePeriodRange();
-  const id = employeeId || employees[0]?.id;
-  const { data, error } = useSWR<ReportPreview>(id ? `/reports/preview?employee_id=${id}&${params}` : null, fetcher);
-  const v = data?.vars;
-
-  const rows = (items: [string, string, string?][]) => (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-      <tbody>
-        {items.map(([label, a, b]) => (
-          <tr key={label} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
-            <td style={{ padding: "8px 0", color: C.textSub }}>{label}</td>
-            <td style={{ padding: "8px 0", textAlign: "right", fontWeight: 700, color: C.text }}>{a}</td>
-            {b !== undefined && <td style={{ padding: "8px 0", textAlign: "right", fontWeight: 700, color: C.text, width: 90 }}>{b}</td>}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-
-  return (
-    <>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <label htmlFor="rv-emp" style={{ ...fieldLabel, marginBottom: 0 }}>Employee</label>
-        <select id="rv-emp" value={id ?? ""} onChange={(e) => setEmployeeId(e.target.value)}
-          style={{ ...fieldInput, width: "auto", minWidth: 200, background: C.card }}>
-          {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-        </select>
-        <PeriodSelect {...selectProps} />
-      </div>
-
-      {error ? (
-        <p style={{ color: C.red, fontSize: 14 }}>{(error as Error).message}</p>
-      ) : !v ? (
-        <p style={{ color: C.muted, fontSize: 14 }}>{employees.length ? "Loading…" : "No active employees."}</p>
-      ) : (
-        <>
-          <p style={{ margin: 0, fontSize: 14, color: C.muted }}>
-            {v.name} · Employee Id {v.employee_id} · Line {v.lines} · {v.period}
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
-            <StatCard label="Total calls" value={v.total_calls} sub={`${v.inbound} in · ${v.outbound} out`} />
-            <StatCard label="Total duration" value={v.total_duration} sub={`Average ${v.avg_duration}`} accent={C.blue} />
-            <StatCard label="Invalid numbers dialled" value={v.invalid_numbers} accent={C.red} />
-            <StatCard label="Calls under 10 s" value={v.calls_under_10s} accent={C.teal} />
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
-            <Card>
-              <h3 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 700, color: C.text }}>Call duration</h3>
-              {rows([
-                ["Less than 30 seconds", v.b_lt_30s], ["30 to 60 seconds", v.b_30_60s],
-                ["1 to 2 min", v.b_1_2m], ["2 to 3 min", v.b_2_3m], ["3 to 5 min", v.b_3_5m],
-                ["5 to 10 min", v.b_5_10m], ["10 to 15 min", v.b_10_15m], ["More than 15 min", v.b_gt_15m],
-              ])}
-            </Card>
-            <Card>
-              <h3 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 700, color: C.text }}>Numbers by length</h3>
-              {rows([
-                ["", "Inbound", "Outbound"],
-                ["10 digits", v.d10_in, v.d10_out], ["11 digits", v.d11_in, v.d11_out],
-                ["12 digits", v.d12_in, v.d12_out], ["Other lengths", v.dother_in, v.dother_out],
-              ])}
-              <p style={{ margin: "10px 0 0", fontSize: 12, color: C.muted }}>
-                {v.no_number} call(s) had no number recorded. Valid: 0 + 10 digits, 91 + 10 digits, or a 10-digit mobile.
-              </p>
-              <h3 style={{ margin: "18px 0 8px", fontSize: 16, fontWeight: 700, color: C.text }}>Gaps between calls</h3>
-              {rows([["Minimum gap", v.min_gap], ["Maximum gap", v.max_gap]])}
-            </Card>
-          </div>
-        </>
-      )}
-    </>
   );
 }
