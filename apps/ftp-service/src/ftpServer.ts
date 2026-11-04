@@ -265,9 +265,6 @@ export function startFtpServer() {
           return;
         }
 
-        const isWav = fileName.toLowerCase().endsWith(".wav");
-        if (!isWav) return;
-
         const localFilePath = path.isAbsolute(fileName)
           ? fileName
           : path.join(FTP_ROOT, fileName);
@@ -276,6 +273,13 @@ export function startFtpServer() {
           .replace(/\\/g, "/");
         if (relativeKey.startsWith("..")) {
           console.warn(`⚠️  Skipping file outside FTP root: ${fileName}`);
+          return;
+        }
+
+        // Only recordings belong here; an infected PC on the PBX network drops AV.scr/Photo.scr/.lnk worm copies via FTP.
+        if (!fileName.toLowerCase().endsWith(".wav")) {
+          console.warn(`🗑️  Deleted non-recording upload: ${relativeKey}`);
+          fs.rmSync(localFilePath, { force: true });
           return;
         }
 
