@@ -122,3 +122,5 @@ legacy-offset-backup-*.json
 
 *.wavreleases/*.apk
 .claude
+# Local-dev recordings (storage fallback when R2 is unset)
+apps/api/dev-uploads/

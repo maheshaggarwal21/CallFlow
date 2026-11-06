@@ -16,8 +16,10 @@ import audioRoutes from "./routes/audio.routes";
 import studentsRoutes from "./routes/students.routes";
 import reportsRoutes from "./routes/reports.routes";
 import devRoutes from "./routes/dev.routes";
+import crmRoutes from "./routes/crm.routes";
 import { DEV_UPLOADS_DIR } from "./services/storage.service";
 import { startReportScheduler } from "./services/report.service";
+import { startDigestScheduler } from "./services/crmReports.service";
 
 dotenv.config();
 
@@ -83,6 +85,11 @@ app.use("/api/v1/system", systemRoutes);
 app.use("/api/v1/students", studentsRoutes);
 app.use("/api/v1/reports", reportsRoutes);
 
+// CRM (lead follow-up) is off unless switched on per environment, so merging the
+// code exposes nothing until its migrations have run.
+const CRM_ENABLED = process.env.CRM_ENABLED === "true";
+if (CRM_ENABLED) app.use("/api/v1/crm", crmRoutes);
+
 // Dev-only: serve local audio files + test helpers (disabled in production)
 if (process.env.NODE_ENV !== "production") {
   app.use("/dev-audio", express.static(DEV_UPLOADS_DIR, {
@@ -105,4 +112,5 @@ const port = Number(process.env.PORT || 4000);
 app.listen(port, () => {
   console.log(`API listening on port ${port}`);
   startReportScheduler();
+  if (CRM_ENABLED) startDigestScheduler();
 });

@@ -2,9 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
-import { getAudioPresignedUrl } from "../services/storage.service";
-import { storedFormatOf } from "../services/transcode.service";
-import { signedAudioPath } from "../lib/audioLink";
+import { audioUrlsFor } from "../services/audioUrls";
 import { rangeEnd, rangeStart } from "../lib/dateRange";
 
 const router = Router();
@@ -137,24 +135,9 @@ router.get("/:id", async (req, res) => {
   }
 
   const audioKey = row.audio_storage_key as string | null;
-  const audioUrl = audioKey ? await getAudioPresignedUrl(audioKey) : null;
-
   delete row.audio_storage_key;
 
-  const storedFormat = audioKey ? storedFormatOf(audioKey) : null;
-  const audioUrls = audioKey && audioUrl
-    ? {
-        opus: storedFormat === "opus" ? audioUrl : signedAudioPath(id, "opus"),
-        mp3: storedFormat === "mp3" ? audioUrl : signedAudioPath(id, "mp3"),
-      }
-    : null;
-
-  return res.json({
-    ...row,
-    audio_presigned_url: audioUrl,
-    audio_format: storedFormat,
-    audio_urls: audioUrls,
-  });
+  return res.json({ ...row, ...(await audioUrlsFor(id, audioKey)) });
 });
 
 router.post("/search", async (req, res) => {
