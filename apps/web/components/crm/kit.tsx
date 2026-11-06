@@ -4,7 +4,7 @@
 // as Reports / View report: espresso header band, cream cards, beige page, DM Sans.
 import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { R } from "@/components/report/kit";
-import { codeMeta } from "@/lib/crm";
+import { codeMeta, statusLabel, type Code } from "@/lib/crm";
 
 export const CRM_CSS = `
   .crm-row{transition:background .15s}
@@ -20,8 +20,7 @@ export const CRM_CSS = `
     .crm-row,.crm-btn,.crm-drawer{transition:none}
   }
   .crm-g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-  .crm-drawer-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;align-items:start}
-  @media (max-width:1100px){.crm-g4{grid-template-columns:repeat(2,minmax(0,1fr))}.crm-drawer-grid{grid-template-columns:1fr}}
+  @media (max-width:1100px){.crm-g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
 
 const CHIP: Record<string, [string, string]> = {
@@ -41,6 +40,17 @@ export function CodeChip({ code, big = false, title }: { code: string | null | u
       style={{ display: "inline-grid", placeItems: "center", minWidth: big ? 30 : 24, height: big ? 30 : 22, padding: "0 6px", borderRadius: 7,
         background: bg, color: fg, fontWeight: 800, fontSize: big ? 15 : 12.5, border: m?.kind === "callback" ? `1px solid ${R.gold}` : "1px solid transparent" }}>
       {code}
+    </span>
+  );
+}
+
+/** A lead's status as on the sheet: code chip + label in the code's colour; "New" has no code yet. */
+export function StatusBadge({ l }: { l: { status: string; current_code: Code | null } }) {
+  if (l.status === "new" || !l.current_code) return <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: "#e7f0fb", color: "#2563a8" }}>New</span>;
+  const [, fg] = CHIP[codeMeta(l.current_code)?.kind ?? "retry"];
+  return (
+    <span title={codeMeta(l.current_code)?.rule} style={{ display: "inline-flex", gap: 6, alignItems: "center", whiteSpace: "nowrap", fontSize: 12.5, fontWeight: 700, color: l.status === "dropped" ? R.mute : fg }}>
+      <CodeChip code={l.current_code} />{statusLabel(l)}
     </span>
   );
 }
@@ -109,7 +119,8 @@ export const thStyle: CSSProperties = { textAlign: "left", fontSize: 10.5, textT
 export const tdStyle: CSSProperties = { padding: "10px", borderBottom: "1px solid #f1e8da", verticalAlign: "middle" };
 
 /** Right-side sheet over the page; Escape or the backdrop closes it. */
-export function Drawer({ open, onClose, children, label, width = 1180 }: { open: boolean; onClose: () => void; children: ReactNode; label: string; width?: number }) {
+/** Centered pop-up (lead form). Escape or a click on the backdrop closes it; width animates when it grows. */
+export function Modal({ open, onClose, children, label, width = 780 }: { open: boolean; onClose: () => void; children: ReactNode; label: string; width?: number }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -118,10 +129,11 @@ export function Drawer({ open, onClose, children, label, width = 1180 }: { open:
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }}>
-      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(43,33,24,.35)" }} aria-hidden />
+    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "grid", placeItems: "center", padding: "2vh 2vw" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(43,33,24,.4)" }} aria-hidden />
       <div role="dialog" aria-modal="true" aria-label={label} className="crm-drawer"
-        style={{ position: "relative", width: `min(${width}px, 96vw)`, height: "100%", overflowY: "auto", background: R.page, boxShadow: "-18px 0 40px -20px rgba(0,0,0,.45)", padding: 18, boxSizing: "border-box" }}>
+        style={{ position: "relative", width: `min(${width}px, 96vw)`, maxHeight: "94vh", overflowY: "auto", background: R.page, borderRadius: 18,
+          boxShadow: "0 30px 70px -25px rgba(0,0,0,.55)", padding: 18, boxSizing: "border-box", transition: "width .25s ease" }}>
         {children}
       </div>
     </div>

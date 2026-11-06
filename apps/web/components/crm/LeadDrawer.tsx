@@ -1,15 +1,15 @@
 "use client";
 
-// The lead form ("Lead follow-up"), kept simple on the client's request (7 Nov):
-// left: student details and the call & follow-up fields with one Save; right: snapshot and call log.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+// The lead form ("Lead follow-up") as a compact pop-up, kept simple on the client's request:
+// the form alone by default; the side handle opens the follow-up snapshot and call log beside it.
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import useSWR from "swr";
 import { R } from "@/components/report/kit";
 import { API_BASE, api, fetcher } from "@/lib/api";
 import { CODES, MIN_NOTE, groupPhone, statusLabel, type Code, type CrmConfig, type LeadDetail } from "@/lib/crm";
 import { useAuth } from "@/hooks/useAuth";
 import { WhatsAppIcon } from "@/components/ui/WABtn";
-import { Btn, Drawer, inputStyle, labelStyle } from "./kit";
+import { Btn, CodeChip, Modal, inputStyle, labelStyle } from "./kit";
 import { Card, History, Snapshot } from "./History";
 import { Icon } from "./icons";
 
@@ -21,26 +21,51 @@ const IST = "Asia/Kolkata";
 type Lock = { mine: boolean; locked_by_name: string | null } | null;
 
 const SHEET_CSS = `
-  .lf-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(340px,1fr);gap:14px;align-items:start}
+  .lf-grid{display:grid;grid-template-columns:minmax(0,1fr) 30px;gap:10px;align-items:stretch}
+  .lf-grid.open{grid-template-columns:minmax(0,1fr) 30px minmax(340px,.9fr)}
   .lf-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-  @media (max-width:1100px){.lf-grid{grid-template-columns:1fr}}
+  .lf-handle{transition:background .15s,color .15s}
+  .lf-handle:hover{background:#f8ead2;color:#8a5a12}
+  .lf-opt{transition:background .12s}
+  .lf-opt:hover,.lf-opt:focus-visible{background:var(--tint);outline:none}
+  .lf-siren-dome{animation:lf-siren .9s ease-in-out infinite alternate}
+  .lf-siren-rays{transform-origin:32px 30px;animation:lf-spin 2.4s linear infinite}
+  @keyframes lf-siren{from{fill:#e8641b;filter:drop-shadow(0 0 2px #e8641b)}to{fill:#ff3b1f;filter:drop-shadow(0 0 10px #ff6a3d)}}
+  @keyframes lf-spin{to{transform:rotate(360deg)}}
+  .lf-banner{animation:lf-ring 2s ease-out infinite}
+  @keyframes lf-ring{0%{box-shadow:0 0 0 0 rgba(232,100,27,.45)}70%{box-shadow:0 0 0 10px rgba(232,100,27,0)}100%{box-shadow:0 0 0 0 rgba(232,100,27,0)}}
+  @media (max-width:900px){.lf-grid.open{grid-template-columns:minmax(0,1fr) 30px}.lf-grid.open>.lf-side{grid-column:1/-1}}
   @media (max-width:640px){.lf-2{grid-template-columns:1fr}}
+  @media (prefers-reduced-motion: reduce){.lf-siren-dome,.lf-siren-rays,.lf-banner{animation:none}}
 `;
 
+/** Status colours, the same families as the code chips: retry beige, callback gold, paid green, closed red. */
+const KIND = {
+  retry: { tint: "#f4ece0", ring: "#b9a68e", text: "#7a6650" },
+  callback: { tint: "#fdf1da", ring: R.gold, text: "#8a5a12" },
+  paid: { tint: "#e8f2e3", ring: R.good, text: R.good },
+  closed: { tint: "#fbe7e3", ring: R.bad, text: R.bad },
+} as const;
+
 const received = (d: string) => new Date(d).toLocaleString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
+const longDate = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric" });
+const timeOf = (d: string) => new Date(d).toLocaleTimeString("en-US", { timeZone: IST, hour: "2-digit", minute: "2-digit", hour12: true });
 /** ISO → IST "YYYY-MM-DD" and "HH:MM" for the date and time inputs. */
 const istParts = (iso: string) => { const [d, t] = new Date(iso).toLocaleString("sv-SE", { timeZone: IST }).split(" "); return { date: d, time: t.slice(0, 5) }; };
 const istToday = () => new Date().toLocaleDateString("en-CA", { timeZone: IST });
 
 export default function LeadDrawer({ leadId, onClose, onSaved, isOwner }: { leadId: string | null; onClose: () => void; onSaved: (msg: string) => void; isOwner: boolean }) {
+  const [expanded, setExpanded] = useState(false);
   return (
-    <Drawer open={!!leadId} onClose={onClose} label="Lead" width={1300}>
-      {leadId && <DrawerBody key={leadId} leadId={leadId} onClose={onClose} onSaved={onSaved} isOwner={isOwner} />}
-    </Drawer>
+    <Modal open={!!leadId} onClose={onClose} label="Lead" width={expanded ? 1340 : 820}>
+      {leadId && <DrawerBody key={leadId} leadId={leadId} onClose={onClose} onSaved={onSaved} isOwner={isOwner} expanded={expanded} onExpand={setExpanded} />}
+    </Modal>
   );
 }
 
-function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onClose: () => void; onSaved: (msg: string) => void; isOwner: boolean }) {
+function DrawerBody({ leadId, onClose, onSaved, isOwner, expanded, onExpand }: {
+  leadId: string; onClose: () => void; onSaved: (msg: string) => void; isOwner: boolean; expanded: boolean; onExpand: (v: boolean) => void;
+}) {
   const { data: d, error, mutate } = useSWR<LeadDetail>(`/crm/leads/${leadId}`, fetcher, { refreshInterval: 30_000 });
   const { data: cfg } = useSWR<CrmConfig>("/crm/config", fetcher);
   const [lock, setLock] = useState<Lock>(null);
@@ -72,6 +97,7 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
   if (error) return <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p>;
   if (!d || !cfg) return <p style={{ color: R.mute }}>Loading lead…</p>;
   const readOnly = lock !== null && !lock.mine;
+  const calls = d.timeline.filter((e) => (e.type === "call" ? true : !!e.call)).length;
 
   return (
     <div style={{ display: "grid", gap: 12, color: R.ink }}>
@@ -80,9 +106,8 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
         <div>
           <div style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: R.out, fontWeight: 700 }}>Lead follow-up</div>
           <h2 style={{ margin: "1px 0 0", fontSize: 22, fontWeight: 800 }}>{d.lead.name || "Unnamed lead"}</h2>
-          <div style={{ display: "flex", gap: "2px 16px", flexWrap: "wrap", fontSize: 12.5, color: R.mute, marginTop: 2 }}>
-            <span style={{ display: "inline-flex", gap: 5, alignItems: "center" }}><Icon name="calendar" size={14} style={{ color: R.out }} />Lead received: <b style={{ color: R.ink }}>{received(d.lead.created_at)}</b></span>
-            {d.lead.campaign && <span style={{ display: "inline-flex", gap: 5, alignItems: "center" }}><Icon name="megaphone" size={14} style={{ color: R.out }} />Lead source: <b style={{ color: R.ink }}>{d.lead.campaign}</b></span>}
+          <div style={{ display: "inline-flex", gap: 5, alignItems: "center", fontSize: 12.5, color: R.mute, marginTop: 2 }}>
+            <Icon name="calendar" size={14} style={{ color: R.out }} />Lead received: <b style={{ color: R.ink }}>{received(d.lead.created_at)}</b>
           </div>
         </div>
         <span style={{ marginLeft: "auto" }}><Btn kind="ghost" onClick={onClose}>Close ✕</Btn></span>
@@ -93,12 +118,24 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
           {lock?.locked_by_name} is on this lead. You can read it, but the form is read-only until they save or close.
         </div>
       )}
-      <div className="lf-grid">
+      <div className={`lf-grid${expanded ? " open" : ""}`}>
         <LeadForm d={d} cfg={cfg} readOnly={readOnly} onSaved={(m) => { mutate(); onSaved(m); onClose(); }} onReload={() => mutate()} />
-        <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
-          <Snapshot d={d} />
-          <History d={d} isOwner={isOwner} onChanged={() => mutate()} />
-        </div>
+        {/* The handle the client asked for: opens the snapshot and call log beside the form */}
+        <button type="button" className="lf-handle" onClick={() => onExpand(!expanded)} aria-expanded={expanded} aria-controls="lf-side"
+          title={expanded ? "Hide the follow-up snapshot and call log" : "Show the follow-up snapshot and call log"}
+          style={{ border: `1px solid ${R.line}`, background: R.card, borderRadius: 12, cursor: "pointer", color: R.out, fontFamily: "inherit",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "10px 0" }}>
+          <span aria-hidden style={{ fontSize: 18, fontWeight: 800, lineHeight: 1 }}>{expanded ? "‹" : "›"}</span>
+          <span style={{ writingMode: "vertical-rl", fontSize: 12, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" }}>
+            {expanded ? "Hide history" : `History · ${calls} call${calls === 1 ? "" : "s"}`}</span>
+          <span aria-hidden style={{ fontSize: 18, fontWeight: 800, lineHeight: 1 }}>{expanded ? "‹" : "›"}</span>
+        </button>
+        {expanded && (
+          <div id="lf-side" className="lf-side" style={{ display: "grid", gap: 12, minWidth: 0, alignContent: "start" }}>
+            <Snapshot d={d} />
+            <History d={d} isOwner={isOwner} onChanged={() => mutate()} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -124,6 +161,92 @@ function autoRetry(code: Code, attempts: number, rules: CrmConfig["retry_rules"]
   return new Date(Date.now() + (rule.hours ?? 3) * 3_600_000).toISOString();
 }
 
+/** Status dropdown with the code chips and their colours (a native select can't show them). */
+function StatusPicker({ value, onChange }: { value: Code | ""; onChange: (c: Code) => void }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const cur = CODES.find((c) => c.code === value);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", away);
+    // Focus the chosen option (or the first) so arrow keys work straight away
+    (wrap.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]') ?? wrap.current?.querySelector<HTMLButtonElement>('[role="option"]'))?.focus();
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && open) { e.stopPropagation(); setOpen(false); return; } // don't close the whole pop-up
+    if (!open || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+    e.preventDefault();
+    const opts = [...(wrap.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [])];
+    const i = opts.indexOf(document.activeElement as HTMLButtonElement);
+    opts[(i + (e.key === "ArrowDown" ? 1 : opts.length - 1)) % opts.length]?.focus();
+  };
+  const k = cur ? KIND[cur.kind] : null;
+  return (
+    <div ref={wrap} onKeyDown={onKey} style={{ position: "relative" }}>
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label="Status" onClick={() => setOpen((o) => !o)}
+        style={{ ...inputStyle, display: "flex", gap: 9, alignItems: "center", cursor: "pointer", textAlign: "left", fontFamily: "inherit", minHeight: 42,
+          background: k ? k.tint : inputStyle.background, borderColor: k ? k.ring : undefined }}>
+        {cur ? <><CodeChip code={cur.code} /><b style={{ color: k!.text }}>{cur.label}</b></> : <span style={{ color: R.mute }}>Choose a status…</span>}
+        <span aria-hidden style={{ marginLeft: "auto", color: R.mute, fontSize: 11 }}>▼</span>
+      </button>
+      {open && (
+        <div role="listbox" aria-label="Status" style={{ position: "absolute", zIndex: 5, top: "calc(100% + 6px)", left: 0, right: 0, background: R.card,
+          border: `1px solid ${R.line}`, borderRadius: 12, boxShadow: "0 18px 40px -18px rgba(43,33,24,.45)", padding: 6, display: "grid", gap: 2 }}>
+          {CODES.map((c) => {
+            const kk = KIND[c.kind], on = c.code === value;
+            return (
+              <button key={c.code} type="button" role="option" aria-selected={on} className="lf-opt" onClick={() => { onChange(c.code); setOpen(false); }}
+                style={{ ["--tint" as string]: kk.tint, display: "flex", gap: 10, alignItems: "center", textAlign: "left", width: "100%", fontFamily: "inherit",
+                  border: 0, borderLeft: `4px solid ${kk.ring}`, borderRadius: 8, padding: "7px 10px", cursor: "pointer", color: R.ink, background: on ? kk.tint : "transparent" }}>
+                <CodeChip code={c.code} big />
+                <span style={{ minWidth: 0 }}>
+                  <b style={{ fontSize: 13.5, color: kk.text }}>{c.label}</b>
+                  <div style={{ fontSize: 11.5, color: R.mute }}>{c.rule}</div>
+                </span>
+                {on && <Icon name="check" size={16} style={{ marginLeft: "auto", color: kk.text }} />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Siren({ on }: { on: boolean }) {
+  return (
+    <svg width="56" height="56" viewBox="0 0 64 64" aria-hidden style={{ flex: "none" }}>
+      {on && <g className="lf-siren-rays" stroke="#ff6a3d" strokeWidth="3" strokeLinecap="round" opacity=".75">
+        <path d="M32 4v7M8 30h7M49 30h7M15 13l5 5M49 13l-5 5" />
+      </g>}
+      <path className={on ? "lf-siren-dome" : undefined} d="M18 46V34a14 14 0 0 1 28 0v12z" fill={on ? "#e8641b" : "#c2b39c"} />
+      <path d="M24 34a8 8 0 0 1 8-8" stroke="#fff" strokeWidth="3" strokeLinecap="round" fill="none" opacity=".7" />
+      <rect x="12" y="46" width="40" height="8" rx="3" fill="#3b2a1e" />
+    </svg>
+  );
+}
+
+/** Next follow-up reminder: what the form is about to set, else what is already saved. */
+function Reminder({ at, repName, note, live }: { at: string | null; repName: string | null; note: string; live: boolean }) {
+  return (
+    <section className={live ? "lf-banner" : undefined} aria-live="polite"
+      style={{ background: live ? "linear-gradient(135deg,#fff3e2,#ffe1c4)" : "linear-gradient(150deg,#fbf6ee,#f3eadc)",
+        border: `1.5px solid ${live ? "#f0a46b" : R.line}`, borderRadius: 14, padding: "10px 14px", display: "flex", gap: 12, alignItems: "center" }}>
+      <Siren on={live} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 800, color: live ? "#b3420f" : R.ink }}>Next follow-up reminder</div>
+        <div style={{ fontSize: 12.5, marginTop: 1 }}>{at ? <><b>{repName ?? "The team"}</b> will be reminded on</> : note}</div>
+        {at && <div style={{ display: "inline-block", marginTop: 6, background: live ? "linear-gradient(135deg,#ff5a1f,#c4622d)" : "#8c5a3c", color: "#fff",
+          fontWeight: 800, fontSize: 15.5, padding: "6px 16px", borderRadius: 999, boxShadow: live ? "0 0 18px -2px rgba(255,90,31,.55)" : "none" }}>
+          {longDate(at)} at {timeOf(at)}</div>}
+        {at && <div style={{ fontSize: 11.5, color: R.mute, marginTop: 5 }}>{note}</div>}
+      </div>
+    </section>
+  );
+}
+
 function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg: CrmConfig; readOnly: boolean; onSaved: (m: string) => void; onReload: () => void }) {
   const l = d.lead;
   const { id: meId } = useAuth();
@@ -143,19 +266,20 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
   const [saving, setSaving] = useState(false);
 
   const kind = CODES.find((c) => c.code === code)?.kind;
-  const followUp = kind === "retry" || kind === "callback";
   const talked = kind === "callback" || kind === "paid" || kind === "closed";
   const needsNote = kind === "callback" || kind === "paid";
+  const noFollowUp = kind === "paid" || kind === "closed";
   const drops = kind === "retry" && !autoRetry(code as Code, l.attempts, cfg.retry_rules);
+  const dateOff = noFollowUp || drops;
 
-  const pickStatus = (c: Code | "") => {
+  const pickStatus = (c: Code) => {
     setCode(c);
     setErr("");
-    // "No contact" outcomes pre-fill the automatic retry time; the rep can change it
     const k = CODES.find((x) => x.code === c)?.kind;
-    const auto = k === "retry" ? autoRetry(c as Code, l.attempts, cfg.retry_rules) : null;
+    if (k === "paid" || k === "closed") { setDate(""); setTime(""); return; }
+    // "No contact" outcomes pre-fill the automatic retry time unless the rep already chose one
+    const auto = k === "retry" && !(date && time) ? autoRetry(c, l.attempts, cfg.retry_rules) : null;
     if (auto) { const p = istParts(auto); setDate(p.date); setTime(p.time); }
-    else if (k !== "callback") { setDate(""); setTime(""); }
   };
 
   const save = async () => {
@@ -170,18 +294,28 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
       await api.post(`/crm/leads/${l.id}/outcome`, {
         version: l.version, code,
         note: note.trim() || null,
-        callback_at: followUp && !drops && date && time ? `${date}T${time}:00+05:30` : null,
+        callback_at: !dateOff && date && time ? `${date}T${time}:00+05:30` : null,
         amount: Number(amount) || null,
         assigned_to: repId,
         has_guitar: guitar ? guitar === "Yes" : null,
       });
-      onSaved(`${l.name || "Lead"} saved as ${statusLabel({ status: "x", current_code: code })}`);
+      onSaved(`${l.name || "Lead"} saved as ${code} · ${statusLabel({ status: "x", current_code: code })}`);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
       setSaving(false);
     }
   };
+
+  // Reminder banner: the follow-up being set, else the saved one
+  const repName = cfg.reps.find((r) => r.id === repId)?.name ?? null;
+  const draftAt = !dateOff && date && time ? new Date(`${date}T${time}:00+05:30`).toISOString() : null;
+  const savedAt = ["retry", "callback"].includes(l.status) ? l.next_followup_at : null;
+  const reminder = noFollowUp ? { at: null, live: false, note: `No follow-up needed: ${statusLabel({ status: "x", current_code: code as Code })}.` }
+    : drops ? { at: null, live: false, note: "This try drops the lead: no more follow-ups." }
+    : draftAt ? { at: draftAt, live: true, note: "The lead blinks in Follow-up due now 15 minutes before. Saved when you press Save." }
+    : savedAt ? { at: savedAt, live: l.status === "callback", note: "Already scheduled. Pick a new date and time above to change it." }
+    : { at: null, live: false, note: "No follow-up set yet. Add the date and time above." };
 
   const stale = /updated by/.test(err);
   const star = (on: boolean) => (on ? <span style={{ color: R.bad }}> *</span> : null);
@@ -207,31 +341,22 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
           <SectionLabel icon="phone">Call & follow-up information</SectionLabel>
           <div style={{ display: "grid", gap: 12 }}>
             <div className="lf-2">
+              <div>{lbl("Status", true)}<StatusPicker value={code} onChange={pickStatus} /></div>
               <label>{lbl("Guitar", talked)}
-                <select value={guitar} onChange={(e) => setGuitar(e.target.value)} style={inputStyle} aria-label="Guitar">
+                <select value={guitar} onChange={(e) => setGuitar(e.target.value)} style={{ ...inputStyle, minHeight: 42 }} aria-label="Guitar">
                   <option value="">—</option><option>Yes</option><option>No</option>
                 </select></label>
-              <label>{lbl("Status", true)}
-                <select value={code} onChange={(e) => pickStatus(e.target.value as Code | "")} style={inputStyle} aria-label="Status">
-                  <option value="">Choose a status…</option>
-                  {CODES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
-                </select></label>
             </div>
-            {followUp && !drops && (
-              <div className="lf-2">
-                <label>{lbl("Next follow-up date", kind === "callback")}
-                  <input type="date" value={date} min={istToday()} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></label>
-                <label>{lbl("Next follow-up time", kind === "callback")}
-                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={inputStyle} /></label>
-              </div>
-            )}
-            {kind === "retry" && (
-              <div style={{ fontSize: 12.5, color: R.mute, marginTop: -4 }}>
-                {drops ? `This is failed attempt ${l.attempts + 1} of ${cfg.retry_rules.max_attempts ?? 6}: the lead will be dropped, no more follow-ups.`
-                  : "Filled automatically from the follow-up rules in CRM Settings. Change it if needed."}
-              </div>
-            )}
-            {(kind === "paid" || kind === "closed") && <div style={{ fontSize: 12.5, color: R.mute, marginTop: -4 }}>No follow-up needed for this status.</div>}
+            <div className="lf-2">
+              <label>{lbl("Next follow-up date", kind === "callback")}
+                <input type="date" value={date} min={istToday()} disabled={dateOff} onChange={(e) => setDate(e.target.value)} aria-label="Next follow-up date"
+                  style={{ ...inputStyle, opacity: dateOff ? 0.5 : 1 }} /></label>
+              <label>{lbl("Next follow-up time", kind === "callback")}
+                <input type="time" value={time} disabled={dateOff} onChange={(e) => setTime(e.target.value)} aria-label="Next follow-up time"
+                  style={{ ...inputStyle, opacity: dateOff ? 0.5 : 1 }} /></label>
+            </div>
+            {kind === "retry" && !drops && <div style={{ fontSize: 12, color: R.mute, marginTop: -6 }}>Filled automatically from the follow-up rules in CRM Settings. Change it if needed.</div>}
+            <Reminder at={reminder.at} repName={repName} note={reminder.note} live={reminder.live} />
             <div className="lf-2">
               <label>{lbl("Representative (assigned to)", true)}
                 <select value={repId} onChange={(e) => setRepId(e.target.value)} style={inputStyle} aria-label="Representative">

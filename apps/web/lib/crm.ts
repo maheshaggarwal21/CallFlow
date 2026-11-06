@@ -96,7 +96,6 @@ export type CrmConfig = {
   wati_templates: { id: string; name: string; label: string; body: string }[];
   wati_mode: "mock" | "live";
   reps: { id: string; name: string }[];
-  campaigns: string[];
   retry_rules: { A?: RetryRule; B?: RetryRule; C?: RetryRule; invalid?: { never?: boolean }; max_attempts?: number };
 };
 export type RetryRule = { hours?: number; next_day_at?: string };

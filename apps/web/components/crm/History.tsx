@@ -7,8 +7,8 @@ import type { Call } from "@callflow/shared-types";
 import { R } from "@/components/report/kit";
 import { audioUrlFor, effectiveFormat } from "@/lib/audioPlayback";
 import { api } from "@/lib/api";
-import { codeMeta, fmtWhen, statusLabel, type CallInfo, type LeadDetail, type TimelineEntry } from "@/lib/crm";
-import { CodeChip, Tag } from "./kit";
+import { codeMeta, fmtWhen, type CallInfo, type LeadDetail, type TimelineEntry } from "@/lib/crm";
+import { CodeChip, StatusBadge, Tag } from "./kit";
 import { Icon } from "./icons";
 
 const asCall = (c: CallInfo) => ({ ...c, audio_presigned_url: null }) as unknown as Call;
@@ -167,7 +167,6 @@ function Entry({ e, first, isOwner, onChanged }: { e: TimelineEntry; first: bool
 
 export function Snapshot({ d }: { d: LeadDetail }) {
   const l = d.lead;
-  const m = codeMeta(l.current_code);
   const row = (icon: Parameters<typeof Icon>[0]["name"], k: string, v: ReactNode, color?: string, hint?: string) => (
     <div style={{ display: "grid", gridTemplateColumns: "22px 1fr auto", gap: 8, alignItems: "center", padding: "7px 0", borderTop: "1px solid #f1e8da", fontSize: 13 }}>
       <span style={{ color: R.out, display: "inline-flex" }}><Icon name={icon} size={16} /></span>
@@ -179,7 +178,7 @@ export function Snapshot({ d }: { d: LeadDetail }) {
   return (
     <Card icon="calendar" title="Follow-up snapshot">
       <div style={{ marginTop: -7 }}>
-        {row("target", "Status", statusLabel(l), m ? KIND_COLOR[m.kind] : undefined)}
+        {row("target", "Status", <StatusBadge l={l} />)}
         {row("calendar", "Next follow-up date", f ? longDate(f) : "—", f ? R.out : undefined)}
         {row("clock", "Next follow-up time", f ? timeOf(f) : "—", f ? R.out : undefined)}
         {row("user", "Assigned to", l.assigned_to_name ?? "—")}

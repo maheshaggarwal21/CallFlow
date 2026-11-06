@@ -16,8 +16,8 @@ import Pagination from "@/components/ui/Pagination";
 
 const IS_DEV = process.env.NODE_ENV !== "production";
 const IST = "Asia/Kolkata";
-type Filters = { q: string; status: string; code: string; campaign: string; assigned: string; fdate: string; from: string; to: string };
-const EMPTY: Filters = { q: "", status: "", code: "", campaign: "", assigned: "", fdate: "", to: "", from: "" };
+type Filters = { q: string; status: string; code: string; assigned: string; fdate: string; from: string; to: string };
+const EMPTY: Filters = { q: "", status: "", code: "", assigned: "", fdate: "", to: "", from: "" };
 const istDay = (d: string | number) => new Date(d).toLocaleDateString("en-CA", { timeZone: IST });
 
 function qs(f: Filters, extra: Record<string, string | number> = {}) {
@@ -86,12 +86,14 @@ export default function LeadsPage() {
   const sel = (flex: string) => ({ ...inputStyle, flex, width: "auto" });
   const filterLabel = { display: "grid", gap: 3, fontSize: 10.5, fontWeight: 700, color: R.mute, textTransform: "uppercase", letterSpacing: ".05em" } as const;
   return (
-    <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gap: 14 }}>
+    <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 14 }}>
       <style>{CRM_CSS}</style>
       <HeaderBand eyebrow="CRM" title="Leads" sub="Track every lead, its status and follow-ups · refreshes every 30 s"
         right={<>
           {IS_DEV && <Btn kind="light" onClick={simulate} disabled={simulating} title="Dev only: sends one fake lead through the intake endpoint">
             {simulating ? "Sending…" : "＋ Simulate new lead"}</Btn>}
+          <Btn kind="light" onClick={() => { setQ(""); setF(EMPTY); }} title="Clear every filter">↺ Reset</Btn>
+          {can("export_leads") && <Btn kind="good" onClick={exportCsv} disabled={exporting} title="Download the filtered leads as CSV">{exporting ? "Exporting…" : "⇩ Export"}</Btn>}
           <Btn kind="light" onClick={() => mutate()}>Refresh</Btn>
         </>}>
         <div className="crm-g4">
@@ -113,10 +115,6 @@ export default function LeadsPage() {
             {CODES.map((c) => <option key={c.code} value={`c:${c.code}`}>{c.label}</option>)}
             <option value="s:dropped">Dropped</option>
           </select></label>
-        <label style={{ ...filterLabel, flex: "1 1 150px" }}>Lead source
-          <select value={f.campaign} onChange={(e) => setF({ ...f, campaign: e.target.value })} style={sel("1")}>
-            <option value="">All sources</option>{cfg?.campaigns.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select></label>
         <label style={{ ...filterLabel, flex: "1 1 150px" }}>Representative
           <select value={f.assigned} onChange={(e) => setF({ ...f, assigned: e.target.value })} style={sel("1")}>
             <option value="">All representatives</option><option value="me">Me</option><option value="none">Not assigned</option>
@@ -129,8 +127,6 @@ export default function LeadsPage() {
             <input type="date" value={f.from} max={f.to || undefined} onChange={(e) => setF({ ...f, from: e.target.value })} aria-label="From" style={sel("1")} />
             <input type="date" value={f.to} min={f.from || undefined} onChange={(e) => setF({ ...f, to: e.target.value })} aria-label="To" style={sel("1")} />
           </span></label>
-        <Btn kind="ghost" onClick={() => { setQ(""); setF(EMPTY); }}>↺ Reset</Btn>
-        {can("export_leads") && <Btn kind="good" onClick={exportCsv} disabled={exporting}>{exporting ? "Exporting…" : "⇩ Export"}</Btn>}
       </div>
 
       {next && (
