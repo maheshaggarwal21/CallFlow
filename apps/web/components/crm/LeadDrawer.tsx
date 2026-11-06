@@ -107,7 +107,7 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner, expanded, onExpand }: {
           <div style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: R.out, fontWeight: 700 }}>Lead follow-up</div>
           <h2 style={{ margin: "1px 0 0", fontSize: 22, fontWeight: 800 }}>{d.lead.name || "Unnamed lead"}</h2>
           <div style={{ display: "inline-flex", gap: 5, alignItems: "center", fontSize: 12.5, color: R.mute, marginTop: 2 }}>
-            <Icon name="calendar" size={14} style={{ color: R.out }} />Lead received: <b style={{ color: R.ink }}>{received(d.lead.created_at)}</b>
+            <Icon name="calendar" size={14} style={{ color: R.out }} /><b style={{ color: R.ink }} title="Lead received">{received(d.lead.created_at)}</b>
           </div>
         </div>
         <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
