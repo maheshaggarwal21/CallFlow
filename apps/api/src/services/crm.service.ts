@@ -135,9 +135,10 @@ export async function saveOutcome(leadId: string, user: User, input: OutcomeInpu
          student_set_time = ($2::text = 'callback' AND $9::boolean),
          last_contacted_at = NOW(), version = version + 1, updated_by = $8, updated_at = NOW(),
          locked_by = NULL, locked_until = NULL,
-         assigned_to = CASE WHEN $2::text = 'callback' THEN COALESCE($10::uuid, $8::uuid) ELSE assigned_to END
+         assigned_to = COALESCE($10::uuid, CASE WHEN $2::text = 'callback' THEN $8::uuid ELSE assigned_to END),
+         has_guitar = COALESCE($11, has_guitar)
        WHERE id = $1 RETURNING version`,
-      [leadId, s.status, s.current_code, s.next_followup_at, s.attempts, s.amount, JSON.stringify(answers), user.sub, !!input.student_set_time, input.assigned_to ?? null]
+      [leadId, s.status, s.current_code, s.next_followup_at, s.attempts, s.amount, JSON.stringify(answers), user.sub, !!input.student_set_time, input.assigned_to ?? null, input.has_guitar ?? null]
     );
     const callId = await linkNearestCall(client, ix.id, lead.phone10, user.sub, new Date(ix.created_at), input.code);
     await client.query("COMMIT");
@@ -194,7 +195,7 @@ export async function leadDetail(leadId: string) {
   const { rows: [lead] } = await pool.query(
     `SELECT l.id, l.lead_code, l.name, l.email, l.phone_raw, l.phone10, l.source, l.campaign, l.external_id,
             l.status, l.current_code, l.next_followup_at, l.student_set_time, l.attempts, l.last_contacted_at,
-            l.amount, l.answers, l.tags, l.version, l.created_at, l.updated_at, l.locked_until,
+            l.amount, l.has_guitar, l.answers, l.tags, l.version, l.created_at, l.updated_at, l.locked_until,
             l.locked_by, k.name AS locked_by_name, cb.name AS callback_set_by_name, u.name AS updated_by_name,
             l.assigned_to, a.name AS assigned_to_name
      FROM leads l
@@ -292,6 +293,10 @@ export const queueFilterSchema = z.object({
   code: z.string().max(1).optional(),
   campaign: z.string().max(150).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** Next follow-up on this IST day */
+  fdate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   // "me", "none" (unassigned) or an employee id
   assigned: z.union([z.enum(["me", "none"]), z.string().uuid()]).optional(),
 });
@@ -313,6 +318,9 @@ export function leadFilters(f: Filters, values: unknown[], meId?: string): strin
   if (f.code) add((n) => `l.current_code = $${n}`, f.code);
   if (f.campaign) add((n) => `l.campaign = $${n}`, f.campaign);
   if (f.date) add((n) => `(l.created_at AT TIME ZONE 'Asia/Kolkata')::date = $${n}::date`, f.date);
+  if (f.from) add((n) => `(l.created_at AT TIME ZONE 'Asia/Kolkata')::date >= $${n}::date`, f.from);
+  if (f.to) add((n) => `(l.created_at AT TIME ZONE 'Asia/Kolkata')::date <= $${n}::date`, f.to);
+  if (f.fdate) add((n) => `(l.next_followup_at AT TIME ZONE 'Asia/Kolkata')::date = $${n}::date`, f.fdate);
   if (f.assigned === "none") where.push("l.assigned_to IS NULL");
   else if (f.assigned) add((n) => `l.assigned_to = $${n}`, f.assigned === "me" ? meId : f.assigned);
   return where;
@@ -320,7 +328,7 @@ export function leadFilters(f: Filters, values: unknown[], meId?: string): strin
 
 export const LEAD_LIST_COLS = `
   l.id, l.lead_code, l.name, l.phone10, l.source, l.campaign, l.status, l.current_code, l.attempts,
-  l.last_contacted_at, l.next_followup_at, l.created_at, l.amount, l.tags, l.student_set_time,
+  l.last_contacted_at, l.next_followup_at, l.created_at, l.amount, l.tags, l.student_set_time, l.has_guitar,
   CASE WHEN l.locked_until > NOW() THEN k.name END AS locked_by_name,
   CASE WHEN l.locked_until > NOW() THEN l.locked_by END AS locked_by,
   cb.name AS callback_set_by_name, l.assigned_to, asg.name AS assigned_to_name,
@@ -358,7 +366,12 @@ export async function queue(user: User, f: Filters, now = new Date()) {
        (SELECT count(*) FROM leads WHERE created_at >= ${IST_TODAY_START})::int AS new_today,
        (SELECT count(*) FROM lead_interactions WHERE code = 'F' AND created_at >= ${IST_TODAY_START})::int AS converted_today,
        (SELECT count(*) FROM calls WHERE employee_id = $1 AND called_at >= ${IST_TODAY_START})::int AS my_calls_today,
-       (SELECT count(*) FROM leads WHERE assigned_to = $1 AND status IN ('new','retry','callback'))::int AS my_leads`,
+       (SELECT count(*) FROM leads WHERE assigned_to = $1 AND status IN ('new','retry','callback'))::int AS my_leads,
+       (SELECT count(*) FROM leads)::int AS total,
+       (SELECT count(*) FROM leads WHERE status = 'new')::int AS new_leads,
+       (SELECT count(*) FROM leads WHERE status IN ('retry','callback')
+          AND (next_followup_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date)::int AS due_today,
+       (SELECT count(*) FROM leads WHERE status = 'converted')::int AS converted`,
     [user.sub]
   );
   return { server_now: now, counts, sections, kpis: { due_now: counts.due_now, overdue: counts.overdue, ...k } };

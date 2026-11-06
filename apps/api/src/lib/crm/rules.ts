@@ -48,6 +48,7 @@ export const outcomeSchema = z.object({
   student_set_time: z.boolean().optional(),
   amount: z.number().positive().max(100000).nullish(),
   assigned_to: z.string().uuid().nullish(),
+  has_guitar: z.boolean().nullish(),
 });
 export type OutcomeInput = z.infer<typeof outcomeSchema>;
 
@@ -55,11 +56,11 @@ export type OutcomeInput = z.infer<typeof outcomeSchema>;
 export function validateOutcome(o: OutcomeInput, now: Date): string | null {
   const needsCallback = CALLBACK_CODES.includes(o.code);
   if (needsCallback || o.code === "F") {
-    if (!o.reason) return `Code ${o.code} needs a reason`;
     if ((o.note ?? "").length < MIN_NOTE) return `Code ${o.code} needs a note of at least ${MIN_NOTE} characters`;
   }
-  if (needsCallback) {
-    if (!o.callback_at) return `Code ${o.code} needs a callback date and time`;
+  if (needsCallback && !o.callback_at) return `Code ${o.code} needs a callback date and time`;
+  // Retry codes may also carry a follow-up time the rep chose instead of the automatic one
+  if (o.callback_at) {
     const at = new Date(o.callback_at).getTime();
     if (at < now.getTime() - 60_000) return "The callback time is in the past";
     if (at > now.getTime() + 90 * 86_400_000) return "The callback is more than 90 days away";
@@ -77,14 +78,14 @@ export type LeadState = {
 
 /** The lead after a saved outcome. `attempts` counts failed tries since the last real contact. */
 export function nextState(prevAttempts: number, o: OutcomeInput, rules: RetryRules, now: Date): LeadState {
-  const base = { current_code: o.code, amount: null as number | null };
+  const base = { current_code: o.code, amount: o.amount ?? null };
   if (RETRY_CODES.includes(o.code)) {
     const attempts = prevAttempts + 1;
     const max = rules.max_attempts ?? DEFAULT_RETRY.max_attempts;
     const invalid = o.reason === INVALID_REASON && rules.invalid?.never !== false;
     if (invalid || attempts >= max) return { ...base, status: "dropped", next_followup_at: null, attempts };
     const rule = rules[o.code as "A" | "B" | "C"] ?? DEFAULT_RETRY[o.code as "A" | "B" | "C"];
-    return { ...base, status: "retry", next_followup_at: retryAt(rule, now), attempts };
+    return { ...base, status: "retry", next_followup_at: o.callback_at ? new Date(o.callback_at) : retryAt(rule, now), attempts };
   }
   if (CALLBACK_CODES.includes(o.code)) {
     return { ...base, status: "callback", next_followup_at: new Date(o.callback_at!), attempts: 0 };

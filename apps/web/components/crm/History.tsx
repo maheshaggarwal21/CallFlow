@@ -1,13 +1,13 @@
 "use client";
 
 // Right column of the lead sheet: follow-up snapshot, the call-log timeline for this number
-// (every rep: forms, WhatsApp sends, re-enquiries, every KoreCall recording) and the next follow-up.
+// (every rep: forms, WhatsApp sends, re-enquiries, every KoreCall recording).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Call } from "@callflow/shared-types";
-import { R, dur } from "@/components/report/kit";
+import { R } from "@/components/report/kit";
 import { audioUrlFor, effectiveFormat } from "@/lib/audioPlayback";
 import { api } from "@/lib/api";
-import { CHECK_LABEL, STATUS_LABEL, codeMeta, fmtWhen, type CallInfo, type FollowUpDraft, type LeadDetail, type TimelineEntry } from "@/lib/crm";
+import { codeMeta, fmtWhen, statusLabel, type CallInfo, type LeadDetail, type TimelineEntry } from "@/lib/crm";
 import { CodeChip, Tag } from "./kit";
 import { Icon } from "./icons";
 
@@ -126,7 +126,6 @@ function Entry({ e, first, isOwner, onChanged }: { e: TimelineEntry; first: bool
         {head(<span style={{ color: "#9a8770", marginTop: 1 }}><Icon name="phone" /></span>, when(e.at), e.call.employee_name,
           <><Tag tone="gold" title="A recording of this number with no form saved against it">No form</Tag>
             <b style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>{mmss(e.call.duration_secs)}</b><Star call={e.call} isOwner={isOwner} onChanged={onChanged} /></>)}
-        {e.call.check && <div style={{ marginTop: 6 }}><Tag>Call check: {CHECK_LABEL[e.call.check.label]}</Tag></div>}
         <Audio call={e.call} />
       </li>
     );
@@ -150,7 +149,7 @@ function Entry({ e, first, isOwner, onChanged }: { e: TimelineEntry; first: bool
   const m = codeMeta(e.code);
   const color = m ? KIND_COLOR[m.kind] : R.mute;
   return (
-    <li style={{ ...box, ...(e.contradiction ? { borderColor: "#e8c4bd" } : {}) }}>{dot(color)}
+    <li style={box}>{dot(color)}
       {head(<span style={{ color, marginTop: 1 }}><Icon name="phone" /></span>, when(e.at), e.employee_name,
         <>{e.call && <b style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>{mmss(e.call.duration_secs)}</b>}
           <CodeChip code={e.code} title={m?.label} />{e.call && <Star call={e.call} isOwner={isOwner} onChanged={onChanged} />}</>)}
@@ -160,8 +159,6 @@ function Entry({ e, first, isOwner, onChanged }: { e: TimelineEntry; first: bool
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
         {e.next_followup_at && <Tag tone="gold">↻ Follow-up {fmtWhen(e.next_followup_at)}</Tag>}
-        {e.call?.check && <Tag tone={e.call.check.label === "possible_conversation" ? "ok" : "neu"} title={`Preview data · ${Math.round(e.call.check.confidence * 100)}% confidence`}>Call check: {CHECK_LABEL[e.call.check.label]}</Tag>}
-        {e.contradiction && <Tag tone="bad">! {e.code} disagrees with the call check</Tag>}
       </div>
       {e.call ? <Audio call={e.call} /> : <div style={{ marginTop: 8, fontSize: 12, color: R.mute, background: R.soft, borderRadius: 8, padding: "6px 10px" }}>No recording found</div>}
     </li>
@@ -182,13 +179,10 @@ export function Snapshot({ d }: { d: LeadDetail }) {
   return (
     <Card icon="calendar" title="Follow-up snapshot">
       <div style={{ marginTop: -7 }}>
-        {row("target", "Status", <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><CodeChip code={l.current_code} />{m ? m.label : STATUS_LABEL[l.status]}</span>, m ? KIND_COLOR[m.kind] : undefined)}
+        {row("target", "Status", statusLabel(l), m ? KIND_COLOR[m.kind] : undefined)}
         {row("calendar", "Next follow-up date", f ? longDate(f) : "—", f ? R.out : undefined)}
         {row("clock", "Next follow-up time", f ? timeOf(f) : "—", f ? R.out : undefined)}
-        {row("user", "Assigned to", l.assigned_to_name ?? <span style={{ color: "#a8977f", fontWeight: 600 }}>Shared pool</span>, undefined, "Who should make the next call")}
-        {row("user", "Callback set by", l.callback_set_by_name ?? "—", undefined, "The rep who agreed the callback time with the student")}
-        {row("retry", "Failed attempts", `${l.attempts} of 6`)}
-        {row("phone", "Last contacted", l.last_contacted_at ? fmtWhen(l.last_contacted_at) : "Never")}
+        {row("user", "Assigned to", l.assigned_to_name ?? "—")}
       </div>
     </Card>
   );
@@ -199,14 +193,7 @@ const HIST_CSS = `
   .lf-dot-live{animation:lf-glow 1.6s ease-in-out infinite}
   @keyframes lf-glow{0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 25%,transparent),0 0 8px color-mix(in srgb,var(--c) 60%,transparent)}
     50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--c) 12%,transparent),0 0 20px color-mix(in srgb,var(--c) 90%,transparent)}}
-  .lf-siren-dome{animation:lf-siren 0.9s ease-in-out infinite alternate}
-  .lf-siren-rays{transform-origin:32px 30px;animation:lf-spin 2.4s linear infinite}
-  @keyframes lf-siren{from{fill:#e8641b;filter:drop-shadow(0 0 2px #e8641b)}to{fill:#ff3b1f;filter:drop-shadow(0 0 10px #ff6a3d)}}
-  @keyframes lf-spin{to{transform:rotate(360deg)}}
-  .lf-banner{animation:lf-ring 2s ease-out infinite}
-  @keyframes lf-ring{0%{box-shadow:0 0 0 0 rgba(232,100,27,.45)}70%{box-shadow:0 0 0 10px rgba(232,100,27,0)}100%{box-shadow:0 0 0 0 rgba(232,100,27,0)}}
-  @media (prefers-reduced-motion: reduce){.lf-dot-live,.lf-siren-dome,.lf-siren-rays,.lf-banner{animation:none}
-    .lf-siren-dome{fill:#ff3b1f}}
+  @media (prefers-reduced-motion: reduce){.lf-dot-live{animation:none}}
 `;
 
 export function History({ d, isOwner, onChanged }: { d: LeadDetail; isOwner: boolean; onChanged: () => void }) {
@@ -222,67 +209,5 @@ export function History({ d, isOwner, onChanged }: { d: LeadDetail; isOwner: boo
       )}
     </Card>
     </>
-  );
-}
-
-function Siren({ on }: { on: boolean }) {
-  return (
-    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden style={{ flex: "none" }}>
-      {on && <g className="lf-siren-rays" stroke="#ff6a3d" strokeWidth="3" strokeLinecap="round" opacity=".75">
-        <path d="M32 4v7M8 30h7M49 30h7M15 13l5 5M49 13l-5 5" />
-      </g>}
-      <path className={on ? "lf-siren-dome" : undefined} d="M18 46V34a14 14 0 0 1 28 0v12z" fill={on ? "#e8641b" : "#c2b39c"} />
-      <path d="M24 34a8 8 0 0 1 8-8" stroke="#fff" strokeWidth="3" strokeLinecap="round" fill="none" opacity=".7" />
-      <rect x="12" y="46" width="40" height="8" rx="3" fill="#3b2a1e" />
-    </svg>
-  );
-}
-
-/**
- * Below the call log: the next follow-up. While the rep is filling the form it previews what
- * they are about to set (date, time, representative); otherwise it shows what is saved.
- */
-export function FollowUpBanner({ d, draft }: { d: LeadDetail; draft: FollowUpDraft }) {
-  const l = d.lead;
-  let title = "Next follow-up", line: ReactNode, pill: string | null = null, live = false, sub: string | null = null;
-  if (draft?.kind === "callback" && draft.at) {
-    live = true;
-    title = "Follow-up you are setting";
-    line = <><b>{draft.repName ?? "The team"}</b> will be reminded on</>;
-    pill = `${longDate(draft.at)} at ${timeOf(draft.at)}`;
-    sub = "Blinks in Due now 15 minutes before, for every rep. Saved when you press Save form.";
-  } else if (draft) {
-    line = draft.text;
-    pill = draft.at ? `${longDate(draft.at)} at ${timeOf(draft.at)}` : null;
-  } else if (l.status === "callback" && l.next_followup_at) {
-    live = true;
-    line = <><b>{l.assigned_to_name ?? l.callback_set_by_name ?? "The team"}</b> will be reminded on</>;
-    pill = `${longDate(l.next_followup_at)} at ${timeOf(l.next_followup_at)}`;
-    sub = `Set by ${l.callback_set_by_name ?? "—"}${l.student_set_time ? " · the student asked for this time" : ""}. Blinks in Due now 15 minutes before.`;
-  } else if (l.status === "retry" && l.next_followup_at) {
-    line = "Back in the Retry list after the wait";
-    pill = `${longDate(l.next_followup_at)} at ${timeOf(l.next_followup_at)}`;
-  } else if (l.status === "converted") {
-    line = `Paid ₹${Number(l.amount ?? 299)} trial. Schedule the first class.`;
-  } else if (l.status === "dnc") {
-    line = "Closed: the student asked not to be called again.";
-  } else if (l.status === "dropped") {
-    line = `Dropped after ${l.attempts} failed attempts. The owner can revive it.`;
-  } else {
-    line = "Fresh lead, not called yet. Pick an outcome to set the next follow-up.";
-  }
-  return (
-    <section className={live ? "lf-banner" : undefined} aria-live="polite"
-      style={{ background: live ? "linear-gradient(135deg,#fff3e2,#ffe1c4)" : "linear-gradient(150deg,#fbf6ee,#f3eadc)",
-        border: `1.5px solid ${live ? "#f0a46b" : R.line}`, borderRadius: 16, padding: "14px 16px", display: "flex", gap: 14, alignItems: "center" }}>
-      <Siren on={live} />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 15.5, fontWeight: 800, color: live ? "#b3420f" : R.ink }}>{title}</div>
-        <div style={{ fontSize: 13, marginTop: 2 }}>{line}</div>
-        {pill && <div style={{ display: "inline-block", marginTop: 8, background: live ? `linear-gradient(135deg,#ff5a1f,#c4622d)` : "#8c5a3c", color: "#fff",
-          fontWeight: 800, fontSize: 17, padding: "8px 18px", borderRadius: 999, boxShadow: live ? "0 0 18px -2px rgba(255,90,31,.55)" : "none" }}>{pill}</div>}
-        {sub && <div style={{ fontSize: 11.5, color: R.mute, marginTop: 7 }}>{sub}</div>}
-      </div>
-    </section>
   );
 }

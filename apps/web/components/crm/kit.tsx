@@ -19,9 +19,9 @@ export const CRM_CSS = `
     .crm-due-pill{display:inline-block}
     .crm-row,.crm-btn,.crm-drawer{transition:none}
   }
-  .crm-g5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+  .crm-g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
   .crm-drawer-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;align-items:start}
-  @media (max-width:1100px){.crm-g5{grid-template-columns:repeat(3,minmax(0,1fr))}.crm-drawer-grid{grid-template-columns:1fr}}
+  @media (max-width:1100px){.crm-g4{grid-template-columns:repeat(2,minmax(0,1fr))}.crm-drawer-grid{grid-template-columns:1fr}}
 `;
 
 const CHIP: Record<string, [string, string]> = {
@@ -51,12 +51,6 @@ export function Tag({ children, tone = "neu", title }: { children: ReactNode; to
 }
 
 /** Marks a setting the client still has to confirm (pointed at during the demo). */
-export function PendingTag() {
-  return <span title="Default chosen for the demo; waiting for the client to confirm"
-    style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", padding: "2px 8px", borderRadius: 999, background: "#fff1d6", color: "#8a5a12", border: `1px dashed ${R.gold}` }}>
-    Pending client decision</span>;
-}
-
 const tl: CSSProperties = { fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase", opacity: 0.85, fontWeight: 600 };
 
 /** Translucent KPI tile for the espresso header band. */
@@ -69,12 +63,6 @@ export function BandTile({ label, value, sub, accent }: { label: string; value: 
     </div>
   );
 }
-
-export const tabBtn = (on: boolean): CSSProperties => ({
-  display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 12px", border: 0, borderRadius: 9, cursor: "pointer",
-  fontSize: 13.5, fontFamily: "inherit", whiteSpace: "nowrap", color: on ? "#fff" : "#e9dccb",
-  background: on ? "#5a4231" : "transparent", boxShadow: on ? `inset 0 -3px 0 ${R.gold}` : "none", fontWeight: on ? 600 : 400,
-});
 
 /** The dark band at the top of every CRM page: eyebrow, title, right-side actions, then children (tiles / tabs). */
 export function HeaderBand({ eyebrow, title, sub, right, children }: { eyebrow: string; title: ReactNode; sub?: ReactNode; right?: ReactNode; children?: ReactNode }) {

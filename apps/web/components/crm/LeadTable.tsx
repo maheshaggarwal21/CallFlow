@@ -1,81 +1,47 @@
 "use client";
 
-// Lead rows shared by the queue sections, the queue's "All leads" tab and the All Leads page.
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { Call } from "@callflow/shared-types";
-import { R, dur } from "@/components/report/kit";
-import { api } from "@/lib/api";
-import { playWithFallback, playbackCandidates } from "@/lib/audioPlayback";
-import { STATUS_LABEL, fmtAgo, fmtWhen, groupPhone, type LeadRow } from "@/lib/crm";
-import { WhatsAppIcon } from "@/components/ui/WABtn";
-import { CodeChip, Tag, tdStyle, thStyle } from "./kit";
-import { Icon } from "./icons";
-
-/** Google Calendar "add event" link for the follow-up (15 min slot). */
-const gcalUrl = (l: LeadRow) => {
-  const t = (ms: number) => new Date(ms).toISOString().replace(/[-:]|\.\d{3}/g, "");
-  const start = new Date(l.next_followup_at!).getTime();
-  return `https://calendar.google.com/calendar/render?${new URLSearchParams({
-    action: "TEMPLATE", text: `Follow up: ${l.name || "Lead"} (${l.lead_code})`,
-    dates: `${t(start)}/${t(start + 15 * 60_000)}`, details: `Call ${groupPhone(l.phone10)} via KoreCall`,
-  })}`;
-};
-
-const actBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: `1px solid ${R.line}`, background: R.card, color: R.ink,
-  display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, textDecoration: "none" };
-
-function Actions({ l, onOpen }: { l: LeadRow; onOpen: (id: string) => void }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => navigator.clipboard?.writeText(l.phone10).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); });
-  return (
-    <span style={{ display: "inline-flex", gap: 5 }}>
-      <button className="crm-btn" style={actBtn} onClick={() => onOpen(l.id)} title="Open lead form" aria-label={`Open ${l.name}`}><Icon name="open" size={15} /></button>
-      <a className="crm-btn" style={{ ...actBtn, color: "#1fa855" }} href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer"
-        title="Chat on WhatsApp" aria-label={`WhatsApp ${l.name}`}><WhatsAppIcon size={15} /></a>
-      <button className="crm-btn" style={{ ...actBtn, color: copied ? R.good : R.ink }} onClick={copy}
-        title={copied ? "Copied" : "Copy number (to dial on KoreCall)"} aria-label={`Copy number of ${l.name}`}><Icon name={copied ? "check" : "copy"} size={15} /></button>
-      {l.next_followup_at
-        ? <a className="crm-btn" style={actBtn} href={gcalUrl(l)} target="_blank" rel="noopener noreferrer"
-            title={`Add follow-up (${fmtWhen(l.next_followup_at)}) to Google Calendar`} aria-label={`Add ${l.name}'s follow-up to calendar`}><Icon name="calendar" size={15} /></a>
-        : <span style={{ ...actBtn, opacity: 0.35, cursor: "default" }} title="No follow-up scheduled"><Icon name="calendar" size={15} /></span>}
-    </span>
-  );
-}
-
-/** One inline player for the whole table: play a lead's last recording, click again to stop. */
-export function useInlinePlayer() {
-  const audio = useRef<HTMLAudioElement | null>(null);
-  const [playing, setPlaying] = useState<string | null>(null);
-  useEffect(() => () => audio.current?.pause(), []);
-  const toggle = async (callId: string) => {
-    audio.current?.pause();
-    if (playing === callId) return setPlaying(null);
-    setPlaying(callId);
-    try {
-      const urls = await api.get<Pick<Call, "audio_urls" | "audio_format" | "audio_presigned_url">>(`/crm/calls/${callId}/audio`);
-      audio.current = playWithFallback(playbackCandidates(urls as Call), () => setPlaying(null));
-      if (!audio.current) setPlaying(null);
-    } catch {
-      setPlaying(null);
-    }
-  };
-  return { playing, toggle };
-}
+// Lead rows for the Leads page: the client's columns, one row per lead, click to open the form.
+import type { CSSProperties } from "react";
+import { R } from "@/components/report/kit";
+import { DUE_WINDOW_MS, codeMeta, groupPhone, statusLabel, type LeadRow } from "@/lib/crm";
+import { Tag, tdStyle, thStyle } from "./kit";
 
 export type SortState = { sort: string; dir: "asc" | "desc" };
 
-export default function LeadTable({ rows, onOpen, player, now, meId, sort, onSort, empty = "No leads here", selected, onSelect }: {
-  rows: LeadRow[]; onOpen: (id: string) => void; player: ReturnType<typeof useInlinePlayer>; now: number; meId: string;
-  /** Checkbox column (All Leads → assign) */
-  selected?: Set<string>; onSelect?: (ids: string[], on: boolean) => void;
-  sort?: SortState; onSort?: (s: SortState) => void; empty?: string;
+const IST = "Asia/Kolkata";
+const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric" });
+const time = (d: string) => new Date(d).toLocaleTimeString("en-US", { timeZone: IST, hour: "2-digit", minute: "2-digit", hour12: true });
+
+const STATUS_TONE: Record<string, [string, string]> = {
+  new: ["#e7f0fb", "#2563a8"], retry: ["#f4ece0", "#7a6650"], callback: ["#f1e8fb", "#6b3fa0"],
+  converted: ["#e3f4dd", "#2f6b2b"], dnc: ["#fbe7e3", "#a8402f"], dropped: ["#eee9e2", "#8a8278"],
+};
+
+/** Callbacks: "Due in 5 min" / "Due now" (blinks) or "Overdue"; no-contact retries whose wait is over: "Retry due". */
+export function followUpAlert(l: LeadRow, now: number): { text: string; tone: "gold" | "bad" | "neu" } | null {
+  if (!l.next_followup_at) return null;
+  const diff = new Date(l.next_followup_at).getTime() - now;
+  if (l.status === "retry") return diff <= 0 ? { text: "Retry due", tone: "neu" } : null;
+  if (l.status !== "callback" || diff > DUE_WINDOW_MS) return null;
+  if (-diff >= DUE_WINDOW_MS) return { text: "Overdue", tone: "bad" };
+  return { text: diff > 60_000 ? `Due in ${Math.round(diff / 60_000)} min` : "Due now", tone: "gold" };
+}
+
+export function StatusPill({ l }: { l: Pick<LeadRow, "status" | "current_code"> }) {
+  const [bg, fg] = STATUS_TONE[l.status] ?? STATUS_TONE.dropped;
+  return <span title={codeMeta(l.current_code)?.rule} style={{ display: "inline-block", padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: bg, color: fg, whiteSpace: "nowrap" }}>{statusLabel(l)}</span>;
+}
+
+export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start = 1, empty = "No leads here" }: {
+  rows: LeadRow[]; onOpen: (id: string) => void; now: number; meId: string;
+  sort?: SortState; onSort?: (s: SortState) => void; start?: number; empty?: string;
 }) {
   if (!rows.length) return <p style={{ margin: "6px 2px 0", color: R.mute, fontSize: 13 }}>{empty}</p>;
   const head = (label: string, key?: string, style?: CSSProperties) => {
     const on = sort && key && sort.sort === key;
     const click = key && onSort ? () => onSort({ sort: key, dir: on && sort!.dir === "desc" ? "asc" : "desc" }) : undefined;
     return (
-      <th key={label} style={{ ...thStyle, ...style, cursor: click ? "pointer" : "default" }} onClick={click}
+      <th key={label} style={{ ...thStyle, whiteSpace: "normal", ...style, cursor: click ? "pointer" : "default" }} onClick={click}
         aria-sort={on ? (sort!.dir === "asc" ? "ascending" : "descending") : undefined}>
         {label}{on ? (sort!.dir === "asc" ? " ↑" : " ↓") : ""}
       </th>
@@ -83,71 +49,39 @@ export default function LeadTable({ rows, onOpen, player, now, meId, sort, onSor
   };
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, tableLayout: "fixed", minWidth: 1060 }}>
-        {/* Fixed widths so every queue section lines up */}
-        <colgroup>{(selected ? [3, 15, 10, 10, 11, 4, 10, 13, 9, 15] : [16, 10, 11, 11, 4, 10, 14, 9, 15]).map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, tableLayout: "fixed", minWidth: 1080 }}>
+        {/* Fixed widths so every section lines up */}
+        <colgroup>{[3, 9, 11, 10, 9, 10, 5, 5, 10, 9, 8, 11].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
         <thead><tr>
-          {selected && onSelect && (
-            <th style={thStyle}><input type="checkbox" aria-label="Select all on this page" checked={rows.every((r) => selected.has(r.id))}
-              onChange={(e) => onSelect(rows.map((r) => r.id), e.target.checked)} style={{ width: 16, height: 16, accentColor: R.out }} /></th>
-          )}
-          {head("Lead", "lead_code")}{head("Number")}{head("Source")}{head("Code", "status")}{head("Tries", "attempts")}
-          {head("Last contacted", "last_contacted_at")}{head("Next follow-up", "next_followup_at")}{head("Last call")}{head("Actions")}
+          {head("#")}{head("Received", "created_at")}{head("Name", "name")}{head("Contact")}{head("Representative")}{head("Status", "status")}
+          {head("Amount")}{head("Guitar")}{head("Last contacted", "last_contacted_at")}{head("Follow-up date", "next_followup_at")}{head("Follow-up time")}{head("Follow-up alert")}
         </tr></thead>
         <tbody>
-          {rows.map((l) => {
-            const due = l.bucket === "due_now";
+          {rows.map((l, i) => {
+            const alert = followUpAlert(l, now);
+            const f = l.next_followup_at && ["retry", "callback"].includes(l.status) ? l.next_followup_at : null;
             return (
-              <tr key={l.id} className={`crm-row${due ? " crm-due" : ""}`} tabIndex={0} style={{ cursor: "pointer", ...(selected?.has(l.id) ? { background: "#fff4e3" } : {}) }}
+              <tr key={l.id} className={`crm-row${alert && alert.tone === "gold" ? " crm-due" : ""}`} tabIndex={0} style={{ cursor: "pointer" }}
                 onClick={() => onOpen(l.id)} onKeyDown={(e) => e.key === "Enter" && onOpen(l.id)}>
-                {selected && onSelect && (
-                  <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" aria-label={`Select ${l.name}`} checked={selected.has(l.id)} onChange={(e) => onSelect([l.id], e.target.checked)}
-                      style={{ width: 16, height: 16, accentColor: R.out }} />
-                  </td>
-                )}
+                <td style={{ ...tdStyle, color: R.mute, fontSize: 12 }}>{start + i}</td>
+                <td style={{ ...tdStyle, fontSize: 12.5 }}>{day(l.created_at)}<div style={{ color: R.mute, fontSize: 11.5 }}>{time(l.created_at)}</div></td>
                 <td style={tdStyle}>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                    <b>{l.name || "Unnamed"}</b>
-                    {due && <span className="crm-due-pill"><Tag tone="gold">Due now</Tag></span>}
+                  <b>{l.name || "Unnamed"}</b>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
                     {l.tags?.includes("re-enquired") && <Tag tone="gold">re-enquired</Tag>}
-                    {l.assigned_to === meId ? <Tag tone="gold" title="Assigned to you">★ Mine</Tag>
-                      : l.assigned_to_name ? <Tag title={`Assigned to ${l.assigned_to_name}`}>→ {l.assigned_to_name.split(" ")[0]}</Tag> : null}
                     {l.locked_by_name && l.locked_by !== meId && <Tag title={`${l.locked_by_name} has this lead open`}>🔒 {l.locked_by_name.split(" ")[0]}</Tag>}
                   </div>
-                  <div style={{ fontSize: 11.5, color: R.mute }}>{l.lead_code} · {fmtAgo(l.created_at, now)}</div>
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", letterSpacing: ".02em" }}>{groupPhone(l.phone10)}</td>
-                <td style={{ ...tdStyle, fontSize: 12.5, color: R.mute, maxWidth: 170 }}>{l.campaign ?? l.source ?? "—"}</td>
-                <td style={tdStyle}>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}><CodeChip code={l.current_code} /><span style={{ fontSize: 12, color: R.mute }}>{STATUS_LABEL[l.status]}</span></div>
-                </td>
-                <td style={{ ...tdStyle, textAlign: "center" }}>{l.attempts}</td>
-                <td style={{ ...tdStyle, whiteSpace: "nowrap", fontSize: 12.5 }}>{fmtAgo(l.last_contacted_at, now)}</td>
-                <td style={{ ...tdStyle, fontSize: 12.5, minWidth: 170 }}>
-                  {l.next_followup_at ? <b style={{ color: l.bucket === "overdue" ? R.bad : due ? "#8a5a12" : R.ink }}>{fmtWhen(l.next_followup_at)}</b> : "—"}
-                  {l.status === "callback" && l.callback_set_by_name && (
-                    <div style={{ color: R.mute, fontSize: 11.5 }}>
-                      Callback set by {l.callback_set_by_name.split(" ")[0]}
-                      {l.assigned_to_name && l.assigned_to_name !== l.callback_set_by_name ? ` · for ${l.assigned_to_name.split(" ")[0]}` : ""}
-                      {l.student_set_time ? ` · student asked for ${fmtWhen(l.next_followup_at).replace(/^Today /, "")}` : ""}
-                    </div>
-                  )}
-                </td>
-                <td style={{ ...tdStyle, whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
-                  {l.last_call ? (
-                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                      <button disabled={!l.last_call.has_audio} onClick={() => player.toggle(l.last_call!.id)} className="crm-btn"
-                        aria-label={player.playing === l.last_call.id ? "Stop" : "Play last call"}
-                        title={l.last_call.has_audio ? "Play the last recording" : "Audio expired (90-day limit)"}
-                        style={{ width: 28, height: 28, borderRadius: 14, border: `1px solid ${R.line}`, background: player.playing === l.last_call.id ? R.out : R.card,
-                          color: player.playing === l.last_call.id ? "#fff" : R.ink, cursor: l.last_call.has_audio ? "pointer" : "default", opacity: l.last_call.has_audio ? 1 : 0.4 }}>
-                        {player.playing === l.last_call.id ? "■" : "▶"}</button>
-                      <span style={{ fontSize: 12.5 }}>{dur(l.last_call.duration_secs)}</span>
-                    </span>
-                  ) : <span style={{ color: "#c2b39c", fontSize: 12 }}>—</span>}
-                </td>
-                <td style={{ ...tdStyle, whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}><Actions l={l} onOpen={onOpen} /></td>
+                <td style={{ ...tdStyle, fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{groupPhone(l.phone10)}</td>
+                <td style={{ ...tdStyle, fontSize: 12.5 }}>{l.assigned_to_name ?? <span style={{ color: "#c2b39c" }}>—</span>}</td>
+                <td style={tdStyle}><StatusPill l={l} /></td>
+                <td style={{ ...tdStyle, fontSize: 12.5 }}>{l.amount ? `₹${Number(l.amount)}` : "—"}</td>
+                <td style={{ ...tdStyle, fontSize: 12.5, fontWeight: 600, color: l.has_guitar ? R.good : l.has_guitar === false ? R.bad : "#c2b39c" }}>
+                  {l.has_guitar == null ? "—" : l.has_guitar ? "Yes" : "No"}</td>
+                <td style={{ ...tdStyle, fontSize: 12.5 }}>{l.last_contacted_at ? <>{day(l.last_contacted_at)}<div style={{ color: R.mute, fontSize: 11.5 }}>{time(l.last_contacted_at)}</div></> : "—"}</td>
+                <td style={{ ...tdStyle, fontSize: 12.5, fontWeight: f ? 700 : 400 }}>{f ? day(f) : "—"}</td>
+                <td style={{ ...tdStyle, fontSize: 12.5, fontWeight: f ? 700 : 400, whiteSpace: "nowrap" }}>{f ? time(f) : "—"}</td>
+                <td style={tdStyle}>{alert ? <Tag tone={alert.tone}>{alert.tone === "gold" ? "🔔 " : ""}{alert.text}</Tag> : <span style={{ color: "#c2b39c" }}>—</span>}</td>
               </tr>
             );
           })}

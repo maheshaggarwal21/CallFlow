@@ -57,12 +57,12 @@ test("D/E/F validation", () => {
   const now = new Date("2026-11-06T12:00:00Z");
   const later = "2026-11-06T18:30:00+05:30";
   const note = "Asked to call back at 6:30 PM";
-  assert.match(validateOutcome(base({ code: "D", note, callback_at: later }), now)!, /reason/);
+  assert.equal(validateOutcome(base({ code: "D", note, callback_at: later }), now), null);  // reason is optional now
   assert.match(validateOutcome(base({ code: "D", reason: "Busy", note: "too short", callback_at: later }), now)!, /15 characters/);
   assert.match(validateOutcome(base({ code: "E", reason: "Salary", note }), now)!, /callback/);
   assert.match(validateOutcome(base({ code: "D", reason: "Busy", note, callback_at: "2026-11-06T10:00:00Z" }), now)!, /past/);
   assert.equal(validateOutcome(base({ code: "D", reason: "Busy", note, callback_at: later }), now), null);
-  assert.match(validateOutcome(base({ code: "F", note }), now)!, /reason/);
+  assert.equal(validateOutcome(base({ code: "F", note }), now), null);
   assert.equal(validateOutcome(base({ code: "F", reason: "Paid on UPI", note: "Paid 299 on UPI during the call" }), now), null);
   assert.equal(validateOutcome(base({ code: "B" }), now), null);  // retries need nothing
   assert.equal(validateOutcome(base({ code: "Z" }), now), null);
@@ -73,6 +73,8 @@ test("next state: retry waits, drop after 6 failed attempts or an invalid number
   const now = new Date("2026-11-06T12:00:00Z"); // 17:30 IST
   const rules = { A: { hours: 6 }, B: { hours: 3 }, C: { next_day_at: "10:00" }, invalid: { never: true }, max_attempts: 6 };
   assert.deepEqual(nextState(0, base({ code: "B" }), rules, now).next_followup_at, new Date("2026-11-06T15:00:00Z"));
+  // A time the rep picked beats the automatic retry
+  assert.deepEqual(nextState(0, base({ code: "B", callback_at: "2026-11-07T06:00:00Z" }), rules, now).next_followup_at, new Date("2026-11-07T06:00:00Z"));
   assert.deepEqual(retryAt(rules.C, now), new Date("2026-11-07T04:30:00Z")); // 10:00 IST next day
   assert.equal(nextState(4, base({ code: "A" }), rules, now).status, "retry");
   assert.equal(nextState(5, base({ code: "A" }), rules, now).status, "dropped");

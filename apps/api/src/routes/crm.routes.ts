@@ -64,15 +64,17 @@ router.get("/me", async (req, res) => {
 
 /** Lists the lead drawer needs: active questions, reasons, note templates, WhatsApp templates. */
 router.get("/config", async (_req, res) => {
-  const [q, r, t, w, retry, reps] = await Promise.all([
+  const [q, r, t, w, retry, reps, src] = await Promise.all([
     pool.query("SELECT id, label, type, options FROM lead_questions WHERE active ORDER BY sort_order, created_at"),
     pool.query("SELECT id, label, codes FROM lead_reasons WHERE active ORDER BY sort_order, created_at"),
     pool.query("SELECT id, label, text, codes, category FROM note_templates WHERE active ORDER BY sort_order, created_at"),
     pool.query("SELECT id, name, label, body FROM wati_templates WHERE active ORDER BY sort_order, created_at"),
     getSetting("retry_rules", {}),
     pool.query("SELECT id, name FROM employees WHERE role = 'employee' AND status = 'active' ORDER BY name"),
+    pool.query("SELECT DISTINCT campaign FROM leads WHERE campaign IS NOT NULL ORDER BY campaign"),
   ]);
-  return res.json({ questions: q.rows, reasons: r.rows, note_templates: t.rows, wati_templates: w.rows, retry_rules: retry, wati_mode: watiMode(), reps: reps.rows });
+  return res.json({ questions: q.rows, reasons: r.rows, note_templates: t.rows, wati_templates: w.rows, retry_rules: retry, wati_mode: watiMode(), reps: reps.rows,
+    campaigns: src.rows.map((x) => x.campaign) });
 });
 
 router.get("/queue", async (req, res) => {
@@ -118,13 +120,13 @@ router.get("/leads/export.csv", requirePermission("export_leads"), async (req, r
   const values: unknown[] = [];
   const where = leadFilters(f, values, user(req).sub);
   const { rows } = await pool.query(
-    `SELECT l.lead_code, l.name, l.phone10, l.email, l.source, l.campaign, l.status, l.current_code, l.attempts,
+    `SELECT l.lead_code, l.name, l.phone10, l.email, l.source, l.campaign, l.status, l.current_code, l.attempts, l.has_guitar,
             l.last_contacted_at, l.next_followup_at, l.amount, l.tags, l.created_at, a.name AS assigned_to
      FROM leads l LEFT JOIN employees a ON a.id = l.assigned_to ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
      ORDER BY ${SORTS[f.sort]} ${f.dir} NULLS LAST LIMIT 50000`,
     values
   );
-  const cols = ["lead_code", "name", "phone10", "email", "source", "campaign", "status", "current_code", "assigned_to", "attempts", "last_contacted_at", "next_followup_at", "amount", "tags", "created_at"];
+  const cols = ["lead_code", "name", "phone10", "email", "source", "campaign", "status", "current_code", "assigned_to", "has_guitar", "attempts", "last_contacted_at", "next_followup_at", "amount", "tags", "created_at"];
   res.type("text/csv").set("Content-Disposition", `attachment; filename="leads.csv"`);
   return res.send([cols.join(","), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(","))].join("\n"));
 });

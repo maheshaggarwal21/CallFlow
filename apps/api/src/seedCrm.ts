@@ -314,6 +314,8 @@ async function main() {
       );
     }
   }
+  // Guitar Yes/No for every lead a rep has spoken to
+  await pool.query("UPDATE leads SET has_guitar = random() < 0.6 WHERE source = $1 AND status <> $2", ["demo", "new"]);
   console.log(`seeded ${leads} leads, ${forms} history entries, ${calls} recordings · staff password: ${PASSWORD}`);
   console.log(`logins: owner@crm-demo.local, ${REPS.map((n) => `${n.split(" ")[0].toLowerCase()}@crm-demo.local`).join(", ")}`);
 }

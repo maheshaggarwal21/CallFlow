@@ -17,9 +17,7 @@ const PAGE_LABELS: Record<string, string> = {
   students:   "Students",
   settings:   "Settings",
   employees:  "Employees",
-  "crm/":         "Lead Queue",
-  "crm/leads":    "All Leads",
-  "crm/reports":  "CRM Reports",
+  "crm/":         "Leads",
   "crm/settings": "CRM Settings",
 };
 

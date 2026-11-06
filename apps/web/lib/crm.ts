@@ -4,16 +4,18 @@ export const CRM_ENABLED = process.env.NEXT_PUBLIC_CRM_ENABLED === "true";
 
 export type Code = "A" | "B" | "C" | "D" | "E" | "F" | "Z";
 export const CODES: { code: Code; label: string; rule: string; kind: "retry" | "callback" | "paid" | "closed" }[] = [
-  { code: "A", label: "Didn't connect", rule: "Switched off / not reachable · retry later", kind: "retry" },
-  { code: "B", label: "Rang, not picked", rule: "Retry later", kind: "retry" },
-  { code: "C", label: "Picked up and cut", rule: "Retry later", kind: "retry" },
-  { code: "D", label: "Talked, call me later", rule: "Callback date + time · note", kind: "callback" },
-  { code: "E", label: "Interested, pays later", rule: "Callback date + time · note", kind: "callback" },
-  { code: "F", label: "Paid ₹299 trial", rule: "Note · amount", kind: "paid" },
+  { code: "A", label: "Not reachable", rule: "Switched off / not reachable · retried automatically", kind: "retry" },
+  { code: "B", label: "No response", rule: "Rang, not picked · retried automatically", kind: "retry" },
+  { code: "C", label: "Call cut", rule: "Picked up and cut · retried automatically", kind: "retry" },
+  { code: "D", label: "Call later", rule: "Talked, asked to call later", kind: "callback" },
+  { code: "E", label: "Will pay later", rule: "Interested, pays later", kind: "callback" },
+  { code: "F", label: "Converted", rule: "Paid the ₹299 trial", kind: "paid" },
   { code: "Z", label: "Not interested", rule: "Never call again", kind: "closed" },
 ];
 export const codeMeta = (c: string | null | undefined) => CODES.find((x) => x.code === c);
 export const MIN_NOTE = 15;
+/** Same window as the server: a follow-up is "due" 15 min either side of its time. */
+export const DUE_WINDOW_MS = 15 * 60_000;
 
 export const PERMISSION_LABELS: Record<string, string> = {
   manage_questions: "Manage questions",
@@ -26,10 +28,9 @@ export const PERMISSION_LABELS: Record<string, string> = {
 export const STATUS_LABEL: Record<string, string> = {
   new: "New", retry: "Retry", callback: "Callback", converted: "Converted", dnc: "Do not call", dropped: "Dropped",
 };
-export const CHECK_LABEL: Record<string, string> = {
-  no_answer: "No answer", busy: "Busy", switched_off: "Switched off", invalid_number: "Invalid number", possible_conversation: "Possible conversation",
-};
-export const LIKELY_LABEL = "Likely conversations (≥30 s, coded D/E/F/Z)";
+/** What the client calls the lead's state: "New", "Dropped", else the last outcome's label. */
+export const statusLabel = (l: { status: string; current_code: Code | null }) =>
+  l.status === "new" || l.status === "dropped" || !l.current_code ? STATUS_LABEL[l.status] ?? l.status : codeMeta(l.current_code)?.label ?? l.status;
 
 /** "9465658112" → "94656 58112", easy to read out while dialling. */
 export const groupPhone = (p: string) => (p?.length === 10 ? `${p.slice(0, 5)} ${p.slice(5)}` : p ?? "");
@@ -58,14 +59,14 @@ export type LeadRow = {
   status: string; current_code: Code | null; attempts: number; last_contacted_at: string | null; next_followup_at: string | null;
   created_at: string; amount: string | null; tags: string[]; student_set_time: boolean;
   locked_by: string | null; locked_by_name: string | null; callback_set_by_name: string | null; callback_note?: string | null;
-  assigned_to?: string | null; assigned_to_name?: string | null;
+  assigned_to?: string | null; assigned_to_name?: string | null; has_guitar: boolean | null;
   last_call: LastCall; bucket?: "due_now" | "overdue" | "new" | "retry" | "later";
 };
 export type QueueResponse = {
   server_now: string;
   counts: Record<string, number>;
   sections: Record<"due_now" | "overdue" | "new" | "retry" | "later", LeadRow[]>;
-  kpis: { due_now: number; overdue: number; new_today: number; converted_today: number; my_calls_today: number; my_leads: number };
+  kpis: { due_now: number; overdue: number; total: number; new_leads: number; due_today: number; converted: number };
 };
 
 export type CallInfo = {
@@ -95,12 +96,10 @@ export type CrmConfig = {
   wati_templates: { id: string; name: string; label: string; body: string }[];
   wati_mode: "mock" | "live";
   reps: { id: string; name: string }[];
+  campaigns: string[];
   retry_rules: { A?: RetryRule; B?: RetryRule; C?: RetryRule; invalid?: { never?: boolean }; max_attempts?: number };
 };
 export type RetryRule = { hours?: number; next_day_at?: string };
 export type CrmMe = { permissions: string[]; is_owner: boolean };
 
 export const fillVars = (body: string, vars: Record<string, string>) => body.replace(/\{(\w+)\}/g, (m, k) => vars[k] || m);
-
-/** What the form will set as the next follow-up, shown live in the siren banner before saving. */
-export type FollowUpDraft = { at: string | null; repName: string | null; kind: "callback" | "auto" | "none"; text: string } | null;
