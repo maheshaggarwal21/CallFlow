@@ -110,7 +110,10 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner, expanded, onExpand }: {
             <Icon name="calendar" size={14} style={{ color: R.out }} />Lead received: <b style={{ color: R.ink }}>{received(d.lead.created_at)}</b>
           </div>
         </div>
-        <span style={{ marginLeft: "auto" }}><Btn kind="ghost" onClick={onClose}>Close ✕</Btn></span>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
+          <NumberBox phone10={d.lead.phone10} />
+          <Btn kind="ghost" onClick={onClose}>Close ✕</Btn>
+        </span>
       </header>
       {readOnly && (
         <div role="status" style={{ display: "flex", gap: 10, alignItems: "center", background: "#fff1d6", border: `1px solid ${R.gold}`, borderRadius: 12, padding: "10px 14px", fontSize: 13.5, fontWeight: 600 }}>
@@ -137,6 +140,26 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner, expanded, onExpand }: {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The number in big type for dialling on KoreCall, with a copy button. */
+function NumberBox({ phone10 }: { phone10: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(phone10); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
+  };
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "center", background: R.card, border: `1px solid ${R.line}`, borderRadius: 12, padding: "6px 6px 6px 14px" }}>
+      <Icon name="phone" size={16} style={{ color: R.out }} />
+      <b style={{ fontSize: 20, letterSpacing: ".04em", fontVariantNumeric: "tabular-nums" }} aria-label={`Phone ${phone10.split("").join(" ")}`}>{groupPhone(phone10)}</b>
+      <button type="button" className="crm-btn" onClick={copy} title="Copy number" aria-label="Copy number"
+        style={{ display: "inline-flex", gap: 5, alignItems: "center", border: `1px solid ${copied ? R.good : R.line}`, background: copied ? "#e5efe0" : "#fff",
+          color: copied ? R.good : R.ink, borderRadius: 9, padding: "6px 10px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+        <Icon name={copied ? "check" : "copy"} size={14} />{copied ? "Copied" : "Copy"}
+      </button>
+      <span role="status" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>{copied ? "Number copied" : ""}</span>
     </div>
   );
 }
@@ -356,7 +379,6 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
                   style={{ ...inputStyle, opacity: dateOff ? 0.5 : 1 }} /></label>
             </div>
             {kind === "retry" && !drops && <div style={{ fontSize: 12, color: R.mute, marginTop: -6 }}>Filled automatically from the follow-up rules in CRM Settings. Change it if needed.</div>}
-            <Reminder at={reminder.at} repName={repName} note={reminder.note} live={reminder.live} />
             <div className="lf-2">
               <label>{lbl("Representative (assigned to)", true)}
                 <select value={repId} onChange={(e) => setRepId(e.target.value)} style={inputStyle} aria-label="Representative">
@@ -374,6 +396,7 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
           </div>
         </div>
 
+        <Reminder at={reminder.at} repName={repName} note={reminder.note} live={reminder.live} />
         {err && (
           <div role="alert" style={{ color: R.bad, fontSize: 13, fontWeight: 600, display: "flex", gap: 10, alignItems: "center" }}>
             {err}{stale && <Btn kind="ghost" onClick={() => { setErr(""); onReload(); }}>Reload</Btn>}
