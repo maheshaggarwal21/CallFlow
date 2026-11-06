@@ -281,11 +281,13 @@ export const queueFilterSchema = z.object({
   code: z.string().max(1).optional(),
   campaign: z.string().max(150).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // "me", "none" (unassigned) or an employee id
+  assigned: z.union([z.enum(["me", "none"]), z.string().uuid()]).optional(),
 });
 type Filters = z.infer<typeof queueFilterSchema>;
 
 /** WHERE fragments shared by the queue, the All Leads table and the CSV export. */
-export function leadFilters(f: Filters, values: unknown[]): string[] {
+export function leadFilters(f: Filters, values: unknown[], meId?: string): string[] {
   const where: string[] = [];
   const add = (sql: (n: number) => string, v: unknown) => { values.push(v); where.push(sql(values.length)); };
   if (f.q) {
@@ -300,6 +302,8 @@ export function leadFilters(f: Filters, values: unknown[]): string[] {
   if (f.code) add((n) => `l.current_code = $${n}`, f.code);
   if (f.campaign) add((n) => `l.campaign = $${n}`, f.campaign);
   if (f.date) add((n) => `(l.created_at AT TIME ZONE 'Asia/Kolkata')::date = $${n}::date`, f.date);
+  if (f.assigned === "none") where.push("l.assigned_to IS NULL");
+  else if (f.assigned) add((n) => `l.assigned_to = $${n}`, f.assigned === "me" ? meId : f.assigned);
   return where;
 }
 
@@ -308,7 +312,7 @@ export const LEAD_LIST_COLS = `
   l.last_contacted_at, l.next_followup_at, l.created_at, l.amount, l.tags, l.student_set_time,
   CASE WHEN l.locked_until > NOW() THEN k.name END AS locked_by_name,
   CASE WHEN l.locked_until > NOW() THEN l.locked_by END AS locked_by,
-  cb.name AS callback_set_by_name, asg.name AS assigned_to_name,
+  cb.name AS callback_set_by_name, l.assigned_to, asg.name AS assigned_to_name,
   (SELECT json_build_object('id', c.id, 'duration_secs', c.duration_secs, 'called_at', c.called_at,
                             'has_audio', c.audio_storage_key IS NOT NULL)
    FROM calls c WHERE c.phone10 = l.phone10 ORDER BY c.called_at DESC LIMIT 1) AS last_call`;
@@ -321,7 +325,7 @@ const SECTION_CAP = 200;
 
 export async function queue(user: User, f: Filters, now = new Date()) {
   const values: unknown[] = [];
-  const where = ["l.status IN ('new','retry','callback')", ...leadFilters(f, values)];
+  const where = ["l.status IN ('new','retry','callback')", ...leadFilters(f, values, user.sub)];
   const { rows } = await pool.query(
     `SELECT ${LEAD_LIST_COLS},
        (SELECT coalesce(i.note, i.reason) FROM lead_interactions i
@@ -342,7 +346,8 @@ export async function queue(user: User, f: Filters, now = new Date()) {
     `SELECT
        (SELECT count(*) FROM leads WHERE created_at >= ${IST_TODAY_START})::int AS new_today,
        (SELECT count(*) FROM lead_interactions WHERE code = 'F' AND created_at >= ${IST_TODAY_START})::int AS converted_today,
-       (SELECT count(*) FROM calls WHERE employee_id = $1 AND called_at >= ${IST_TODAY_START})::int AS my_calls_today`,
+       (SELECT count(*) FROM calls WHERE employee_id = $1 AND called_at >= ${IST_TODAY_START})::int AS my_calls_today,
+       (SELECT count(*) FROM leads WHERE assigned_to = $1 AND status IN ('new','retry','callback'))::int AS my_leads`,
     [user.sub]
   );
   return { server_now: now, counts, sections, kpis: { due_now: counts.due_now, overdue: counts.overdue, ...k } };
@@ -448,4 +453,42 @@ export async function reconcile(ids: string[]): Promise<string[]> {
     [ids]
   );
   return rows.map((r) => r.x);
+}
+
+/**
+ * Owner / reassign_leads: give leads to a rep (or back to the pool with null).
+ * Bumps each lead's version so an open form elsewhere gets the 409 reload, and
+ * logs who did it in the lead's history.
+ */
+export async function assignLeads(leadIds: string[], employeeId: string | null, user: User) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    let repName: string | null = null;
+    if (employeeId) {
+      const { rows: [e] } = await client.query("SELECT name FROM employees WHERE id = $1 AND status = 'active' AND role = 'employee'", [employeeId]);
+      if (!e) throw new CrmError(400, "Pick an active representative");
+      repName = e.name;
+    }
+    const { rows } = await client.query(
+      `UPDATE leads SET assigned_to = $2, version = version + 1, updated_by = $3, updated_at = NOW()
+       WHERE id = ANY($1::uuid[]) AND assigned_to IS DISTINCT FROM $2 RETURNING id`,
+      [leadIds, employeeId, user.sub]
+    );
+    if (rows.length) {
+      await client.query(
+        `INSERT INTO lead_interactions (lead_id, employee_id, kind, note, meta)
+         SELECT id, $2, 'system', $3, $4 FROM unnest($1::uuid[]) AS id`,
+        [rows.map((r) => r.id), user.sub, repName ? `Assigned to ${repName} by ${user.name}` : `Moved back to the shared pool by ${user.name}`,
+         JSON.stringify({ assigned_to: employeeId })]
+      );
+    }
+    await client.query("COMMIT");
+    return { updated: rows.length, assigned_to_name: repName };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 }

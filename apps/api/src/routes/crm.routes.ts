@@ -8,7 +8,7 @@ import { requirePermission } from "../middleware/requirePermission";
 import { resolveRange } from "../lib/dateRange";
 import { CODES, PERMISSIONS, outcomeSchema } from "../lib/crm/rules";
 import {
-  CrmError, LEAD_LIST_COLS, LEAD_LIST_JOINS, MAX_INGEST_ROWS, claimLock, getSetting, ingestRows, leadDetail, leadFilters,
+  CrmError, LEAD_LIST_COLS, assignLeads, LEAD_LIST_JOINS, MAX_INGEST_ROWS, claimLock, getSetting, ingestRows, leadDetail, leadFilters,
   permissionsOf, queue, queueFilterSchema, reconcile, releaseLock, reviveLead, saveOutcome,
 } from "../services/crm.service";
 import { crmReport, digestData, digestHtml, linkPair } from "../services/crmReports.service";
@@ -93,7 +93,7 @@ const listSchema = queueFilterSchema.extend({
 router.get("/leads", async (req, res) => {
   const f = parse(listSchema, req.query);
   const values: unknown[] = [];
-  const where = leadFilters(f, values);
+  const where = leadFilters(f, values, user(req).sub);
   const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const [list, count] = await Promise.all([
     pool.query(
@@ -116,17 +116,22 @@ const csvCell = (v: unknown) => {
 router.get("/leads/export.csv", requirePermission("export_leads"), async (req, res) => {
   const f = parse(listSchema, req.query);
   const values: unknown[] = [];
-  const where = leadFilters(f, values);
+  const where = leadFilters(f, values, user(req).sub);
   const { rows } = await pool.query(
     `SELECT l.lead_code, l.name, l.phone10, l.email, l.source, l.campaign, l.status, l.current_code, l.attempts,
-            l.last_contacted_at, l.next_followup_at, l.amount, l.tags, l.created_at
-     FROM leads l ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+            l.last_contacted_at, l.next_followup_at, l.amount, l.tags, l.created_at, a.name AS assigned_to
+     FROM leads l LEFT JOIN employees a ON a.id = l.assigned_to ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
      ORDER BY ${SORTS[f.sort]} ${f.dir} NULLS LAST LIMIT 50000`,
     values
   );
-  const cols = ["lead_code", "name", "phone10", "email", "source", "campaign", "status", "current_code", "attempts", "last_contacted_at", "next_followup_at", "amount", "tags", "created_at"];
+  const cols = ["lead_code", "name", "phone10", "email", "source", "campaign", "status", "current_code", "assigned_to", "attempts", "last_contacted_at", "next_followup_at", "amount", "tags", "created_at"];
   res.type("text/csv").set("Content-Disposition", `attachment; filename="leads.csv"`);
   return res.send([cols.join(","), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(","))].join("\n"));
+});
+
+router.post("/leads/assign", requirePermission("reassign_leads"), async (req, res) => {
+  const b = parse(z.object({ lead_ids: z.array(uuid).min(1).max(500), employee_id: uuid.nullable() }), req.body);
+  return res.json(await assignLeads(b.lead_ids, b.employee_id, user(req)));
 });
 
 router.get("/leads/:id", async (req, res) => {

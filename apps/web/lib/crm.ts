@@ -65,7 +65,7 @@ export type QueueResponse = {
   server_now: string;
   counts: Record<string, number>;
   sections: Record<"due_now" | "overdue" | "new" | "retry" | "later", LeadRow[]>;
-  kpis: { due_now: number; overdue: number; new_today: number; converted_today: number; my_calls_today: number };
+  kpis: { due_now: number; overdue: number; new_today: number; converted_today: number; my_calls_today: number; my_leads: number };
 };
 
 export type CallInfo = {

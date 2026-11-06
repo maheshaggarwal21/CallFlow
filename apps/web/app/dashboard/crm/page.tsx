@@ -16,6 +16,7 @@ import Pagination from "@/components/ui/Pagination";
 const IS_DEV = process.env.NODE_ENV !== "production";
 type Filters = { q: string; status: string; code: string; campaign: string; date: string };
 const EMPTY: Filters = { q: "", status: "", code: "", campaign: "", date: "" };
+type View = "queue" | "mine" | "all";
 
 function qs(f: Filters, extra: Record<string, string | number> = {}) {
   const p = new URLSearchParams();
@@ -25,7 +26,7 @@ function qs(f: Filters, extra: Record<string, string | number> = {}) {
 
 export default function LeadQueuePage() {
   const { isOwner, id: meId } = useAuth();
-  const [tab, setTab] = useState<"queue" | "all">("queue");
+  const [tab, setTab] = useState<View>("queue");
   const [f, setF] = useState<Filters>(EMPTY);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -39,7 +40,7 @@ export default function LeadQueuePage() {
   useEffect(() => { const id = new URLSearchParams(window.location.search).get("lead"); if (id) setOpen(id); }, []);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 4000); return () => clearTimeout(t); }, [toast]);
 
-  const { data, error, mutate } = useSWR<QueueResponse>(`/crm/queue?${qs(f)}`, fetcher, { refreshInterval: 30_000 });
+  const { data, error, mutate } = useSWR<QueueResponse>(`/crm/queue?${qs(f, tab === "mine" ? { assigned: "me" } : {})}`, fetcher, { refreshInterval: 30_000 });
   const now = data ? new Date(data.server_now).getTime() : Date.now();
   const campaigns = [...new Set(Object.values(data?.sections ?? {}).flat().map((l) => l.campaign).filter(Boolean))] as string[];
 
@@ -73,7 +74,10 @@ export default function LeadQueuePage() {
           <BandTile label="My calls today" value={data?.kpis.my_calls_today ?? "—"} sub="KoreCall recordings" />
         </div>
         <nav aria-label="Queue views" style={{ display: "flex", gap: 4 }}>
-          <button style={tabBtn(tab === "queue")} onClick={() => setTab("queue")} aria-current={tab === "queue"}>Queue</button>
+          <button style={tabBtn(tab === "queue")} onClick={() => setTab("queue")} aria-current={tab === "queue"}>Shared queue</button>
+          <button style={tabBtn(tab === "mine")} onClick={() => setTab("mine")} aria-current={tab === "mine"}>
+            My leads {!!data?.kpis.my_leads && <span style={{ background: R.gold, color: "#3b2a1e", borderRadius: 999, fontSize: 11, fontWeight: 800, padding: "1px 7px" }}>{data.kpis.my_leads}</span>}
+          </button>
           <button style={tabBtn(tab === "all")} onClick={() => setTab("all")} aria-current={tab === "all"}>All leads</button>
         </nav>
       </HeaderBand>
@@ -98,8 +102,15 @@ export default function LeadQueuePage() {
       {error ? <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p>
         : tab === "all" ? <AllLeads f={f} onOpen={setOpen} player={player} now={now} meId={meId} />
         : !data ? <p style={{ color: R.mute }}>Loading queue…</p>
-        : (
+        : tab === "mine" && !Object.values(data.counts).some(Boolean) ? (
+          <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "22px 18px", textAlign: "center", color: R.mute }}>
+            <b style={{ color: R.ink, fontSize: 15 }}>No leads assigned to you right now.</b>
+            <div style={{ fontSize: 13, marginTop: 4 }}>Work the shared queue: anything there is open to everyone.</div>
+            <div style={{ marginTop: 10 }}><Btn kind="ghost" onClick={() => setTab("queue")}>Go to the shared queue</Btn></div>
+          </section>
+        ) : (
           <>
+            {tab === "mine" && <p style={{ margin: "0 2px", fontSize: 13, color: R.mute }}>Leads the owner gave you, and callbacks assigned to you. Everyone can still see them in the shared queue.</p>}
             <Section title="Due now" rows={data.sections.due_now} count={data.counts.due_now} onOpen={setOpen} player={player} now={now} meId={meId} empty="No callbacks due in the next 15 minutes" />
             <Section title="Overdue callbacks" rows={data.sections.overdue} count={data.counts.overdue} onOpen={setOpen} player={player} now={now} meId={meId} empty="Nothing overdue" />
             <Section title="New" rows={data.sections.new} count={data.counts.new} onOpen={setOpen} player={player} now={now} meId={meId} empty="No new leads" />

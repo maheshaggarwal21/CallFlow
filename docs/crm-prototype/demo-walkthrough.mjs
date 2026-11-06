@@ -134,5 +134,23 @@ await templates.getByRole("button", { name: "Edit" }).first().click();
 await templates.locator("textarea").fill("Asked to call back on {date} at {time}.");
 await templates.getByRole("button", { name: "Save", exact: true }).click();
 await templates.getByText("Mother decides").waitFor({ state: "detached" });
+// 8. Owner hands leads to a rep; the rep sees them under My leads
+await owner.setViewportSize({ width: 1366, height: 900 });
+await owner.goto(`${WEB}/dashboard/crm/leads`);
+await owner.getByLabel("Assigned to").selectOption("none");
+await owner.getByLabel("Status").selectOption("new");
+const boxes = owner.locator('tbody input[type="checkbox"]');
+await boxes.first().waitFor();
+for (let i = 0; i < 3; i++) await boxes.nth(i).check();
+await owner.getByRole("region", { name: "Assign selected leads" }).getByLabel("Representative").selectOption({ label: "Ritika Gill" });
+await shot(owner, "12-owner-assigns-leads.png");
+await owner.getByRole("button", { name: "Assign", exact: true }).click();
+await owner.getByRole("status").filter({ hasText: "assigned to Ritika Gill" }).waitFor();
+await ritika.keyboard.press("Escape");
+await ritika.goto(`${WEB}/dashboard/crm`);
+await ritika.getByRole("button", { name: /My leads/ }).click();
+await ritika.getByText("★ Mine").first().waitFor();
+await shot(ritika, "13-rep-my-leads.png");
+
 await browser.close();
 log(`done → ${OUT}`);

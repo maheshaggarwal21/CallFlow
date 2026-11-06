@@ -31,8 +31,10 @@ export function useInlinePlayer() {
 
 export type SortState = { sort: string; dir: "asc" | "desc" };
 
-export default function LeadTable({ rows, onOpen, player, now, meId, sort, onSort, empty = "No leads here" }: {
+export default function LeadTable({ rows, onOpen, player, now, meId, sort, onSort, empty = "No leads here", selected, onSelect }: {
   rows: LeadRow[]; onOpen: (id: string) => void; player: ReturnType<typeof useInlinePlayer>; now: number; meId: string;
+  /** Checkbox column (All Leads → assign) */
+  selected?: Set<string>; onSelect?: (ids: string[], on: boolean) => void;
   sort?: SortState; onSort?: (s: SortState) => void; empty?: string;
 }) {
   if (!rows.length) return <p style={{ margin: "6px 2px 0", color: R.mute, fontSize: 13 }}>{empty}</p>;
@@ -50,8 +52,12 @@ export default function LeadTable({ rows, onOpen, player, now, meId, sort, onSor
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, tableLayout: "fixed", minWidth: 1000 }}>
         {/* Fixed widths so every queue section lines up */}
-        <colgroup>{[21, 11, 14, 11, 5, 11, 17, 10].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
+        <colgroup>{(selected ? [3, 20, 11, 13, 11, 5, 11, 16, 10] : [21, 11, 14, 11, 5, 11, 17, 10]).map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
         <thead><tr>
+          {selected && onSelect && (
+            <th style={thStyle}><input type="checkbox" aria-label="Select all on this page" checked={rows.every((r) => selected.has(r.id))}
+              onChange={(e) => onSelect(rows.map((r) => r.id), e.target.checked)} style={{ width: 16, height: 16, accentColor: R.out }} /></th>
+          )}
           {head("Lead", "lead_code")}{head("Number")}{head("Source")}{head("Code", "status")}{head("Tries", "attempts")}
           {head("Last contacted", "last_contacted_at")}{head("Next follow-up", "next_followup_at")}{head("Last call")}
         </tr></thead>
@@ -59,13 +65,21 @@ export default function LeadTable({ rows, onOpen, player, now, meId, sort, onSor
           {rows.map((l) => {
             const due = l.bucket === "due_now";
             return (
-              <tr key={l.id} className={`crm-row${due ? " crm-due" : ""}`} tabIndex={0} style={{ cursor: "pointer" }}
+              <tr key={l.id} className={`crm-row${due ? " crm-due" : ""}`} tabIndex={0} style={{ cursor: "pointer", ...(selected?.has(l.id) ? { background: "#fff4e3" } : {}) }}
                 onClick={() => onOpen(l.id)} onKeyDown={(e) => e.key === "Enter" && onOpen(l.id)}>
+                {selected && onSelect && (
+                  <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" aria-label={`Select ${l.name}`} checked={selected.has(l.id)} onChange={(e) => onSelect([l.id], e.target.checked)}
+                      style={{ width: 16, height: 16, accentColor: R.out }} />
+                  </td>
+                )}
                 <td style={tdStyle}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                     <b>{l.name || "Unnamed"}</b>
                     {due && <span className="crm-due-pill"><Tag tone="gold">Due now</Tag></span>}
                     {l.tags?.includes("re-enquired") && <Tag tone="gold">re-enquired</Tag>}
+                    {l.assigned_to === meId ? <Tag tone="gold" title="Assigned to you">★ Mine</Tag>
+                      : l.assigned_to_name ? <Tag title={`Assigned to ${l.assigned_to_name}`}>→ {l.assigned_to_name.split(" ")[0]}</Tag> : null}
                     {l.locked_by_name && l.locked_by !== meId && <Tag title={`${l.locked_by_name} has this lead open`}>🔒 {l.locked_by_name.split(" ")[0]}</Tag>}
                   </div>
                   <div style={{ fontSize: 11.5, color: R.mute }}>{l.lead_code} · {fmtAgo(l.created_at, now)}</div>
