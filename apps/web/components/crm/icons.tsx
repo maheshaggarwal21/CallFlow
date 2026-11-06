@@ -17,6 +17,7 @@ const P: Record<string, string> = {
   note: "M5 4h14v16H5zM8 9h8M8 13h8M8 17h5",
   lock: "M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3",
   check: "M5 12l4 4 10-10",
+  save: "M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6",
   star: "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z",
 };
 

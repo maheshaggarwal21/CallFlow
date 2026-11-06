@@ -126,7 +126,7 @@ export async function saveOutcome(leadId: string, user: User, input: OutcomeInpu
       `INSERT INTO lead_interactions (lead_id, employee_id, kind, code, reason, note, answers, next_followup_at, meta)
        VALUES ($1, $2, 'call_outcome', $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
       [leadId, user.sub, input.code, input.reason || null, input.note || null, JSON.stringify(input.answers),
-       s.next_followup_at, JSON.stringify({ status: s.status, attempts: s.attempts, student_set_time: !!input.student_set_time, amount: s.amount })]
+       s.next_followup_at, JSON.stringify({ status: s.status, attempts: s.attempts, student_set_time: !!input.student_set_time, amount: s.amount, assigned_to: input.assigned_to ?? null })]
     );
     const { rows: [saved] } = await client.query(
       `UPDATE leads SET status = $2::text, current_code = $3, next_followup_at = $4, attempts = $5,
@@ -134,9 +134,10 @@ export async function saveOutcome(leadId: string, user: User, input: OutcomeInpu
          callback_set_by = CASE WHEN $2::text = 'callback' THEN $8::uuid END,
          student_set_time = ($2::text = 'callback' AND $9::boolean),
          last_contacted_at = NOW(), version = version + 1, updated_by = $8, updated_at = NOW(),
-         locked_by = NULL, locked_until = NULL
+         locked_by = NULL, locked_until = NULL,
+         assigned_to = CASE WHEN $2::text = 'callback' THEN COALESCE($10::uuid, $8::uuid) ELSE assigned_to END
        WHERE id = $1 RETURNING version`,
-      [leadId, s.status, s.current_code, s.next_followup_at, s.attempts, s.amount, JSON.stringify(answers), user.sub, !!input.student_set_time]
+      [leadId, s.status, s.current_code, s.next_followup_at, s.attempts, s.amount, JSON.stringify(answers), user.sub, !!input.student_set_time, input.assigned_to ?? null]
     );
     const callId = await linkNearestCall(client, ix.id, lead.phone10, user.sub, new Date(ix.created_at), input.code);
     await client.query("COMMIT");
@@ -194,10 +195,12 @@ export async function leadDetail(leadId: string) {
     `SELECT l.id, l.lead_code, l.name, l.email, l.phone_raw, l.phone10, l.source, l.campaign, l.external_id,
             l.status, l.current_code, l.next_followup_at, l.student_set_time, l.attempts, l.last_contacted_at,
             l.amount, l.answers, l.tags, l.version, l.created_at, l.updated_at, l.locked_until,
-            l.locked_by, k.name AS locked_by_name, cb.name AS callback_set_by_name, u.name AS updated_by_name
+            l.locked_by, k.name AS locked_by_name, cb.name AS callback_set_by_name, u.name AS updated_by_name,
+            l.assigned_to, a.name AS assigned_to_name
      FROM leads l
      LEFT JOIN employees k ON k.id = l.locked_by AND l.locked_until > NOW()
      LEFT JOIN employees cb ON cb.id = l.callback_set_by
+     LEFT JOIN employees a ON a.id = l.assigned_to
      LEFT JOIN employees u ON u.id = l.updated_by
      WHERE l.id = $1`,
     [leadId]
@@ -305,13 +308,14 @@ export const LEAD_LIST_COLS = `
   l.last_contacted_at, l.next_followup_at, l.created_at, l.amount, l.tags, l.student_set_time,
   CASE WHEN l.locked_until > NOW() THEN k.name END AS locked_by_name,
   CASE WHEN l.locked_until > NOW() THEN l.locked_by END AS locked_by,
-  cb.name AS callback_set_by_name,
+  cb.name AS callback_set_by_name, asg.name AS assigned_to_name,
   (SELECT json_build_object('id', c.id, 'duration_secs', c.duration_secs, 'called_at', c.called_at,
                             'has_audio', c.audio_storage_key IS NOT NULL)
    FROM calls c WHERE c.phone10 = l.phone10 ORDER BY c.called_at DESC LIMIT 1) AS last_call`;
 export const LEAD_LIST_JOINS = `
   LEFT JOIN employees k ON k.id = l.locked_by
-  LEFT JOIN employees cb ON cb.id = l.callback_set_by`;
+  LEFT JOIN employees cb ON cb.id = l.callback_set_by
+  LEFT JOIN employees asg ON asg.id = l.assigned_to`;
 
 const SECTION_CAP = 200;
 

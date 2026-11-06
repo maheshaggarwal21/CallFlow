@@ -58,6 +58,7 @@ export type LeadRow = {
   status: string; current_code: Code | null; attempts: number; last_contacted_at: string | null; next_followup_at: string | null;
   created_at: string; amount: string | null; tags: string[]; student_set_time: boolean;
   locked_by: string | null; locked_by_name: string | null; callback_set_by_name: string | null; callback_note?: string | null;
+  assigned_to?: string | null; assigned_to_name?: string | null;
   last_call: LastCall; bucket?: "due_now" | "overdue" | "new" | "retry" | "later";
 };
 export type QueueResponse = {
@@ -73,7 +74,7 @@ export type CallInfo = {
   audio_urls: { opus: string; mp3: string } | null; audio_format: string | null; audio_state: "ok" | "expired" | "missing";
 };
 export type TimelineEntry =
-  | { type: "interaction"; at: string; id: string; kind: "call_outcome" | "whatsapp" | "system" | "reenquiry"; code: Code | null; reason: string | null;
+  | { type: "interaction"; at: string; id: string; kind: "call_outcome" | "whatsapp" | "system" | "reenquiry"; code: Code | null; reason: string | null; employee_id: string | null;
       note: string | null; next_followup_at: string | null; employee_name: string | null; template_label: string | null;
       meta: Record<string, unknown> | null; call: CallInfo | null; contradiction: boolean }
   | { type: "call"; at: string; call: CallInfo };
@@ -91,7 +92,13 @@ export type CrmConfig = {
   note_templates: { id: string; label: string; text: string; codes: Code[]; category: string | null }[];
   wati_templates: { id: string; name: string; label: string; body: string }[];
   wati_mode: "mock" | "live";
+  reps: { id: string; name: string }[];
+  retry_rules: { A?: RetryRule; B?: RetryRule; C?: RetryRule; invalid?: { never?: boolean }; max_attempts?: number };
 };
+export type RetryRule = { hours?: number; next_day_at?: string };
 export type CrmMe = { permissions: string[]; is_owner: boolean };
 
 export const fillVars = (body: string, vars: Record<string, string>) => body.replace(/\{(\w+)\}/g, (m, k) => vars[k] || m);
+
+/** What the form will set as the next follow-up, shown live in the siren banner before saving. */
+export type FollowUpDraft = { at: string | null; repName: string | null; kind: "callback" | "auto" | "none"; text: string } | null;

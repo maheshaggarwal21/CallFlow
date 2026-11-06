@@ -47,6 +47,7 @@ export const outcomeSchema = z.object({
   callback_at: z.string().datetime({ offset: true }).nullish(),
   student_set_time: z.boolean().optional(),
   amount: z.number().positive().max(100000).nullish(),
+  assigned_to: z.string().uuid().nullish(),
 });
 export type OutcomeInput = z.infer<typeof outcomeSchema>;
 

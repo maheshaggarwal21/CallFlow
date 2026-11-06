@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS leads (
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER SEQUENCE leads_code_seq OWNED BY leads.lead_code;
+-- Rep who should make the next callback (pre-filled with whoever handled the lead last).
+-- The pool still sees every lead; this only names the person.
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS assigned_to UUID REFERENCES employees(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_leads_status_followup ON leads (status, next_followup_at);
 CREATE INDEX IF NOT EXISTS idx_leads_followup        ON leads (next_followup_at) WHERE next_followup_at IS NOT NULL;

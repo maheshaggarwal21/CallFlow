@@ -64,14 +64,15 @@ router.get("/me", async (req, res) => {
 
 /** Lists the lead drawer needs: active questions, reasons, note templates, WhatsApp templates. */
 router.get("/config", async (_req, res) => {
-  const [q, r, t, w, retry] = await Promise.all([
+  const [q, r, t, w, retry, reps] = await Promise.all([
     pool.query("SELECT id, label, type, options FROM lead_questions WHERE active ORDER BY sort_order, created_at"),
     pool.query("SELECT id, label, codes FROM lead_reasons WHERE active ORDER BY sort_order, created_at"),
     pool.query("SELECT id, label, text, codes, category FROM note_templates WHERE active ORDER BY sort_order, created_at"),
     pool.query("SELECT id, name, label, body FROM wati_templates WHERE active ORDER BY sort_order, created_at"),
     getSetting("retry_rules", {}),
+    pool.query("SELECT id, name FROM employees WHERE role = 'employee' AND status = 'active' ORDER BY name"),
   ]);
-  return res.json({ questions: q.rows, reasons: r.rows, note_templates: t.rows, wati_templates: w.rows, retry_rules: retry, wati_mode: watiMode() });
+  return res.json({ questions: q.rows, reasons: r.rows, note_templates: t.rows, wati_templates: w.rows, retry_rules: retry, wati_mode: watiMode(), reps: reps.rows });
 });
 
 router.get("/queue", async (req, res) => {

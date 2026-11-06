@@ -257,8 +257,8 @@ async function main() {
     const p10 = phone();
     const { rows: [lead] } = await pool.query(
       `INSERT INTO leads (name, email, phone_raw, phone10, source, campaign, external_id, status, current_code, next_followup_at,
-                          callback_set_by, student_set_time, attempts, last_contacted_at, amount, tags, created_at, updated_at, raw)
-       VALUES ($1, $2, $3, $4, 'demo', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), $17) RETURNING id`,
+                          callback_set_by, student_set_time, attempts, last_contacted_at, amount, tags, created_at, updated_at, raw, assigned_to)
+       VALUES ($1, $2, $3, $4, 'demo', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), $17, $10) RETURNING id`,
       [s.name, `${s.name.split(" ")[0].toLowerCase()}@example.com`, `+91 ${p10.slice(0, 5)} ${p10.slice(5)}`, p10, s.campaign,
        `demo-${p10}`, s.status, s.code ?? null, s.followup ?? null, s.setBy !== undefined ? reps[s.setBy].id : null, !!s.studentTime,
        s.attempts ?? 0, s.steps.length ? s.steps[s.steps.length - 1].at : null, s.amount ?? null, s.tags ?? [], s.created,

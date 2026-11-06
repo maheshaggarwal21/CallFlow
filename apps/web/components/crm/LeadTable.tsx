@@ -81,7 +81,9 @@ export default function LeadTable({ rows, onOpen, player, now, meId, sort, onSor
                   {l.next_followup_at ? <b style={{ color: l.bucket === "overdue" ? R.bad : due ? "#8a5a12" : R.ink }}>{fmtWhen(l.next_followup_at)}</b> : "—"}
                   {l.status === "callback" && l.callback_set_by_name && (
                     <div style={{ color: R.mute, fontSize: 11.5 }}>
-                      Callback set by {l.callback_set_by_name.split(" ")[0]}{l.student_set_time ? ` · student asked for ${fmtWhen(l.next_followup_at).replace(/^Today /, "")}` : ""}
+                      Callback set by {l.callback_set_by_name.split(" ")[0]}
+                      {l.assigned_to_name && l.assigned_to_name !== l.callback_set_by_name ? ` · for ${l.assigned_to_name.split(" ")[0]}` : ""}
+                      {l.student_set_time ? ` · student asked for ${fmtWhen(l.next_followup_at).replace(/^Today /, "")}` : ""}
                     </div>
                   )}
                 </td>

@@ -7,7 +7,7 @@ import type { Call } from "@callflow/shared-types";
 import { R, dur } from "@/components/report/kit";
 import { audioUrlFor, effectiveFormat } from "@/lib/audioPlayback";
 import { api } from "@/lib/api";
-import { CHECK_LABEL, STATUS_LABEL, codeMeta, fmtWhen, type CallInfo, type LeadDetail, type TimelineEntry } from "@/lib/crm";
+import { CHECK_LABEL, STATUS_LABEL, codeMeta, fmtWhen, type CallInfo, type FollowUpDraft, type LeadDetail, type TimelineEntry } from "@/lib/crm";
 import { CodeChip, Tag } from "./kit";
 import { Icon } from "./icons";
 
@@ -100,9 +100,12 @@ function Star({ call, isOwner, onChanged }: { call: CallInfo; isOwner: boolean; 
 }
 
 function Entry({ e, first, isOwner, onChanged }: { e: TimelineEntry; first: boolean; isOwner: boolean; onChanged: () => void }) {
+  // Contacted entries (a form or a recording) glow; the latest one pulses strongest
+  const contacted = e.type === "call" || (e.kind === "call_outcome");
   const dot = (color: string) => (
-    <span aria-hidden style={{ position: "absolute", left: -21, top: 4, width: 11, height: 11, borderRadius: 6, background: first ? color : R.card,
-      border: `2.5px solid ${color}`, boxShadow: first ? `0 0 0 4px ${color}22` : "none" }} />
+    <span aria-hidden className={contacted ? (first ? "lf-dot lf-dot-live" : "lf-dot") : undefined}
+      style={{ position: "absolute", left: -22, top: 3, width: 13, height: 13, borderRadius: 7, background: contacted ? color : R.card,
+        border: `2.5px solid ${contacted ? "#fff" : color}`, ["--c" as string]: color } as React.CSSProperties} />
   );
   const head = (icon: ReactNode, title: ReactNode, by: string | null, right: ReactNode) => (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
@@ -182,6 +185,7 @@ export function Snapshot({ d }: { d: LeadDetail }) {
         {row("target", "Status", <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><CodeChip code={l.current_code} />{m ? m.label : STATUS_LABEL[l.status]}</span>, m ? KIND_COLOR[m.kind] : undefined)}
         {row("calendar", "Next follow-up date", f ? longDate(f) : "—", f ? R.out : undefined)}
         {row("clock", "Next follow-up time", f ? timeOf(f) : "—", f ? R.out : undefined)}
+        {row("user", "Assigned to", l.assigned_to_name ?? "—")}
         {row("user", "Callback set by", l.callback_set_by_name ?? "—")}
         {row("retry", "Failed attempts", `${l.attempts} of 6`)}
         {row("phone", "Last contacted", l.last_contacted_at ? fmtWhen(l.last_contacted_at) : "Never")}
@@ -190,9 +194,26 @@ export function Snapshot({ d }: { d: LeadDetail }) {
   );
 }
 
+const HIST_CSS = `
+  .lf-dot{box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 22%,transparent),0 0 10px color-mix(in srgb,var(--c) 70%,transparent)}
+  .lf-dot-live{animation:lf-glow 1.6s ease-in-out infinite}
+  @keyframes lf-glow{0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 25%,transparent),0 0 8px color-mix(in srgb,var(--c) 60%,transparent)}
+    50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--c) 12%,transparent),0 0 20px color-mix(in srgb,var(--c) 90%,transparent)}}
+  .lf-siren-dome{animation:lf-siren 0.9s ease-in-out infinite alternate}
+  .lf-siren-rays{transform-origin:32px 30px;animation:lf-spin 2.4s linear infinite}
+  @keyframes lf-siren{from{fill:#e8641b;filter:drop-shadow(0 0 2px #e8641b)}to{fill:#ff3b1f;filter:drop-shadow(0 0 10px #ff6a3d)}}
+  @keyframes lf-spin{to{transform:rotate(360deg)}}
+  .lf-banner{animation:lf-ring 2s ease-out infinite}
+  @keyframes lf-ring{0%{box-shadow:0 0 0 0 rgba(232,100,27,.45)}70%{box-shadow:0 0 0 10px rgba(232,100,27,0)}100%{box-shadow:0 0 0 0 rgba(232,100,27,0)}}
+  @media (prefers-reduced-motion: reduce){.lf-dot-live,.lf-siren-dome,.lf-siren-rays,.lf-banner{animation:none}
+    .lf-siren-dome{fill:#ff3b1f}}
+`;
+
 export function History({ d, isOwner, onChanged }: { d: LeadDetail; isOwner: boolean; onChanged: () => void }) {
   const calls = d.timeline.filter((e) => (e.type === "call" ? true : !!e.call)).length;
   return (
+    <>
+    <style>{HIST_CSS}</style>
     <Card icon="chart" title="Lead history (call log)" right={<span style={{ fontSize: 12, fontWeight: 700, background: "#f8ead2", color: "#8a5a12", padding: "3px 10px", borderRadius: 999 }}>Total calls: {calls}</span>}>
       {d.timeline.length === 0 ? <p style={{ margin: 0, color: R.mute, fontSize: 13 }}>Never called. You're the first.</p> : (
         <ol style={{ listStyle: "none", margin: 0, padding: "0 0 0 22px", display: "grid", gap: 8, position: "relative", borderLeft: `2px solid ${R.line}`, marginLeft: 6 }}>
@@ -200,37 +221,67 @@ export function History({ d, isOwner, onChanged }: { d: LeadDetail; isOwner: boo
         </ol>
       )}
     </Card>
+    </>
   );
 }
 
-/** What happens next for this lead, in one glance. */
-export function NextUp({ d }: { d: LeadDetail }) {
+function Siren({ on }: { on: boolean }) {
+  return (
+    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden style={{ flex: "none" }}>
+      {on && <g className="lf-siren-rays" stroke="#ff6a3d" strokeWidth="3" strokeLinecap="round" opacity=".75">
+        <path d="M32 4v7M8 30h7M49 30h7M15 13l5 5M49 13l-5 5" />
+      </g>}
+      <path className={on ? "lf-siren-dome" : undefined} d="M18 46V34a14 14 0 0 1 28 0v12z" fill={on ? "#e8641b" : "#c2b39c"} />
+      <path d="M24 34a8 8 0 0 1 8-8" stroke="#fff" strokeWidth="3" strokeLinecap="round" fill="none" opacity=".7" />
+      <rect x="12" y="46" width="40" height="8" rx="3" fill="#3b2a1e" />
+    </svg>
+  );
+}
+
+/**
+ * Below the call log: the next follow-up. While the rep is filling the form it previews what
+ * they are about to set (date, time, representative); otherwise it shows what is saved.
+ */
+export function FollowUpBanner({ d, draft }: { d: LeadDetail; draft: FollowUpDraft }) {
   const l = d.lead;
-  const big = (text: string, bg: string) => <div style={{ display: "inline-block", marginTop: 10, background: bg, color: "#fff", fontWeight: 800, fontSize: 17, padding: "9px 18px", borderRadius: 999, boxShadow: "0 8px 18px -10px rgba(0,0,0,.5)" }}>{text}</div>;
-  let body: ReactNode;
-  if (l.status === "callback" && l.next_followup_at) {
-    body = <>
-      <div style={{ fontSize: 13 }}>Callback set by <b>{l.callback_set_by_name ?? "—"}</b>{l.student_set_time ? " · the student asked for this time" : ""}</div>
-      {big(`${longDate(l.next_followup_at)} at ${timeOf(l.next_followup_at)}`, `linear-gradient(135deg,${R.out},#c4622d)`)}
-      <div style={{ fontSize: 11.5, color: R.mute, marginTop: 8 }}>Blinks in "Due now" for every rep 15 minutes before.</div>
-    </>;
+  let title = "Next follow-up", line: ReactNode, pill: string | null = null, live = false, sub: string | null = null;
+  if (draft?.kind === "callback" && draft.at) {
+    live = true;
+    title = "Follow-up you are setting";
+    line = <><b>{draft.repName ?? "The team"}</b> will be reminded on</>;
+    pill = `${longDate(draft.at)} at ${timeOf(draft.at)}`;
+    sub = "Blinks in Due now 15 minutes before, for every rep. Saved when you press Save form.";
+  } else if (draft) {
+    line = draft.text;
+    pill = draft.at ? `${longDate(draft.at)} at ${timeOf(draft.at)}` : null;
+  } else if (l.status === "callback" && l.next_followup_at) {
+    live = true;
+    line = <><b>{l.assigned_to_name ?? l.callback_set_by_name ?? "The team"}</b> will be reminded on</>;
+    pill = `${longDate(l.next_followup_at)} at ${timeOf(l.next_followup_at)}`;
+    sub = `Set by ${l.callback_set_by_name ?? "—"}${l.student_set_time ? " · the student asked for this time" : ""}. Blinks in Due now 15 minutes before.`;
   } else if (l.status === "retry" && l.next_followup_at) {
-    body = <><div style={{ fontSize: 13 }}>Back in the Retry list after the wait</div>{big(`${longDate(l.next_followup_at)} at ${timeOf(l.next_followup_at)}`, "#8c5a3c")}</>;
+    line = "Back in the Retry list after the wait";
+    pill = `${longDate(l.next_followup_at)} at ${timeOf(l.next_followup_at)}`;
   } else if (l.status === "converted") {
-    body = <><div style={{ fontSize: 13 }}>Paid trial. Schedule the first class.</div>{big(`₹${Number(l.amount ?? 299)} paid`, R.good)}</>;
+    line = `Paid ₹${Number(l.amount ?? 299)} trial. Schedule the first class.`;
   } else if (l.status === "dnc") {
-    body = <div style={{ fontSize: 13 }}>Closed: the student asked not to be called again.</div>;
+    line = "Closed: the student asked not to be called again.";
   } else if (l.status === "dropped") {
-    body = <div style={{ fontSize: 13 }}>Dropped after {l.attempts} failed attempts. The owner can revive it.</div>;
+    line = `Dropped after ${l.attempts} failed attempts. The owner can revive it.`;
   } else {
-    body = <><div style={{ fontSize: 13 }}>Fresh lead, not called yet</div>{big("Call now", "#8c5a3c")}</>;
+    line = "Fresh lead, not called yet. Pick an outcome to set the next follow-up.";
   }
   return (
-    <section style={{ background: "linear-gradient(150deg,#fff6e6,#fbe9cf)", border: `1px solid #efd9b8`, borderRadius: 14, padding: "14px 16px", display: "flex", gap: 14, alignItems: "flex-start" }}>
-      <span style={{ color: R.out, background: "#fff", borderRadius: 12, padding: 10, display: "inline-flex", boxShadow: "0 6px 14px -10px rgba(140,63,18,.6)" }}><Icon name="bell" size={24} /></span>
+    <section className={live ? "lf-banner" : undefined} aria-live="polite"
+      style={{ background: live ? "linear-gradient(135deg,#fff3e2,#ffe1c4)" : "linear-gradient(150deg,#fbf6ee,#f3eadc)",
+        border: `1.5px solid ${live ? "#f0a46b" : R.line}`, borderRadius: 16, padding: "14px 16px", display: "flex", gap: 14, alignItems: "center" }}>
+      <Siren on={live} />
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: "#8c3f12" }}>Next follow-up</div>
-        {body}
+        <div style={{ fontSize: 15.5, fontWeight: 800, color: live ? "#b3420f" : R.ink }}>{title}</div>
+        <div style={{ fontSize: 13, marginTop: 2 }}>{line}</div>
+        {pill && <div style={{ display: "inline-block", marginTop: 8, background: live ? `linear-gradient(135deg,#ff5a1f,#c4622d)` : "#8c5a3c", color: "#fff",
+          fontWeight: 800, fontSize: 17, padding: "8px 18px", borderRadius: 999, boxShadow: live ? "0 0 18px -2px rgba(255,90,31,.55)" : "none" }}>{pill}</div>}
+        {sub && <div style={{ fontSize: 11.5, color: R.mute, marginTop: 7 }}>{sub}</div>}
       </div>
     </section>
   );

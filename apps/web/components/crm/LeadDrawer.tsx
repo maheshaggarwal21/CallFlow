@@ -7,10 +7,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import useSWR from "swr";
 import { Avatar, R } from "@/components/report/kit";
 import { API_BASE, api, fetcher } from "@/lib/api";
-import { CODES, MIN_NOTE, STATUS_LABEL, fillVars, groupPhone, type Code, type CrmConfig, type LeadDetail } from "@/lib/crm";
+import { CODES, MIN_NOTE, STATUS_LABEL, fillVars, groupPhone, type Code, type CrmConfig, type FollowUpDraft, type LeadDetail } from "@/lib/crm";
+import { useAuth } from "@/hooks/useAuth";
 import { useCrmMe } from "@/hooks/useCrmMe";
-import { Btn, CodeChip, Drawer, Tag, inputStyle, labelStyle } from "./kit";
-import { Card, History, NextUp, Snapshot } from "./History";
+import { Btn, CodeChip, Drawer, inputStyle, labelStyle } from "./kit";
+import { Card, FollowUpBanner, History, Snapshot } from "./History";
 import { Icon } from "./icons";
 
 const HEARTBEAT_MS = 60_000;
@@ -64,6 +65,7 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
   const { can } = useCrmMe();
   const [reviveErr, setReviveErr] = useState("");
   const waRef = useRef<HTMLDivElement>(null);
+  const [draft, setDraft] = useState<FollowUpDraft>(null);
 
   // Claim on open, extend every minute while the rep is active, release on close
   useEffect(() => {
@@ -96,7 +98,7 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
   return (
     <div style={{ display: "grid", gap: 12, color: R.ink }}>
       <style>{SHEET_CSS}</style>
-      <SheetHeader d={d} onClose={onClose} onWhatsApp={() => waRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
+      <SheetHeader d={d} watiMode={cfg.wati_mode} onClose={onClose} onWhatsApp={() => waRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
         revive={l.status === "dropped" && can("reassign_leads") ? () => api.post(`/crm/leads/${l.id}/revive`).then(() => { setReviveErr(""); mutate(); }, (e) => setReviveErr((e as Error).message)) : undefined} />
       {reviveErr && <p role="alert" style={{ margin: 0, color: R.bad, fontSize: 13 }}>{reviveErr}</p>}
       {readOnly && (
@@ -107,20 +109,32 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
       )}
       <div className="lf-grid">
         <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
-          <OutcomeForm d={d} cfg={cfg} readOnly={readOnly} onSaved={(m) => { mutate(); onSaved(m); onClose(); }} onReload={() => mutate()} />
+          <OutcomeForm d={d} cfg={cfg} readOnly={readOnly} onDraft={setDraft} onSaved={(m) => { mutate(); onSaved(m); onClose(); }} onReload={() => mutate()} />
           <div ref={waRef}><WhatsAppPanel d={d} cfg={cfg} readOnly={readOnly} onSent={() => mutate()} /></div>
         </div>
         <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
           <Snapshot d={d} />
-          <NextUp d={d} />
           <History d={d} isOwner={isOwner} onChanged={() => mutate()} />
+          <FollowUpBanner d={d} draft={draft} />
         </div>
       </div>
     </div>
   );
 }
 
-function SheetHeader({ d, onClose, onWhatsApp, revive }: { d: LeadDetail; onClose: () => void; onWhatsApp: () => void; revive?: () => void }) {
+function WatiPill({ mode }: { mode: "mock" | "live" }) {
+  const live = mode === "live";
+  return (
+    <span title={live ? "WATI credentials set: template sends go out on WhatsApp" : "WATI credentials pending: sends are only logged"}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, padding: "5px 11px", borderRadius: 999,
+        background: live ? "#e3f4dd" : "#fff1d6", color: live ? "#2f6b2b" : "#8a5a12", border: `1px solid ${live ? "#a9d39b" : R.gold}` }}>
+      <span style={{ width: 8, height: 8, borderRadius: 4, background: live ? "#3fae3a" : "#d39b2a", boxShadow: live ? "0 0 8px #3fae3a" : "none" }} />
+      {live ? "WATI connected" : "WATI mock mode"}
+    </span>
+  );
+}
+
+function SheetHeader({ d, watiMode, onClose, onWhatsApp, revive }: { d: LeadDetail; watiMode: "mock" | "live"; onClose: () => void; onWhatsApp: () => void; revive?: () => void }) {
   const l = d.lead;
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -161,8 +175,9 @@ function SheetHeader({ d, onClose, onWhatsApp, revive }: { d: LeadDetail; onClos
           <Btn kind="good" onClick={onWhatsApp} style={{ padding: "7px 12px" }}><span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><Icon name="chat" size={15} />WhatsApp</span></Btn>
         </div>
       </div>
-      <div style={{ display: "grid", gap: 6, alignSelf: "flex-start" }}>
+      <div style={{ display: "grid", gap: 6, alignSelf: "flex-start", justifyItems: "end" }}>
         <Btn kind="light" onClick={onClose} style={light}>Close ✕</Btn>
+        <WatiPill mode={watiMode} />
         {revive && <Btn kind="light" onClick={revive} style={light} title="Back into the queue as a retry, attempts reset">↺ Revive</Btn>}
       </div>
     </header>
@@ -179,8 +194,40 @@ function SectionLabel({ icon, children, right }: { icon: Parameters<typeof Icon>
   );
 }
 
-function OutcomeForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg: CrmConfig; readOnly: boolean; onSaved: (m: string) => void; onReload: () => void }) {
+// Quick fills for the callback picker, in IST
+function preset(kind: "1h" | "today6" | "tom10" | "tom6"): { date: string; time: string } {
+  const ist = (ms: number) => new Date(ms).toLocaleString("sv-SE", { timeZone: IST }); // "YYYY-MM-DD HH:MM:SS"
+  const now = Date.now();
+  if (kind === "1h") { const [dd, tt] = ist(now + 3_600_000).split(" "); return { date: dd, time: tt.slice(0, 5) }; }
+  const day = ist(kind === "today6" ? now : now + 86_400_000).split(" ")[0];
+  return { date: day, time: kind === "tom10" ? "10:00" : "18:00" };
+}
+
+/** The automatic retry time for A/B/C, using the same rules as the server. */
+function autoRetry(code: Code, reason: string, attempts: number, rules: CrmConfig["retry_rules"]): { at: string | null; text: string } {
+  const max = rules.max_attempts ?? 6;
+  if (reason === "Invalid number" && rules.invalid?.never !== false) return { at: null, text: "Invalid number: the lead will be Dropped, no retry." };
+  if (attempts + 1 >= max) return { at: null, text: `This is failed attempt ${attempts + 1} of ${max}: the lead will be Dropped.` };
+  const rule = rules[code as "A" | "B" | "C"] ?? { hours: 3 };
+  let at: Date;
+  if (rule.next_day_at) {
+    const day = new Date(Date.now() + 86_400_000).toLocaleDateString("en-CA", { timeZone: IST });
+    at = new Date(`${day}T${rule.next_day_at}:00+05:30`);
+  } else {
+    at = new Date(Date.now() + (rule.hours ?? 3) * 3_600_000);
+  }
+  return { at: at.toISOString(), text: `Automatic: back in the Retry list ${rule.next_day_at ? `tomorrow at ${fmtChipTime(rule.next_day_at)}` : `after ${rule.hours ?? 3} h`} (retry rule for ${code}).` };
+}
+
+function OutcomeForm({ d, cfg, readOnly, onDraft, onSaved, onReload }: { d: LeadDetail; cfg: CrmConfig; readOnly: boolean; onDraft: (d: FollowUpDraft) => void; onSaved: (m: string) => void; onReload: () => void }) {
   const l = d.lead;
+  const { id: meId } = useAuth();
+  // The rep who last worked this lead, from the history
+  const lastRep = useMemo(() => {
+    for (const e of d.timeline) if (e.type === "interaction" && e.kind === "call_outcome" && e.employee_id) return { id: e.employee_id, name: e.employee_name };
+    return null;
+  }, [d.timeline]);
+  const [repId, setRepId] = useState<string>(l.assigned_to ?? lastRep?.id ?? "");
   const [code, setCode] = useState<Code | null>(null);
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
@@ -199,6 +246,17 @@ function OutcomeForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; c
   const chips = useMemo(() => cfg.note_templates.filter((t) => code && t.codes.includes(code)), [cfg.note_templates, code]);
 
   const pickCode = (c: Code) => { setCode(c); setReason(""); setErr(""); };
+  const effectiveRep = repId || meId;
+  const repName = cfg.reps.find((r) => r.id === effectiveRep)?.name ?? null;
+  const auto = code && meta?.kind === "retry" ? autoRetry(code, reason, l.attempts, cfg.retry_rules) : null;
+
+  // Live preview of the follow-up for the siren banner under the call log
+  useEffect(() => {
+    if (!code) return onDraft(null);
+    if (needsCallback) return onDraft({ kind: "callback", at: date && time ? new Date(`${date}T${time}:00+05:30`).toISOString() : null, repName, text: "" });
+    if (auto) return onDraft({ kind: "auto", at: auto.at, repName: null, text: auto.text });
+    onDraft({ kind: "none", at: null, repName: null, text: code === "F" ? "Paid: no follow-up call needed." : "Never call again: no follow-up." });
+  }, [code, needsCallback, date, time, repName, auto?.at, auto?.text, onDraft]);
   const insertChip = useCallback((text: string) => {
     const filled = text.replace(/\{date\}/g, fmtChipDate(date) || "{date}").replace(/\{time\}/g, fmtChipTime(time) || "{time}");
     setNote((n) => (n.trim() ? `${n.trim()} ${filled}` : filled));
@@ -216,6 +274,7 @@ function OutcomeForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; c
         callback_at: needsCallback && date && time ? `${date}T${time}:00+05:30` : null,
         student_set_time: needsCallback && studentTime,
         amount: code === "F" ? Number(amount) || 299 : null,
+        assigned_to: needsCallback ? effectiveRep || null : null,
       });
       onSaved(`${l.lead_code} saved as ${code} · ${STATUS_LABEL[r.status] ?? r.status}`);
     } catch (e) {
@@ -268,33 +327,59 @@ function OutcomeForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; c
 
         {code && (
           <div style={{ display: "grid", gap: 10 }}>
-            <div className="lf-3">
-              <label style={{ gridColumn: needsCallback || code === "F" ? "auto" : "span 3" }}>
+            <div className={code === "F" ? "lf-3" : undefined}>
+              <label style={{ gridColumn: code === "F" ? "span 2" : undefined, display: "block" }}>
                 <span style={labelStyle}>Reason{needsNote ? " *" : ""}</span>
                 <select value={reason} onChange={(e) => setReason(e.target.value)} style={inputStyle}>
                   <option value="">{reasons.length ? "Choose a reason…" : "No reasons for this code"}</option>
                   {reasons.map((r) => <option key={r.id} value={r.label}>{r.label}</option>)}
                 </select>
               </label>
-              {needsCallback && <>
-                <label><span style={labelStyle}>Callback date *</span>
-                  <input type="date" value={date} min={istToday()} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></label>
-                <label><span style={labelStyle}>Callback time (IST) *</span>
-                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={inputStyle} /></label>
-              </>}
               {code === "F" && (
                 <label><span style={labelStyle}>Amount (₹)</span>
                   <input type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} style={inputStyle} /></label>
               )}
             </div>
-            {needsCallback && (
-              <label style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 13, fontWeight: 600, background: studentTime ? "#fdf1da" : R.soft,
-                border: `1px dashed ${studentTime ? R.gold : R.line}`, borderRadius: 10, padding: "8px 12px", cursor: "pointer", transition: "background .15s" }}>
-                <input type="checkbox" checked={studentTime} onChange={(e) => setStudentTime(e.target.checked)} style={{ width: 17, height: 17, accentColor: R.out }} />
-                Student asked for this time
-                <span style={{ fontWeight: 400, color: R.mute }}>· shown to every rep on the callback</span>
-              </label>
-            )}
+
+            <div style={{ background: needsCallback ? "#fff8ee" : R.soft, border: `1px solid ${needsCallback ? "#efd9b8" : R.line}`, borderRadius: 12, padding: "10px 12px" }}>
+              <SectionLabel icon="calendar">Next follow-up{needsCallback ? " *" : ""}</SectionLabel>
+              {needsCallback ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {([["1h", "In 1 hour"], ["today6", "Today 6 PM"], ["tom10", "Tomorrow 10 AM"], ["tom6", "Tomorrow 6 PM"]] as const).map(([k, label]) => (
+                      <button key={k} type="button" className="crm-btn" onClick={() => { const p = preset(k); setDate(p.date); setTime(p.time); }}
+                        style={{ border: `1px solid ${R.gold}`, background: "#fff", borderRadius: 999, padding: "4px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: "#8a5a12" }}>
+                        {label}</button>
+                    ))}
+                  </div>
+                  <div className="lf-3">
+                    <label><span style={labelStyle}>Callback date *</span>
+                      <input type="date" value={date} min={istToday()} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></label>
+                    <label><span style={labelStyle}>Callback time (IST) *</span>
+                      <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={inputStyle} /></label>
+                    <label><span style={labelStyle}>Representative (assigned to)</span>
+                      <select value={repId} onChange={(e) => setRepId(e.target.value)} style={inputStyle} aria-label="Representative">
+                        <option value="">Me (whoever saves)</option>
+                        {cfg.reps.map((r) => <option key={r.id} value={r.id}>{r.name}{r.id === lastRep?.id ? " · handled before" : ""}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  {lastRep?.name && <div style={{ fontSize: 12, color: R.mute, marginTop: -4 }}>{lastRep.name} worked this lead last. Change it if someone else should call back.</div>}
+                  <label style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 13, fontWeight: 600, background: studentTime ? "#fdf1da" : "#fff",
+                    border: `1px dashed ${studentTime ? R.gold : R.line}`, borderRadius: 10, padding: "8px 12px", cursor: "pointer", transition: "background .15s" }}>
+                    <input type="checkbox" checked={studentTime} onChange={(e) => setStudentTime(e.target.checked)} style={{ width: 17, height: 17, accentColor: R.out }} />
+                    Student asked for this time
+                    <span style={{ fontWeight: 400, color: R.mute }}>· shown to every rep on the callback</span>
+                  </label>
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: R.ink }}>
+                  {auto ? <>{auto.text}{auto.at && <b> {new Date(auto.at).toLocaleString("en-GB", { timeZone: IST, day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}</b>}</>
+                    : code === "F" ? "Paid: no follow-up call needed." : "Never call again: no follow-up."}
+                  <div style={{ fontSize: 11.5, color: R.mute, marginTop: 3 }}>Only D and E set a callback by hand; retry waits come from CRM Settings → Retry rules.</div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -325,7 +410,7 @@ function OutcomeForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; c
           )}
           <Btn onClick={save} disabled={!code || saving || readOnly}
             style={{ padding: "13px 22px", fontSize: 15, background: `linear-gradient(135deg,${R.out},#c4622d)`, boxShadow: "0 10px 22px -12px rgba(196,98,45,.9)", width: "100%" }}>
-            {saving ? "Saving…" : "Save"}
+            <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><Icon name="save" size={18} />{saving ? "Saving…" : "Save form"}</span>
           </Btn>
         </div>
       </fieldset>
@@ -336,6 +421,7 @@ function OutcomeForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; c
 function WhatsAppPanel({ d, cfg, readOnly, onSent }: { d: LeadDetail; cfg: CrmConfig; readOnly: boolean; onSent: () => void }) {
   const [tid, setTid] = useState("");
   const [state, setState] = useState<"" | "sending" | string>("");
+  const [preview, setPreview] = useState(true);
   const t = cfg.wati_templates.find((x) => x.id === tid);
   const vars = t ? [...new Set([...t.body.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))] : [];
   const send = async () => {
@@ -353,8 +439,17 @@ function WhatsAppPanel({ d, cfg, readOnly, onSent }: { d: LeadDetail; cfg: CrmCo
   const now = new Date().toLocaleTimeString("en-US", { timeZone: IST, hour: "numeric", minute: "2-digit" });
   return (
     <Card icon="chat" title="Send WhatsApp template" tone="#eef6ea"
-      right={cfg.wati_mode === "mock" ? <Tag tone="gold">WATI mock mode</Tag> : <Tag tone="ok">● WATI connected</Tag>}>
-      <div className="lf-wa">
+      right={<span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+        <label style={{ display: "inline-flex", gap: 7, alignItems: "center", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+          Preview
+          <button type="button" role="switch" aria-checked={preview} aria-label="Show template preview" onClick={() => setPreview((p) => !p)}
+            style={{ width: 38, height: 22, borderRadius: 11, border: 0, padding: 2, cursor: "pointer", background: preview ? R.good : "#cdbba1", transition: "background .15s" }}>
+            <span style={{ display: "block", width: 18, height: 18, borderRadius: 9, background: "#fff", transform: `translateX(${preview ? 16 : 0}px)`, transition: "transform .15s", boxShadow: "0 1px 2px rgba(0,0,0,.3)" }} />
+          </button>
+        </label>
+        <WatiPill mode={cfg.wati_mode} />
+      </span>}>
+      <div className="lf-wa" style={preview ? undefined : { gridTemplateColumns: "1fr" }}>
         <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
           <label><span style={labelStyle}>Template</span>
             <select value={tid} onChange={(e) => { setTid(e.target.value); setState(""); }} disabled={readOnly} style={inputStyle} aria-label="WhatsApp template">
@@ -380,14 +475,14 @@ function WhatsAppPanel({ d, cfg, readOnly, onSent }: { d: LeadDetail; cfg: CrmCo
             {state && state !== "sending" && <span role="status" style={{ fontSize: 12.5, color: state.startsWith("!") ? R.bad : R.good }}>{state}</span>}
           </div>
         </div>
-        <div aria-label="Template preview" style={{ background: "#e9e1d4", backgroundImage: "radial-gradient(rgba(59,42,30,.07) 1px, transparent 1px)", backgroundSize: "12px 12px",
+        {preview && <div aria-label="Template preview" style={{ background: "#e9e1d4", backgroundImage: "radial-gradient(rgba(59,42,30,.07) 1px, transparent 1px)", backgroundSize: "12px 12px",
           borderRadius: 12, padding: 12, minHeight: 150, display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: R.mute, letterSpacing: ".06em", textTransform: "uppercase" }}>Preview</span>
           <div style={{ alignSelf: "flex-start", maxWidth: "92%", background: "#fff", borderRadius: "4px 12px 12px 12px", padding: "8px 10px 6px", boxShadow: "0 1px 1px rgba(0,0,0,.08)", fontSize: 13, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
             {t ? fillVars(t.body, d.wa_vars) : <span style={{ color: R.mute }}>Pick a template to see exactly what {d.lead.name.split(" ")[0] || "the student"} will receive.</span>}
             <div style={{ textAlign: "right", fontSize: 10.5, color: R.mute, marginTop: 2 }}>Max Music School · {now}</div>
           </div>
-        </div>
+        </div>}
       </div>
     </Card>
   );

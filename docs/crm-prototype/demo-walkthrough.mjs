@@ -54,7 +54,8 @@ await d.locator('label:has-text("Student asked") input').check();
 await d.getByRole("button", { name: "+ Call back at time" }).click();
 await d.getByRole("radio", { name: /Talked, call me later/ }).scrollIntoViewIfNeeded();
 await shot(ritika, "04-code-d-reasons-and-chips.png");
-await d.getByRole("button", { name: "Save", exact: true }).click();
+await shot(ritika, "04b-follow-up-siren-banner.png");
+await d.getByRole("button", { name: "Save form" }).click();
 await ritika.getByRole("status").filter({ hasText: "saved as D" }).waitFor();
 await shot(ritika, "05-saved-left-due-now.png");
 
@@ -77,7 +78,7 @@ await n.getByText(/Sent "Trial details"/).waitFor();
 await n.getByRole("radio", { name: /Paid ₹299 trial/ }).click();
 await n.locator('label:has-text("Reason") select').selectOption({ label: "Paid on call (UPI)" });
 await n.getByRole("button", { name: "+ Paid UPI" }).click();
-await n.getByRole("button", { name: "Save", exact: true }).click();
+await n.getByRole("button", { name: "Save form" }).click();
 await ritika.getByRole("status").filter({ hasText: "saved as F" }).waitFor();
 await ritika.getByRole("button", { name: "All leads" }).click();
 await ritika.getByLabel("Search leads").fill(code);
