@@ -8,6 +8,7 @@ import { Panel, R } from "@/components/report/kit";
 import { API_BASE, api, fetcher } from "@/lib/api";
 import { CODES, MIN_NOTE, STATUS_LABEL, fillVars, groupPhone, type Code, type CrmConfig, type LeadDetail } from "@/lib/crm";
 import { Btn, CodeChip, Drawer, Tag, inputStyle, labelStyle } from "./kit";
+import { useCrmMe } from "@/hooks/useCrmMe";
 import { History, Snapshot } from "./History";
 
 const HEARTBEAT_MS = 60_000;
@@ -38,6 +39,8 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
   const { data: cfg } = useSWR<CrmConfig>("/crm/config", fetcher);
   const [lock, setLock] = useState<Lock>(null);
   const lastActive = useRef(Date.now());
+  const { can } = useCrmMe();
+  const [reviveErr, setReviveErr] = useState("");
 
   // Claim on open, extend every minute while the rep is active, release on close
   useEffect(() => {
@@ -76,8 +79,15 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
             {l.tags?.includes("re-enquired") && <Tag tone="gold">re-enquired</Tag>}
           </h2>
         </div>
-        <div style={{ marginLeft: "auto" }}><Btn kind="ghost" onClick={onClose}>Close ✕</Btn></div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          {l.status === "dropped" && can("reassign_leads") && (
+            <Btn kind="ghost" title="Back into the queue as a retry, attempts reset"
+              onClick={() => api.post(`/crm/leads/${l.id}/revive`).then(() => { setReviveErr(""); mutate(); }, (e) => setReviveErr((e as Error).message))}>↺ Revive lead</Btn>
+          )}
+          <Btn kind="ghost" onClick={onClose}>Close ✕</Btn>
+        </div>
       </div>
+      {reviveErr && <p role="alert" style={{ margin: 0, color: R.bad, fontSize: 13 }}>{reviveErr}</p>}
       {readOnly && (
         <div role="status" style={{ background: "#fff1d6", border: `1px solid ${R.gold}`, borderRadius: 12, padding: "10px 14px", fontSize: 13.5, fontWeight: 600 }}>
           🔒 {lock?.locked_by_name} is on this lead. You can read it, but the form is read-only until they save or close.
