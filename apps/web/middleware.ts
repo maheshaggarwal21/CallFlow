@@ -18,6 +18,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // CRM screens don't exist until NEXT_PUBLIC_CRM_ENABLED=true (inlined at build time)
+  if (pathname.startsWith("/dashboard/crm") && process.env.NEXT_PUBLIC_CRM_ENABLED !== "true") {
+    return NextResponse.redirect(new URL("/dashboard/recordings", request.url));
+  }
+
   const token = request.cookies.get("token")?.value;
 
   // No token — redirect to login

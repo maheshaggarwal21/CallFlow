@@ -13,6 +13,7 @@ import {
 } from "../services/crm.service";
 import { crmReport, digestData, digestHtml, linkPair } from "../services/crmReports.service";
 import { fillTemplate, sendWhatsAppTemplate, watiMode } from "../services/wati.service";
+import { audioUrlsFor } from "../services/audioUrls";
 
 // Mounted at /api/v1/crm only when CRM_ENABLED=true (see index.ts).
 const router = Router();
@@ -161,6 +162,17 @@ router.post("/leads/:id/whatsapp", async (req, res) => {
     [leadId, user(req).sub, t.id, fillTemplate(t.body, detail.wa_vars), JSON.stringify({ mode: sent.mode, message_id: sent.message_id })]
   );
   return res.json({ mode: sent.mode, template: t.label });
+});
+
+/** Playback for one recording of a LEAD's number (any rep), e.g. the queue row's play button. */
+router.get("/calls/:id/audio", async (req, res) => {
+  const id = parse(uuid, req.params.id);
+  const { rows: [c] } = await pool.query(
+    "SELECT c.audio_storage_key FROM calls c JOIN leads l ON l.phone10 = c.phone10 WHERE c.id = $1",
+    [id]
+  );
+  if (!c) throw new CrmError(404, "Recording not found for a lead");
+  return res.json(await audioUrlsFor(id, c.audio_storage_key));
 });
 
 /** Owner: star / unstar a recording so retention never deletes it. */

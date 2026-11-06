@@ -8,12 +8,15 @@ import { fetcher } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
 import type { EmployeeName } from "@callflow/shared-types";
+import { CRM_ENABLED } from "@/lib/crm";
+import { useCrmMe } from "@/hooks/useCrmMe";
 
 export default function Sidebar() {
   const router   = useRouter();
   const pathname = usePathname();
   const { name, role, color_index, isOwner } = useAuth();
   const { syncLabel, isLive } = useSystemStatus();
+  const { can: crmCan } = useCrmMe();
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [empOpen, setEmpOpen]       = useState(true);
   const [hovNav, setHovNav]         = useState<string | null>(null);
@@ -125,6 +128,16 @@ export default function Sidebar() {
       {/* Nav */}
       <nav style={{ flex: 1, padding: "12px 12px", overflowY: "auto" }}>
 
+
+            {CRM_ENABLED && (
+              <>
+                <SectionLabel label="CRM" />
+                <NavBtn id="crm-queue" label="Lead Queue" path="/dashboard/crm" icon="☰" exact />
+                {crmCan("export_leads") && <NavBtn id="crm-leads" label="All Leads" path="/dashboard/crm/leads" icon="▤" />}
+                {crmCan("view_crm_reports") && <NavBtn id="crm-reports" label="CRM Reports" path="/dashboard/crm/reports" icon="◔" />}
+                <NavBtn id="crm-settings" label="CRM Settings" path="/dashboard/crm/settings" icon="⚙" />
+              </>
+            )}
 
             <SectionLabel label="Calls" />
             <NavBtn id="recordings" label="Recordings" path="/dashboard/recordings" icon="▷" />
