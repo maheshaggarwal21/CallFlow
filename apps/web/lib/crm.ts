@@ -82,6 +82,8 @@ export type LeadDetail = {
   lead: LeadRow & { email: string | null; phone_raw: string; answers: { question_id: string; label: string; value: string }[];
     version: number; locked_until: string | null; updated_by_name: string | null; external_id: string | null };
   timeline: TimelineEntry[];
+  /** Assignment changes, newest first (owner assigns + D/E callbacks); name null = back to the shared pool */
+  assignments: { at: string; name: string | null; by_name: string | null; previous_name: string | null }[];
   wa_vars: Record<string, string>;
   callback_note: string | null;
   server_now: string;

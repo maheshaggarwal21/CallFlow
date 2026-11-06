@@ -171,10 +171,10 @@ function Entry({ e, first, isOwner, onChanged }: { e: TimelineEntry; first: bool
 export function Snapshot({ d }: { d: LeadDetail }) {
   const l = d.lead;
   const m = codeMeta(l.current_code);
-  const row = (icon: Parameters<typeof Icon>[0]["name"], k: string, v: ReactNode, color?: string) => (
+  const row = (icon: Parameters<typeof Icon>[0]["name"], k: string, v: ReactNode, color?: string, hint?: string) => (
     <div style={{ display: "grid", gridTemplateColumns: "22px 1fr auto", gap: 8, alignItems: "center", padding: "7px 0", borderTop: "1px solid #f1e8da", fontSize: 13 }}>
       <span style={{ color: R.out, display: "inline-flex" }}><Icon name={icon} size={16} /></span>
-      <span style={{ color: R.mute }}>{k}</span>
+      <span style={{ color: R.mute }}>{k}{hint && <div style={{ fontSize: 11, color: "#a8977f" }}>{hint}</div>}</span>
       <span style={{ textAlign: "right", fontWeight: 700, color: color ?? R.ink }}>{v}</span>
     </div>
   );
@@ -185,8 +185,8 @@ export function Snapshot({ d }: { d: LeadDetail }) {
         {row("target", "Status", <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><CodeChip code={l.current_code} />{m ? m.label : STATUS_LABEL[l.status]}</span>, m ? KIND_COLOR[m.kind] : undefined)}
         {row("calendar", "Next follow-up date", f ? longDate(f) : "—", f ? R.out : undefined)}
         {row("clock", "Next follow-up time", f ? timeOf(f) : "—", f ? R.out : undefined)}
-        {row("user", "Assigned to", l.assigned_to_name ?? "—")}
-        {row("user", "Callback set by", l.callback_set_by_name ?? "—")}
+        {row("user", "Assigned to", l.assigned_to_name ?? <span style={{ color: "#a8977f", fontWeight: 600 }}>Shared pool</span>, undefined, "Who should make the next call")}
+        {row("user", "Callback set by", l.callback_set_by_name ?? "—", undefined, "The rep who agreed the callback time with the student")}
         {row("retry", "Failed attempts", `${l.attempts} of 6`)}
         {row("phone", "Last contacted", l.last_contacted_at ? fmtWhen(l.last_contacted_at) : "Never")}
       </div>

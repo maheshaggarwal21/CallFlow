@@ -126,7 +126,7 @@ export async function saveOutcome(leadId: string, user: User, input: OutcomeInpu
       `INSERT INTO lead_interactions (lead_id, employee_id, kind, code, reason, note, answers, next_followup_at, meta)
        VALUES ($1, $2, 'call_outcome', $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
       [leadId, user.sub, input.code, input.reason || null, input.note || null, JSON.stringify(input.answers),
-       s.next_followup_at, JSON.stringify({ status: s.status, attempts: s.attempts, student_set_time: !!input.student_set_time, amount: s.amount, assigned_to: input.assigned_to ?? null })]
+       s.next_followup_at, JSON.stringify({ status: s.status, attempts: s.attempts, student_set_time: !!input.student_set_time, amount: s.amount, assigned_to: input.assigned_to ?? null, previous: lead.assigned_to })]
     );
     const { rows: [saved] } = await client.query(
       `UPDATE leads SET status = $2::text, current_code = $3, next_followup_at = $4, attempts = $5,
@@ -209,7 +209,7 @@ export async function leadDetail(leadId: string) {
   if (!lead.locked_by_name) lead.locked_by = null;
   const checks = await callCheckOn();
 
-  const [ixRes, callRes, links] = await Promise.all([
+  const [ixRes, callRes, links, assigns] = await Promise.all([
     pool.query(
       `SELECT i.id, i.kind, i.code, i.reason, i.note, i.answers, i.next_followup_at, i.call_id, i.meta, i.created_at,
               i.employee_id, e.name AS employee_name, t.label AS template_label
@@ -230,6 +230,17 @@ export async function leadDetail(leadId: string) {
       [lead.phone10]
     ),
     getSetting<Record<string, string>>("links", {}),
+    // Every assignment change, newest first: owner assigns and D/E callbacks (meta.assigned_to)
+    pool.query(
+      `SELECT i.created_at AS at, a.name, b.name AS by_name, p.name AS previous_name
+       FROM lead_interactions i
+       LEFT JOIN employees a ON a.id = (i.meta ->> 'assigned_to')::uuid
+       LEFT JOIN employees p ON p.id = (i.meta ->> 'previous')::uuid
+       LEFT JOIN employees b ON b.id = i.employee_id
+       WHERE i.lead_id = $1 AND ((i.kind = 'system' AND i.meta ? 'assigned_to') OR i.meta ->> 'assigned_to' IS NOT NULL)
+       ORDER BY i.created_at DESC`,
+      [leadId]
+    ),
   ]);
 
   const expiredBefore = Date.now() - RETENTION_DAYS * 86_400_000;
@@ -270,7 +281,7 @@ export async function leadDetail(leadId: string) {
   };
 
   const lastCallback = ixRes.rows.find((i) => i.code === "D" || i.code === "E");
-  return { lead, timeline, wa_vars: waVars, callback_note: lastCallback ? (lastCallback.note ?? lastCallback.reason) : null, server_now: new Date() };
+  return { lead, timeline, assignments: assigns.rows, wa_vars: waVars, callback_note: lastCallback ? (lastCallback.note ?? lastCallback.reason) : null, server_now: new Date() };
 }
 
 // ── Queue ──────────────────────────────────────────────────────────────────
@@ -470,17 +481,21 @@ export async function assignLeads(leadIds: string[], employeeId: string | null, 
       if (!e) throw new CrmError(400, "Pick an active representative");
       repName = e.name;
     }
+    // Keep who had each lead before, so the drawer can say "previously assigned to"
     const { rows } = await client.query(
-      `UPDATE leads SET assigned_to = $2, version = version + 1, updated_by = $3, updated_at = NOW()
-       WHERE id = ANY($1::uuid[]) AND assigned_to IS DISTINCT FROM $2 RETURNING id`,
+      `WITH old AS (SELECT id, assigned_to FROM leads WHERE id = ANY($1::uuid[]) FOR UPDATE)
+       UPDATE leads l SET assigned_to = $2, version = l.version + 1, updated_by = $3, updated_at = NOW()
+       FROM old WHERE l.id = old.id AND old.assigned_to IS DISTINCT FROM $2
+       RETURNING l.id, old.assigned_to AS previous`,
       [leadIds, employeeId, user.sub]
     );
     if (rows.length) {
       await client.query(
         `INSERT INTO lead_interactions (lead_id, employee_id, kind, note, meta)
-         SELECT id, $2, 'system', $3, $4 FROM unnest($1::uuid[]) AS id`,
-        [rows.map((r) => r.id), user.sub, repName ? `Assigned to ${repName} by ${user.name}` : `Moved back to the shared pool by ${user.name}`,
-         JSON.stringify({ assigned_to: employeeId })]
+         SELECT x.id, $3, 'system', $4, jsonb_build_object('assigned_to', $5::uuid, 'previous', x.previous)
+         FROM unnest($1::uuid[], $2::uuid[]) AS x(id, previous)`,
+        [rows.map((r) => r.id), rows.map((r) => r.previous), user.sub,
+         repName ? `Assigned to ${repName} by ${user.name}` : `Moved back to the shared pool by ${user.name}`, employeeId]
       );
     }
     await client.query("COMMIT");

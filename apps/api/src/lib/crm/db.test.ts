@@ -155,5 +155,7 @@ test("assign: leads go to a rep and back to the pool, bumping version and loggin
   assert.equal((await pool.query("SELECT assigned_to FROM leads WHERE id = $1", [a.id])).rows[0].assigned_to, null);
   const notes = (await pool.query("SELECT note FROM lead_interactions WHERE lead_id = $1 AND kind = 'system' ORDER BY created_at", [a.id])).rows.map((x) => x.note);
   assert.deepEqual(notes, ["Assigned to Neha by Owner", "Moved back to the shared pool by Owner"]);
+  const prev = (await pool.query("SELECT meta->>'previous' AS p FROM lead_interactions WHERE lead_id = $1 AND kind = 'system' ORDER BY created_at DESC LIMIT 1", [a.id])).rows[0].p;
+  assert.equal(prev, neha.sub);  // the unassign remembers Neha had it
   await assert.rejects(assignLeads([b.id], "00000000-0000-0000-0000-000000000000", owner), (e: CrmError) => e.status === 400);
 });

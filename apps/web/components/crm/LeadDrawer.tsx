@@ -109,6 +109,7 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
       )}
       <div className="lf-grid">
         <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
+          {can("reassign_leads") && <AssignmentBox d={d} cfg={cfg} onChanged={() => mutate()} />}
           <OutcomeForm d={d} cfg={cfg} readOnly={readOnly} onDraft={setDraft} onSaved={(m) => { mutate(); onSaved(m); onClose(); }} onReload={() => mutate()} />
           <div ref={waRef}><WhatsAppPanel d={d} cfg={cfg} readOnly={readOnly} onSent={() => mutate()} /></div>
         </div>
@@ -184,6 +185,62 @@ function SheetHeader({ d, watiMode, onClose, onWhatsApp, revive }: { d: LeadDeta
   );
 }
 
+/** Owner / reassign_leads: who has this lead, who had it before, and hand it to someone else. */
+function AssignmentBox({ d, cfg, onChanged }: { d: LeadDetail; cfg: CrmConfig; onChanged: () => void }) {
+  const l = d.lead;
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const current = l.assigned_to_name ?? null;
+  const since = d.assignments.find((a) => a.name === current);
+  // Who had it before the latest change (recorded on the change itself), else the last different name in the history
+  const previous = d.assignments[0]?.previous_name ?? d.assignments.find((a) => a.name !== current)?.name ?? null;
+  const target = to === "pool" ? null : to;
+  const same = to === "" || (target ?? null) === (l.assigned_to ?? null);
+  const assign = async () => {
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await api.post<{ updated: number; assigned_to_name: string | null }>("/crm/leads/assign", { lead_ids: [l.id], employee_id: target });
+      setMsg(r.assigned_to_name ? `Assigned to ${r.assigned_to_name}` : "Moved back to the shared pool");
+      setTo("");
+      onChanged();
+    } catch (e) {
+      setMsg(`! ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const box = (muted: boolean) => ({ background: muted ? "#f1ebe2" : "#fff", border: `1px ${muted ? "dashed" : "solid"} ${muted ? "#d9c9b1" : R.line}`, borderRadius: 10, padding: "8px 12px", minHeight: 42, display: "flex", gap: 9, alignItems: "center" } as const);
+  return (
+    <Card icon="user" title="Lead assignment" right={<span style={{ fontSize: 12, color: R.mute }}>Owner · applies straight away</span>}>
+      <div className="lf-3" style={{ alignItems: "end" }}>
+        <div>
+          <span style={labelStyle}>Currently assigned to</span>
+          <div style={box(!current)} aria-label="Currently assigned to">
+            {current ? <><Avatar name={current} size={26} /><span style={{ minWidth: 0 }}><b style={{ fontSize: 13.5 }}>{current}</b>
+              {since && <div style={{ fontSize: 11, color: R.mute }}>since {new Date(since.at).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short" })}{since.by_name ? ` · by ${since.by_name}` : ""}</div>}</span></>
+              : <span style={{ color: "#a8977f", fontSize: 13 }}>— Shared pool (not assigned)</span>}
+          </div>
+        </div>
+        <label>
+          <span style={labelStyle}>Assign this lead to</span>
+          <select value={to} onChange={(e) => { setTo(e.target.value); setMsg(""); }} aria-label="Assign this lead to" style={{ ...inputStyle, minHeight: 42 }}>
+            <option value="">Choose a representative…</option>
+            {cfg.reps.map((r) => <option key={r.id} value={r.id}>{r.name}{r.id === l.assigned_to ? " (current)" : ""}</option>)}
+            <option value="pool">Shared pool (unassign)</option>
+          </select>
+        </label>
+        <Btn onClick={assign} disabled={same || busy} style={{ minHeight: 42 }}>{busy ? "Assigning…" : to === "pool" ? "Move to pool" : "Assign"}</Btn>
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 8, fontSize: 12.5 }}>
+        <span style={{ color: previous ? R.ink : "#a8977f" }}>Previously assigned to: <b>{previous ?? "—"}</b></span>
+        {msg && <span role="status" style={{ marginLeft: "auto", fontWeight: 700, color: msg.startsWith("!") ? R.bad : R.good }}>{msg}</span>}
+      </div>
+    </Card>
+  );
+}
+
 function SectionLabel({ icon, children, right }: { icon: Parameters<typeof Icon>[0]["name"]; children: ReactNode; right?: ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "2px 0 8px" }}>
@@ -228,6 +285,8 @@ function OutcomeForm({ d, cfg, readOnly, onDraft, onSaved, onReload }: { d: Lead
     return null;
   }, [d.timeline]);
   const [repId, setRepId] = useState<string>(l.assigned_to ?? lastRep?.id ?? "");
+  // The owner may reassign while this form is open: follow the new assignee
+  useEffect(() => { if (l.assigned_to) setRepId(l.assigned_to); }, [l.assigned_to]);
   const [code, setCode] = useState<Code | null>(null);
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
