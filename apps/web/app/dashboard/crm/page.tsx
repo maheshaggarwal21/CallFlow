@@ -12,8 +12,12 @@ import { useCrmMe } from "@/hooks/useCrmMe";
 import { BandTile, Btn, CRM_CSS, HeaderBand, SectionTitle, inputStyle } from "@/components/crm/kit";
 import LeadTable, { type SortState } from "@/components/crm/LeadTable";
 import LeadDrawer from "@/components/crm/LeadDrawer";
+import { Icon } from "@/components/crm/icons";
 import Pagination from "@/components/ui/Pagination";
 
+// Date range halves: hide the native picker icon (ours sits on the left) but keep it clickable over the whole half
+const RANGE_CSS = `.crm-range input::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:auto;height:auto;opacity:0;cursor:pointer}
+  .crm-range input:focus{outline:none}.crm-range:focus-within{background:#fff4e3;box-shadow:inset 0 -2px 0 ${R.out}}`;
 const IS_DEV = process.env.NODE_ENV !== "production";
 const IST = "Asia/Kolkata";
 type Filters = { q: string; status: string; code: string; assigned: string; fdate: string; from: string; to: string };
@@ -87,7 +91,7 @@ export default function LeadsPage() {
   const filterLabel = { display: "grid", gap: 3, fontSize: 10.5, fontWeight: 700, color: R.mute, textTransform: "uppercase", letterSpacing: ".05em" } as const;
   return (
     <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 14 }}>
-      <style>{CRM_CSS}</style>
+      <style>{CRM_CSS + RANGE_CSS}</style>
       <HeaderBand eyebrow="CRM" title="Leads" sub="Track every lead, its status and follow-ups · refreshes every 30 s"
         right={<>
           {IS_DEV && <Btn kind="light" onClick={simulate} disabled={simulating} title="Dev only: sends one fake lead through the intake endpoint">
@@ -123,13 +127,16 @@ export default function LeadsPage() {
         <label style={{ ...filterLabel, flex: "0 1 140px" }}>Follow-up date
           <input type="date" value={f.fdate} onChange={(e) => setF({ ...f, fdate: e.target.value })} style={sel("1")} /></label>
         <div role="group" aria-label="Date range (received)" style={{ ...filterLabel, flex: "0 1 330px" }}>Date range (received)
-          {/* One box for the range: From → To */}
-          <span style={{ ...inputStyle, display: "flex", alignItems: "center", gap: 6, padding: "0 8px" }}>
-            <input type="date" value={f.from} max={f.to || undefined} onChange={(e) => setF({ ...f, from: e.target.value })} aria-label="From"
-              style={{ ...inputStyle, border: 0, background: "transparent", padding: "8px 2px", flex: 1, minWidth: 0 }} />
-            <span aria-hidden style={{ color: R.mute, fontWeight: 700 }}>→</span>
-            <input type="date" value={f.to} min={f.from || undefined} onChange={(e) => setF({ ...f, to: e.target.value })} aria-label="To"
-              style={{ ...inputStyle, border: 0, background: "transparent", padding: "8px 2px", flex: 1, minWidth: 0 }} />
+          {/* One thin box for the range: [icon From | icon To]; the native picker covers each half, so a click anywhere opens it */}
+          <span style={{ ...inputStyle, display: "flex", alignItems: "stretch", padding: 0, overflow: "hidden" }}>
+            {([["from", "From", { max: f.to || undefined }], ["to", "To", { min: f.from || undefined }]] as const).map(([k, label, lim], i) => (
+              <span key={k} className="crm-range" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 6, padding: "0 10px", position: "relative",
+                borderLeft: i ? `1px solid ${R.line}` : undefined }}>
+                <Icon name="calendar" size={15} style={{ color: R.out }} />
+                <input type="date" value={f[k]} {...lim} onChange={(e) => setF({ ...f, [k]: e.target.value })} aria-label={label}
+                  style={{ ...inputStyle, border: 0, background: "transparent", padding: "8px 0", flex: 1, minWidth: 0 }} />
+              </span>
+            ))}
           </span></div>
       </div>
 
