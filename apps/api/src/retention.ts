@@ -10,6 +10,8 @@
  *   1. Objects referenced by calls whose `called_at` is older than the cutoff.
  *   2. Unreferenced objects under `korecall/YYYYMM/YYYYMMDD/` whose folder date
  *      is older than the cutoff (failed inserts, test uploads, etc.).
+ * Calls with `keep_audio = true` (CRM: matched to a paid or never-call-again
+ * lead, or starred by the owner) are skipped by both passes, at any age.
  * An object still referenced by a call INSIDE the window is never deleted, even
  * if its folder date is old — fixClockDrift.ts corrects `called_at` but leaves
  * the R2 path at the PBX's wrong date, so folder date alone isn't trusted.
@@ -37,9 +39,9 @@ import {
   type _Object,
 } from "@aws-sdk/client-s3";
 import pool from "./db/pool";
+import { planDeletions } from "./lib/retentionPlan";
 
 const PREFIX = "korecall/";
-const DATED_KEY = /^korecall\/\d{6}\/(\d{8})\//;
 const IST_OFFSET_MS = 330 * 60 * 1000;
 const BATCH = 1000; // DeleteObjects limit
 
@@ -95,34 +97,25 @@ async function main() {
   const cutoff = new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000);
   const cutoffDay = istDay(cutoff);
 
-  const [objects, oldRes, keepRes] = await Promise.all([
+  // keep_audio is read through to_jsonb so this still runs on a database the
+  // CRM migration hasn't reached yet (the flag is then simply false).
+  const rowsSql = (cmp: string) =>
+    `SELECT audio_storage_key AS key, COALESCE((to_jsonb(calls) ->> 'keep_audio')::boolean, false) AS keep
+     FROM calls WHERE called_at ${cmp} $1 AND audio_storage_key LIKE 'korecall/%'`;
+  const [objects, oldRes, newRes] = await Promise.all([
     listAll(s3, bucket),
-    pool.query(
-      "SELECT audio_storage_key FROM calls WHERE called_at < $1 AND audio_storage_key LIKE 'korecall/%'",
-      [cutoff.toISOString()]
-    ),
-    pool.query(
-      "SELECT audio_storage_key FROM calls WHERE called_at >= $1 AND audio_storage_key LIKE 'korecall/%'",
-      [cutoff.toISOString()]
-    ),
+    pool.query(rowsSql("<"), [cutoff.toISOString()]),
+    pool.query(rowsSql(">="), [cutoff.toISOString()]),
   ]);
 
   const sizeOf = new Map(objects.map((o) => [o.Key!, o.Size ?? 0]));
-  const protectedKeys = new Set<string>(keepRes.rows.map((r) => r.audio_storage_key));
-  const oldRowKeys = new Set<string>(oldRes.rows.map((r) => r.audio_storage_key));
+  const { keys, dangling } = planDeletions({
+    objectKeys: objects.map((o) => o.Key!),
+    oldRows: oldRes.rows,
+    newRows: newRes.rows,
+    cutoffDay,
+  });
 
-  const toDelete = new Set<string>();
-  for (const key of oldRowKeys) if (sizeOf.has(key)) toDelete.add(key);
-  for (const o of objects) {
-    const m = DATED_KEY.exec(o.Key!);
-    if (m && m[1] < cutoffDay) toDelete.add(o.Key!);
-  }
-  for (const key of protectedKeys) toDelete.delete(key);
-
-  // Old rows pointing at an object that is already gone: clear the dead link too
-  const dangling = [...oldRowKeys].filter((k) => !sizeOf.has(k) && !protectedKeys.has(k));
-
-  const keys = [...toDelete].sort();
   const bytes = keys.reduce((n, k) => n + (sizeOf.get(k) ?? 0), 0);
   const bucketBytes = objects.reduce((n, o) => n + (o.Size ?? 0), 0);
   const gb = (b: number) => (b / 1e9).toFixed(2);
