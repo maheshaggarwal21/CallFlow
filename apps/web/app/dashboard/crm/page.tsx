@@ -122,11 +122,15 @@ export default function LeadsPage() {
           </select></label>
         <label style={{ ...filterLabel, flex: "0 1 140px" }}>Follow-up date
           <input type="date" value={f.fdate} onChange={(e) => setF({ ...f, fdate: e.target.value })} style={sel("1")} /></label>
-        <label style={{ ...filterLabel, flex: "0 1 270px" }}>Date range (received)
-          <span style={{ display: "flex", gap: 4 }}>
-            <input type="date" value={f.from} max={f.to || undefined} onChange={(e) => setF({ ...f, from: e.target.value })} aria-label="From" style={sel("1")} />
-            <input type="date" value={f.to} min={f.from || undefined} onChange={(e) => setF({ ...f, to: e.target.value })} aria-label="To" style={sel("1")} />
-          </span></label>
+        <div role="group" aria-label="Date range (received)" style={{ ...filterLabel, flex: "0 1 330px" }}>Date range (received)
+          {/* One box for the range: From → To */}
+          <span style={{ ...inputStyle, display: "flex", alignItems: "center", gap: 6, padding: "0 8px" }}>
+            <input type="date" value={f.from} max={f.to || undefined} onChange={(e) => setF({ ...f, from: e.target.value })} aria-label="From"
+              style={{ ...inputStyle, border: 0, background: "transparent", padding: "8px 2px", flex: 1, minWidth: 0 }} />
+            <span aria-hidden style={{ color: R.mute, fontWeight: 700 }}>→</span>
+            <input type="date" value={f.to} min={f.from || undefined} onChange={(e) => setF({ ...f, to: e.target.value })} aria-label="To"
+              style={{ ...inputStyle, border: 0, background: "transparent", padding: "8px 2px", flex: 1, minWidth: 0 }} />
+          </span></div>
       </div>
 
       {next && (
