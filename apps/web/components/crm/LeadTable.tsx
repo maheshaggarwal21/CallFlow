@@ -7,7 +7,40 @@ import { R, dur } from "@/components/report/kit";
 import { api } from "@/lib/api";
 import { playWithFallback, playbackCandidates } from "@/lib/audioPlayback";
 import { STATUS_LABEL, fmtAgo, fmtWhen, groupPhone, type LeadRow } from "@/lib/crm";
+import { WhatsAppIcon } from "@/components/ui/WABtn";
 import { CodeChip, Tag, tdStyle, thStyle } from "./kit";
+import { Icon } from "./icons";
+
+/** Google Calendar "add event" link for the follow-up (15 min slot). */
+const gcalUrl = (l: LeadRow) => {
+  const t = (ms: number) => new Date(ms).toISOString().replace(/[-:]|\.\d{3}/g, "");
+  const start = new Date(l.next_followup_at!).getTime();
+  return `https://calendar.google.com/calendar/render?${new URLSearchParams({
+    action: "TEMPLATE", text: `Follow up: ${l.name || "Lead"} (${l.lead_code})`,
+    dates: `${t(start)}/${t(start + 15 * 60_000)}`, details: `Call ${groupPhone(l.phone10)} via KoreCall`,
+  })}`;
+};
+
+const actBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: `1px solid ${R.line}`, background: R.card, color: R.ink,
+  display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, textDecoration: "none" };
+
+function Actions({ l, onOpen }: { l: LeadRow; onOpen: (id: string) => void }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => navigator.clipboard?.writeText(l.phone10).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); });
+  return (
+    <span style={{ display: "inline-flex", gap: 5 }}>
+      <button className="crm-btn" style={actBtn} onClick={() => onOpen(l.id)} title="Open lead form" aria-label={`Open ${l.name}`}><Icon name="open" size={15} /></button>
+      <a className="crm-btn" style={{ ...actBtn, color: "#1fa855" }} href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer"
+        title="Chat on WhatsApp" aria-label={`WhatsApp ${l.name}`}><WhatsAppIcon size={15} /></a>
+      <button className="crm-btn" style={{ ...actBtn, color: copied ? R.good : R.ink }} onClick={copy}
+        title={copied ? "Copied" : "Copy number (to dial on KoreCall)"} aria-label={`Copy number of ${l.name}`}><Icon name={copied ? "check" : "copy"} size={15} /></button>
+      {l.next_followup_at
+        ? <a className="crm-btn" style={actBtn} href={gcalUrl(l)} target="_blank" rel="noopener noreferrer"
+            title={`Add follow-up (${fmtWhen(l.next_followup_at)}) to Google Calendar`} aria-label={`Add ${l.name}'s follow-up to calendar`}><Icon name="calendar" size={15} /></a>
+        : <span style={{ ...actBtn, opacity: 0.35, cursor: "default" }} title="No follow-up scheduled"><Icon name="calendar" size={15} /></span>}
+    </span>
+  );
+}
 
 /** One inline player for the whole table: play a lead's last recording, click again to stop. */
 export function useInlinePlayer() {
@@ -50,16 +83,16 @@ export default function LeadTable({ rows, onOpen, player, now, meId, sort, onSor
   };
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, tableLayout: "fixed", minWidth: 1000 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, tableLayout: "fixed", minWidth: 1060 }}>
         {/* Fixed widths so every queue section lines up */}
-        <colgroup>{(selected ? [3, 20, 11, 13, 11, 5, 11, 16, 10] : [21, 11, 14, 11, 5, 11, 17, 10]).map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
+        <colgroup>{(selected ? [3, 15, 10, 10, 11, 4, 10, 13, 9, 15] : [16, 10, 11, 11, 4, 10, 14, 9, 15]).map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
         <thead><tr>
           {selected && onSelect && (
             <th style={thStyle}><input type="checkbox" aria-label="Select all on this page" checked={rows.every((r) => selected.has(r.id))}
               onChange={(e) => onSelect(rows.map((r) => r.id), e.target.checked)} style={{ width: 16, height: 16, accentColor: R.out }} /></th>
           )}
           {head("Lead", "lead_code")}{head("Number")}{head("Source")}{head("Code", "status")}{head("Tries", "attempts")}
-          {head("Last contacted", "last_contacted_at")}{head("Next follow-up", "next_followup_at")}{head("Last call")}
+          {head("Last contacted", "last_contacted_at")}{head("Next follow-up", "next_followup_at")}{head("Last call")}{head("Actions")}
         </tr></thead>
         <tbody>
           {rows.map((l) => {
@@ -114,6 +147,7 @@ export default function LeadTable({ rows, onOpen, player, now, meId, sort, onSor
                     </span>
                   ) : <span style={{ color: "#c2b39c", fontSize: 12 }}>—</span>}
                 </td>
+                <td style={{ ...tdStyle, whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}><Actions l={l} onOpen={onOpen} /></td>
               </tr>
             );
           })}
