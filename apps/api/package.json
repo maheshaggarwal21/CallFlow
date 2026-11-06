@@ -11,7 +11,7 @@
     "crm:migrate": "tsc -p tsconfig.json && cp -R src/db/migrations dist/db/ && node -r ./dist/crmDevEnv.js dist/migrate.js",
     "crm:seed": "tsc -p tsconfig.json && node -r ./dist/crmDevEnv.js dist/seedCrm.js",
     "crm:reset-demo": "tsc -p tsconfig.json && node -r ./dist/crmDevEnv.js dist/seedCrm.js --reset",
-    "crm:test": "tsc -p tsconfig.json && node -r ./dist/crmDevEnv.js --test dist/lib/crm/*.test.js dist/retention.test.js"
+    "crm:test": "tsc -p tsconfig.json && node -r ./dist/crmDevEnv.js --test dist/lib/crm/*.test.js dist/lib/retentionPlan.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",
