@@ -89,11 +89,21 @@ await drawer(ritika).getByText("Converted").first().waitFor();
 await shot(ritika, "07-f-and-whatsapp-in-history.png");
 
 // 6. Owner: CRM Reports
-const owner = await login("owner", 2700);
+const owner = await login("owner", 1400);
 await owner.goto(`${WEB}/dashboard/crm/reports`);
-await owner.getByText("F digest preview").waitFor();
-await owner.waitForTimeout(2500);
-await shot(owner, "08-crm-reports.png");
+await owner.getByText("Outcome mix").waitFor();
+await owner.waitForTimeout(1500);
+await shot(owner, "08-crm-reports-overview.png");
+await owner.getByRole("button", { name: /^Checks/ }).click();
+await owner.getByText("Probable number typos").first().waitFor();
+await shot(owner, "08b-crm-reports-checks.png");
+await owner.getByRole("button", { name: "Reasons", exact: true }).click();
+await owner.getByText("Why students said no").waitFor();
+await shot(owner, "08c-crm-reports-reasons.png");
+await owner.getByRole("button", { name: "Paid digest", exact: true }).click();
+await owner.getByTitle("Paid digest email preview").waitFor();
+await owner.waitForTimeout(1000);
+await shot(owner, "08d-paid-digest.png");
 
 // 7. Settings: edit a note template, toggle a permission, pending client decisions
 await owner.setViewportSize({ width: 1366, height: 900 });

@@ -14,7 +14,7 @@ const DAY_MS = 86_400_000;
 
 export async function crmReport(start: Date, end: Date) {
   const range = [start.toISOString(), end.toISOString()];
-  const [reps, funnel, reasons, noRecording, noForm, typoPairs, checked, errors] = await Promise.all([
+  const [reps, funnel, reasons, noRecording, noForm, typoPairs, checked, errors, hourly] = await Promise.all([
     pool.query(
       `WITH f AS (
          SELECT i.employee_id, i.code, c.duration_secs FROM lead_interactions i
@@ -90,7 +90,17 @@ export async function crmReport(start: Date, end: Date) {
               (SELECT json_agg(x) FROM (SELECT call_id, error, created_at FROM crm_match_errors ORDER BY id DESC LIMIT 5) x) AS latest
        FROM crm_match_errors`
     ),
+    pool.query(
+      `SELECT extract(hour FROM created_at AT TIME ZONE 'Asia/Kolkata')::int AS h, count(*)::int AS forms,
+              count(*) FILTER (WHERE code IN ('D','E','F','Z'))::int AS talked, count(*) FILTER (WHERE code = 'F')::int AS paid
+       FROM lead_interactions WHERE kind = 'call_outcome' AND created_at >= $1 AND created_at < $2 GROUP BY 1`,
+      range
+    ),
   ]);
+  // A continuous run of hours: 8 AM – 9 PM IST, widened to any hour that actually had forms
+  const byHour = new Map(hourly.rows.map((r) => [r.h, r]));
+  const first = Math.min(8, ...byHour.keys()), last = Math.max(21, ...byHour.keys());
+  const hours = Array.from({ length: last - first + 1 }, (_, i) => first + i);
 
   const checkMode = (await getSetting<{ mode: string }>("call_check", { mode: "preview" })).mode;
   const group = (g: string) => {
@@ -110,6 +120,7 @@ export async function crmReport(start: Date, end: Date) {
     },
     contradictions: checkMode === "off" ? [] : checked.rows.filter((r) => contradicts(r.code, r.check_label)),
     call_check_mode: checkMode,
+    hours: { hours, forms: hours.map((h) => byHour.get(h)?.forms ?? 0), talked: hours.map((h) => byHour.get(h)?.talked ?? 0), paid: hours.map((h) => byHour.get(h)?.paid ?? 0) },
     match_errors: errors.rows[0],
   };
 }
