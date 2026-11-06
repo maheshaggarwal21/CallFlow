@@ -1,34 +1,56 @@
 "use client";
 
-// The lead drawer: claim the soft lock, read the number out, fill the form, save.
-// Left: number, WhatsApp, questions, outcome code, reason, note, callback. Right: snapshot + history.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// The lead sheet ("Lead follow-up"): everything about one lead on one screen.
+// Left: answers, outcome code, reason, callback, notes (Save always in reach), WhatsApp template.
+// Right: snapshot, what happens next, and the call log across every rep.
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import useSWR from "swr";
-import { Panel, R } from "@/components/report/kit";
+import { Avatar, R } from "@/components/report/kit";
 import { API_BASE, api, fetcher } from "@/lib/api";
 import { CODES, MIN_NOTE, STATUS_LABEL, fillVars, groupPhone, type Code, type CrmConfig, type LeadDetail } from "@/lib/crm";
-import { Btn, CodeChip, Drawer, Tag, inputStyle, labelStyle } from "./kit";
 import { useCrmMe } from "@/hooks/useCrmMe";
-import { History, Snapshot } from "./History";
+import { Btn, CodeChip, Drawer, Tag, inputStyle, labelStyle } from "./kit";
+import { Card, History, NextUp, Snapshot } from "./History";
+import { Icon } from "./icons";
 
 const HEARTBEAT_MS = 60_000;
 const IDLE_MS = 2 * 60_000;
+const NOTE_MAX = 2000;
+const IST = "Asia/Kolkata";
 
 type Lock = { mine: boolean; locked_by_name: string | null } | null;
 
-function istToday() {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-}
-const fmtChipDate = (d: string) => (d ? new Date(`${d}T12:00:00+05:30`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" }) : "");
+const SHEET_CSS = `
+  .lf-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(360px,1fr);gap:14px;align-items:start}
+  .lf-q{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  .lf-codes{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+  .lf-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .lf-wa{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:14px}
+  .lf-code{transition:background .15s,border-color .15s,box-shadow .15s,transform .15s}
+  .lf-code:hover{transform:translateY(-1px)}
+  @media (max-width:1180px){.lf-grid{grid-template-columns:1fr}.lf-codes{grid-template-columns:repeat(4,minmax(0,1fr))}}
+  @media (max-width:820px){.lf-q,.lf-3,.lf-wa{grid-template-columns:1fr 1fr}}
+  @media (prefers-reduced-motion: reduce){.lf-code{transition:none}.lf-code:hover{transform:none}}
+`;
+
+const istToday = () => new Date().toLocaleDateString("en-CA", { timeZone: IST });
+const fmtChipDate = (d: string) => (d ? new Date(`${d}T12:00:00+05:30`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: IST }) : "");
 const fmtChipTime = (t: string) => {
   if (!t) return "";
   const [h, m] = t.split(":").map(Number);
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 };
+const received = (d: string) => new Date(d).toLocaleString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
+const KIND = {
+  retry: { tint: "#f4ece0", ring: "#b9a68e" },
+  callback: { tint: "#fdf1da", ring: R.gold },
+  paid: { tint: "#e8f2e3", ring: R.good },
+  closed: { tint: "#fbe7e3", ring: R.bad },
+} as const;
 
 export default function LeadDrawer({ leadId, onClose, onSaved, isOwner }: { leadId: string | null; onClose: () => void; onSaved: (msg: string) => void; isOwner: boolean }) {
   return (
-    <Drawer open={!!leadId} onClose={onClose} label="Lead">
+    <Drawer open={!!leadId} onClose={onClose} label="Lead" width={1400}>
       {leadId && <DrawerBody key={leadId} leadId={leadId} onClose={onClose} onSaved={onSaved} isOwner={isOwner} />}
     </Drawer>
   );
@@ -41,6 +63,7 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
   const lastActive = useRef(Date.now());
   const { can } = useCrmMe();
   const [reviveErr, setReviveErr] = useState("");
+  const waRef = useRef<HTMLDivElement>(null);
 
   // Claim on open, extend every minute while the rep is active, release on close
   useEffect(() => {
@@ -71,40 +94,25 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
   const l = d.lead;
 
   return (
-    <div style={{ display: "grid", gap: 14, color: R.ink }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ color: R.out, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase", fontSize: 11 }}>
-            {l.lead_code} · {l.campaign ?? l.source ?? "Lead"}
-          </div>
-          <h2 style={{ margin: "2px 0 0", fontSize: 22, fontWeight: 800, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            {l.name || "Unnamed lead"} <CodeChip code={l.current_code} big />
-            <Tag>{STATUS_LABEL[l.status] ?? l.status}</Tag>
-            {l.tags?.includes("re-enquired") && <Tag tone="gold">re-enquired</Tag>}
-          </h2>
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          {l.status === "dropped" && can("reassign_leads") && (
-            <Btn kind="ghost" title="Back into the queue as a retry, attempts reset"
-              onClick={() => api.post(`/crm/leads/${l.id}/revive`).then(() => { setReviveErr(""); mutate(); }, (e) => setReviveErr((e as Error).message))}>↺ Revive lead</Btn>
-          )}
-          <Btn kind="ghost" onClick={onClose}>Close ✕</Btn>
-        </div>
-      </div>
+    <div style={{ display: "grid", gap: 12, color: R.ink }}>
+      <style>{SHEET_CSS}</style>
+      <SheetHeader d={d} onClose={onClose} onWhatsApp={() => waRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
+        revive={l.status === "dropped" && can("reassign_leads") ? () => api.post(`/crm/leads/${l.id}/revive`).then(() => { setReviveErr(""); mutate(); }, (e) => setReviveErr((e as Error).message)) : undefined} />
       {reviveErr && <p role="alert" style={{ margin: 0, color: R.bad, fontSize: 13 }}>{reviveErr}</p>}
       {readOnly && (
-        <div role="status" style={{ background: "#fff1d6", border: `1px solid ${R.gold}`, borderRadius: 12, padding: "10px 14px", fontSize: 13.5, fontWeight: 600 }}>
-          🔒 {lock?.locked_by_name} is on this lead. You can read it, but the form is read-only until they save or close.
+        <div role="status" style={{ display: "flex", gap: 10, alignItems: "center", background: "#fff1d6", border: `1px solid ${R.gold}`, borderRadius: 12, padding: "10px 14px", fontSize: 13.5, fontWeight: 600 }}>
+          <Icon name="lock" size={18} style={{ color: "#8a5a12" }} />
+          {lock?.locked_by_name} is on this lead. You can read it, but the form is read-only until they save or close.
         </div>
       )}
-      <div className="crm-drawer-grid">
-        <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
-          <NumberPanel phone={l.phone10} email={l.email} />
-          <WhatsAppPanel d={d} cfg={cfg} readOnly={readOnly} onSent={() => mutate()} />
+      <div className="lf-grid">
+        <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
           <OutcomeForm d={d} cfg={cfg} readOnly={readOnly} onSaved={(m) => { mutate(); onSaved(m); onClose(); }} onReload={() => mutate()} />
+          <div ref={waRef}><WhatsAppPanel d={d} cfg={cfg} readOnly={readOnly} onSent={() => mutate()} /></div>
         </div>
-        <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+        <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
           <Snapshot d={d} />
+          <NextUp d={d} />
           <History d={d} isOwner={isOwner} onChanged={() => mutate()} />
         </div>
       </div>
@@ -112,53 +120,62 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
   );
 }
 
-function NumberPanel({ phone, email }: { phone: string; email: string | null }) {
+function SheetHeader({ d, onClose, onWhatsApp, revive }: { d: LeadDetail; onClose: () => void; onWhatsApp: () => void; revive?: () => void }) {
+  const l = d.lead;
   const [copied, setCopied] = useState(false);
   const copy = async () => {
-    try { await navigator.clipboard.writeText(phone); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
+    try { await navigator.clipboard.writeText(l.phone10); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
   };
+  const meta = (icon: Parameters<typeof Icon>[0]["name"], k: string, v: ReactNode) => (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12.5, color: "#e9dccb" }}>
+      <Icon name={icon} size={15} style={{ color: R.gold }} />{k} <b style={{ color: "#fff", fontWeight: 600 }}>{v}</b>
+    </span>
+  );
+  const light = { background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.22)", color: "#fff" };
   return (
-    <section style={{ background: "linear-gradient(150deg,#3b2a1e,#5a4231)", color: "#fff", borderRadius: 14, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-      <div>
-        <div style={{ fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase", color: R.gold, fontWeight: 700 }}>Dial on the KoreCall landline</div>
-        <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: ".04em", fontVariantNumeric: "tabular-nums", marginTop: 2 }} aria-label={`Phone ${phone.split("").join(" ")}`}>{groupPhone(phone)}</div>
-        {email && <div style={{ fontSize: 12.5, color: "#e9dccb" }}>{email}</div>}
+    <header style={{ background: "linear-gradient(160deg,#3b2a1e,#5a4231 70%,#6f4f35)", color: "#fff", borderRadius: 16, padding: "14px 16px", display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, flex: "1 1 420px" }}>
+        <Avatar name={l.name || "?"} size={50} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: R.gold, fontWeight: 700 }}>Lead follow-up</div>
+          <h2 style={{ margin: "1px 0 6px", fontSize: 23, fontWeight: 800, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {l.name || "Unnamed lead"} <CodeChip code={l.current_code} big />
+            <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "rgba(255,255,255,.14)" }}>{STATUS_LABEL[l.status] ?? l.status}</span>
+            {l.tags?.includes("re-enquired") && <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: R.gold, color: "#3b2a1e" }}>re-enquired</span>}
+          </h2>
+          <div style={{ display: "flex", gap: "4px 16px", flexWrap: "wrap" }}>
+            {meta("user", "Lead ID", l.lead_code)}
+            {meta("calendar", "Received", received(l.created_at))}
+            {meta("megaphone", "Source", [l.source === "demo" ? null : l.source, l.campaign].filter(Boolean).join(" · ") || "—")}
+          </div>
+        </div>
       </div>
-      <div style={{ marginLeft: "auto" }}><Btn kind="light" onClick={copy}>{copied ? "Copied ✓" : "Copy number"}</Btn></div>
-    </section>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: "10px 14px" }}>
+        <div>
+          <div style={{ fontSize: 10.5, letterSpacing: ".1em", textTransform: "uppercase", color: R.gold, fontWeight: 700 }}>Dial on KoreCall</div>
+          <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: ".04em", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }} aria-label={`Phone ${l.phone10.split("").join(" ")}`}>{groupPhone(l.phone10)}</div>
+          {l.email && <div style={{ fontSize: 11.5, color: "#e9dccb" }}>{l.email}</div>}
+        </div>
+        <div style={{ display: "grid", gap: 6 }}>
+          <Btn kind="light" onClick={copy} style={{ ...light, padding: "7px 12px" }}><span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><Icon name={copied ? "check" : "copy"} size={15} />{copied ? "Copied" : "Copy"}</span></Btn>
+          <Btn kind="good" onClick={onWhatsApp} style={{ padding: "7px 12px" }}><span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><Icon name="chat" size={15} />WhatsApp</span></Btn>
+        </div>
+      </div>
+      <div style={{ display: "grid", gap: 6, alignSelf: "flex-start" }}>
+        <Btn kind="light" onClick={onClose} style={light}>Close ✕</Btn>
+        {revive && <Btn kind="light" onClick={revive} style={light} title="Back into the queue as a retry, attempts reset">↺ Revive</Btn>}
+      </div>
+    </header>
   );
 }
 
-function WhatsAppPanel({ d, cfg, readOnly, onSent }: { d: LeadDetail; cfg: CrmConfig; readOnly: boolean; onSent: () => void }) {
-  const [tid, setTid] = useState("");
-  const [state, setState] = useState<"" | "sending" | string>("");
-  const t = cfg.wati_templates.find((x) => x.id === tid);
-  const send = async () => {
-    if (!t) return;
-    setState("sending");
-    try {
-      const r = await api.post<{ mode: string; template: string }>(`/crm/leads/${d.lead.id}/whatsapp`, { template_id: t.id });
-      setState(`Sent "${r.template}"${r.mode === "mock" ? " (mock: nothing left the server)" : ""}`);
-      setTid("");
-      onSent();
-    } catch (e) {
-      setState(`! ${(e as Error).message}`);
-    }
-  };
+function SectionLabel({ icon, children, right }: { icon: Parameters<typeof Icon>[0]["name"]; children: ReactNode; right?: ReactNode }) {
   return (
-    <Panel title="Send WhatsApp template" sub={cfg.wati_mode === "mock" ? "WATI mock mode: credentials pending, sends are only logged" : "WATI live"}>
-      <div style={{ display: "grid", gap: 8 }}>
-        <select value={tid} onChange={(e) => { setTid(e.target.value); setState(""); }} disabled={readOnly} style={inputStyle} aria-label="WhatsApp template">
-          <option value="">Choose a template…</option>
-          {cfg.wati_templates.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-        </select>
-        {t && <div style={{ background: "#eef6ea", border: "1px solid #d5e6cd", borderRadius: 10, padding: "9px 12px", fontSize: 13, whiteSpace: "pre-wrap" }}>{fillVars(t.body, d.wa_vars)}</div>}
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Btn kind="good" onClick={send} disabled={!t || readOnly || state === "sending"}>{state === "sending" ? "Sending…" : "Send"}</Btn>
-          {state && state !== "sending" && <span role="status" style={{ fontSize: 12.5, color: state.startsWith("!") ? R.bad : R.good }}>{state}</span>}
-        </div>
-      </div>
-    </Panel>
+    <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "2px 0 8px" }}>
+      <Icon name={icon} size={15} style={{ color: R.out }} />
+      <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: R.ink }}>{children}</span>
+      {right && <span style={{ marginLeft: "auto" }}>{right}</span>}
+    </div>
   );
 }
 
@@ -175,8 +192,8 @@ function OutcomeForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; c
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const kind = CODES.find((c) => c.code === code)?.kind;
-  const needsCallback = kind === "callback";
+  const meta = CODES.find((c) => c.code === code);
+  const needsCallback = meta?.kind === "callback";
   const needsNote = needsCallback || code === "F";
   const reasons = useMemo(() => cfg.reasons.filter((r) => code && r.codes.includes(code)), [cfg.reasons, code]);
   const chips = useMemo(() => cfg.note_templates.filter((t) => code && t.codes.includes(code)), [cfg.note_templates, code]);
@@ -209,92 +226,169 @@ function OutcomeForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; c
   };
 
   const stale = /updated by/.test(err);
+  const noteLen = note.trim().length;
   return (
-    <>
-      <Panel title="Questions" sub="Answers stay on the lead for the next rep">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          {cfg.questions.map((q) => (
-            <label key={q.id} style={{ minWidth: 0 }}>
-              <span style={labelStyle}>{q.label}</span>
-              {q.type === "text" ? (
-                <input value={answers[q.id] ?? ""} disabled={readOnly} onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })} style={inputStyle} />
-              ) : (
-                <select value={answers[q.id] ?? ""} disabled={readOnly} onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })} style={inputStyle}>
-                  <option value="">—</option>
-                  {(q.type === "yesno" ? ["Yes", "No"] : q.options).map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
-              )}
-            </label>
-          ))}
+    <Card icon="phone" title="Call & follow-up" right={<span style={{ fontSize: 12, color: R.mute }}>Dial on the landline, then fill this in</span>}>
+      <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, display: "grid", gap: 14, minWidth: 0 }}>
+        <div>
+          <SectionLabel icon="user">Student answers</SectionLabel>
+          <div className="lf-q">
+            {cfg.questions.map((q) => (
+              <label key={q.id} style={{ minWidth: 0 }}>
+                <span style={{ ...labelStyle, fontSize: 10.5 }}>{q.label}</span>
+                {q.type === "text" ? (
+                  <input value={answers[q.id] ?? ""} onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })} style={inputStyle} />
+                ) : (
+                  <select value={answers[q.id] ?? ""} onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })} style={inputStyle}>
+                    <option value="">—</option>
+                    {(q.type === "yesno" ? ["Yes", "No"] : q.options).map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                )}
+              </label>
+            ))}
+          </div>
         </div>
-      </Panel>
-      <Panel title="Outcome" sub="What happened on this call">
-        <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, display: "grid", gap: 12, minWidth: 0 }}>
-          <div role="radiogroup" aria-label="Outcome code" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 8 }}>
+
+        <div>
+          <SectionLabel icon="target" right={meta && <span style={{ fontSize: 12, color: R.mute }}>{meta.rule}</span>}>Outcome *</SectionLabel>
+          <div role="radiogroup" aria-label="Outcome code" className="lf-codes">
             {CODES.map((c) => {
-              const on = code === c.code;
-              const accent = { retry: "#b9a68e", callback: R.gold, paid: R.good, closed: R.bad }[c.kind];
+              const on = code === c.code, k = KIND[c.kind];
               return (
-                <button key={c.code} role="radio" aria-checked={on} onClick={() => pickCode(c.code)} className="crm-btn"
-                  style={{ textAlign: "left", display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
-                    background: on ? "#fff7e8" : R.card, border: `1.5px solid ${on ? accent : R.line}`, boxShadow: on ? `0 0 0 3px ${accent}33` : "none", color: R.ink }}>
+                <button key={c.code} role="radio" aria-checked={on} aria-label={`${c.code}: ${c.label}`} onClick={() => pickCode(c.code)} className="lf-code" title={c.rule}
+                  style={{ display: "grid", justifyItems: "center", gap: 5, padding: "9px 4px 8px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", color: R.ink,
+                    background: on ? k.tint : R.card, border: `1.5px solid ${on ? k.ring : R.line}`, boxShadow: on ? `0 0 0 3px ${k.ring}30` : "none" }}>
                   <CodeChip code={c.code} big />
-                  <span style={{ minWidth: 0 }}><b style={{ display: "block", fontSize: 13 }}>{c.label}</b><span style={{ fontSize: 11.5, color: R.mute }}>{c.rule}</span></span>
+                  <span style={{ fontSize: 11.5, fontWeight: on ? 800 : 600, lineHeight: 1.2, textAlign: "center" }}>{c.label}</span>
                 </button>
               );
             })}
           </div>
-          {code && (
-            <>
-              <label>
+        </div>
+
+        {code && (
+          <div style={{ display: "grid", gap: 10 }}>
+            <div className="lf-3">
+              <label style={{ gridColumn: needsCallback || code === "F" ? "auto" : "span 3" }}>
                 <span style={labelStyle}>Reason{needsNote ? " *" : ""}</span>
                 <select value={reason} onChange={(e) => setReason(e.target.value)} style={inputStyle}>
                   <option value="">{reasons.length ? "Choose a reason…" : "No reasons for this code"}</option>
                   {reasons.map((r) => <option key={r.id} value={r.label}>{r.label}</option>)}
                 </select>
               </label>
-              {needsCallback && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <label><span style={labelStyle}>Callback date *</span>
-                    <input type="date" value={date} min={istToday()} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></label>
-                  <label><span style={labelStyle}>Callback time (IST) *</span>
-                    <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={inputStyle} /></label>
-                  <label style={{ gridColumn: "span 2", display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-                    <input type="checkbox" checked={studentTime} onChange={(e) => setStudentTime(e.target.checked)} /> Student asked for this time
-                  </label>
-                </div>
-              )}
-              {chips.length > 0 && (
-                <div>
-                  <span style={labelStyle}>Quick notes</span>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {chips.map((t) => (
-                      <button key={t.id} type="button" onClick={() => insertChip(t.text)} className="crm-btn" title={t.text}
-                        style={{ border: `1px solid ${R.line}`, background: R.soft, borderRadius: 999, padding: "5px 11px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", color: R.ink }}>
-                        + {t.label}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <label>
-                <span style={labelStyle}>Note{needsNote ? ` * (at least ${MIN_NOTE} characters)` : ""}</span>
-                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} style={{ ...inputStyle, resize: "vertical" }} />
-                {needsNote && <span style={{ fontSize: 11.5, color: note.trim().length >= MIN_NOTE ? R.good : R.mute }}>{note.trim().length}/{MIN_NOTE}</span>}
-              </label>
+              {needsCallback && <>
+                <label><span style={labelStyle}>Callback date *</span>
+                  <input type="date" value={date} min={istToday()} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></label>
+                <label><span style={labelStyle}>Callback time (IST) *</span>
+                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={inputStyle} /></label>
+              </>}
               {code === "F" && (
-                <label style={{ maxWidth: 200 }}><span style={labelStyle}>Amount (₹)</span>
+                <label><span style={labelStyle}>Amount (₹)</span>
                   <input type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} style={inputStyle} /></label>
               )}
-            </>
+            </div>
+            {needsCallback && (
+              <label style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 13, fontWeight: 600, background: studentTime ? "#fdf1da" : R.soft,
+                border: `1px dashed ${studentTime ? R.gold : R.line}`, borderRadius: 10, padding: "8px 12px", cursor: "pointer", transition: "background .15s" }}>
+                <input type="checkbox" checked={studentTime} onChange={(e) => setStudentTime(e.target.checked)} style={{ width: 17, height: 17, accentColor: R.out }} />
+                Student asked for this time
+                <span style={{ fontWeight: 400, color: R.mute }}>· shown to every rep on the callback</span>
+              </label>
+            )}
+          </div>
+        )}
+
+        <div>
+          <SectionLabel icon="note" right={<span style={{ fontSize: 11.5, color: needsNote ? (noteLen >= MIN_NOTE ? R.good : R.mute) : R.mute, fontVariantNumeric: "tabular-nums" }}>
+            {needsNote ? `min ${MIN_NOTE} · ` : ""}{noteLen} / {NOTE_MAX}</span>}>
+            Notes / conversation summary{needsNote ? " *" : ""}
+          </SectionLabel>
+          {chips.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+              {chips.map((t) => (
+                <button key={t.id} type="button" onClick={() => insertChip(t.text)} className="crm-btn" title={t.text}
+                  style={{ border: `1px solid ${R.line}`, background: R.soft, borderRadius: 999, padding: "5px 11px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", color: R.ink }}>
+                  + {t.label}</button>
+              ))}
+            </div>
           )}
+          <textarea aria-label="Note" value={note} maxLength={NOTE_MAX} onChange={(e) => setNote(e.target.value)} rows={3}
+            placeholder={code ? "What did the student say?" : "Pick an outcome code first"} style={{ ...inputStyle, resize: "vertical" }} />
+        </div>
+
+        {/* Save stays in reach while scrolling the drawer */}
+        <div style={{ position: "sticky", bottom: -12, margin: "0 -14px -12px", padding: "10px 14px 12px", background: "linear-gradient(180deg,rgba(255,253,248,0),#fffdf8 30%)", display: "grid", gap: 8 }}>
           {err && (
             <div role="alert" style={{ color: R.bad, fontSize: 13, fontWeight: 600, display: "flex", gap: 10, alignItems: "center" }}>
               {err}{stale && <Btn kind="ghost" onClick={() => { setErr(""); onReload(); }}>Reload</Btn>}
             </div>
           )}
-          <div><Btn onClick={save} disabled={!code || saving || readOnly} style={{ padding: "11px 22px" }}>{saving ? "Saving…" : "Save"}</Btn></div>
-        </fieldset>
-      </Panel>
-    </>
+          <Btn onClick={save} disabled={!code || saving || readOnly}
+            style={{ padding: "13px 22px", fontSize: 15, background: `linear-gradient(135deg,${R.out},#c4622d)`, boxShadow: "0 10px 22px -12px rgba(196,98,45,.9)", width: "100%" }}>
+            {saving ? "Saving…" : "Save"}
+          </Btn>
+        </div>
+      </fieldset>
+    </Card>
+  );
+}
+
+function WhatsAppPanel({ d, cfg, readOnly, onSent }: { d: LeadDetail; cfg: CrmConfig; readOnly: boolean; onSent: () => void }) {
+  const [tid, setTid] = useState("");
+  const [state, setState] = useState<"" | "sending" | string>("");
+  const t = cfg.wati_templates.find((x) => x.id === tid);
+  const vars = t ? [...new Set([...t.body.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))] : [];
+  const send = async () => {
+    if (!t) return;
+    setState("sending");
+    try {
+      const r = await api.post<{ mode: string; template: string }>(`/crm/leads/${d.lead.id}/whatsapp`, { template_id: t.id });
+      setState(`Sent "${r.template}"${r.mode === "mock" ? " (mock: nothing left the server)" : ""}`);
+      setTid("");
+      onSent();
+    } catch (e) {
+      setState(`! ${(e as Error).message}`);
+    }
+  };
+  const now = new Date().toLocaleTimeString("en-US", { timeZone: IST, hour: "numeric", minute: "2-digit" });
+  return (
+    <Card icon="chat" title="Send WhatsApp template" tone="#eef6ea"
+      right={cfg.wati_mode === "mock" ? <Tag tone="gold">WATI mock mode</Tag> : <Tag tone="ok">● WATI connected</Tag>}>
+      <div className="lf-wa">
+        <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
+          <label><span style={labelStyle}>Template</span>
+            <select value={tid} onChange={(e) => { setTid(e.target.value); setState(""); }} disabled={readOnly} style={inputStyle} aria-label="WhatsApp template">
+              <option value="">Choose a template…</option>
+              {cfg.wati_templates.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </label>
+          {t && (
+            <div style={{ background: R.soft, borderRadius: 10, padding: "8px 10px" }}>
+              <span style={{ ...labelStyle, marginBottom: 6 }}>Variables (auto-filled)</span>
+              <div style={{ display: "grid", gap: 4 }}>
+                {vars.map((v) => (
+                  <div key={v} style={{ display: "flex", gap: 8, fontSize: 12.5, alignItems: "baseline" }}>
+                    <code style={{ background: "#f8e3df", color: R.bad, borderRadius: 5, padding: "1px 6px", fontSize: 11.5 }}>{`{${v}}`}</code>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.wa_vars[v] || <i style={{ color: R.mute }}>empty</i>}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <Btn kind="good" onClick={send} disabled={!t || readOnly || state === "sending"}>{state === "sending" ? "Sending…" : "Send"}</Btn>
+            {state && state !== "sending" && <span role="status" style={{ fontSize: 12.5, color: state.startsWith("!") ? R.bad : R.good }}>{state}</span>}
+          </div>
+        </div>
+        <div aria-label="Template preview" style={{ background: "#e9e1d4", backgroundImage: "radial-gradient(rgba(59,42,30,.07) 1px, transparent 1px)", backgroundSize: "12px 12px",
+          borderRadius: 12, padding: 12, minHeight: 150, display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: R.mute, letterSpacing: ".06em", textTransform: "uppercase" }}>Preview</span>
+          <div style={{ alignSelf: "flex-start", maxWidth: "92%", background: "#fff", borderRadius: "4px 12px 12px 12px", padding: "8px 10px 6px", boxShadow: "0 1px 1px rgba(0,0,0,.08)", fontSize: 13, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
+            {t ? fillVars(t.body, d.wa_vars) : <span style={{ color: R.mute }}>Pick a template to see exactly what {d.lead.name.split(" ")[0] || "the student"} will receive.</span>}
+            <div style={{ textAlign: "right", fontSize: 10.5, color: R.mute, marginTop: 2 }}>Max Music School · {now}</div>
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
