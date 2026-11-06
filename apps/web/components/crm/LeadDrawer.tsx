@@ -46,13 +46,17 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
   useEffect(() => {
     let alive = true;
     const claim = () => api.post<Lock>(`/crm/leads/${leadId}/lock`).then((l) => alive && setLock(l)).catch(() => {});
-    claim();
+    // Short delay: a mount that is immediately undone (React StrictMode, fast close) must not
+    // claim, or its release can land after the real claim and free the lock. The heartbeat
+    // below re-claims within a minute if a release ever does win the race.
+    const first = setTimeout(claim, 300);
     const t = setInterval(() => { if (Date.now() - lastActive.current < IDLE_MS) claim(); }, HEARTBEAT_MS);
     const bump = () => { lastActive.current = Date.now(); };
     window.addEventListener("keydown", bump);
     window.addEventListener("pointermove", bump);
     return () => {
       alive = false;
+      clearTimeout(first);
       clearInterval(t);
       window.removeEventListener("keydown", bump);
       window.removeEventListener("pointermove", bump);
@@ -97,7 +101,7 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner }: { leadId: string; onC
         <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
           <NumberPanel phone={l.phone10} email={l.email} />
           <WhatsAppPanel d={d} cfg={cfg} readOnly={readOnly} onSent={() => mutate()} />
-          <OutcomeForm d={d} cfg={cfg} readOnly={readOnly} onSaved={(m) => { onSaved(m); onClose(); }} onReload={() => mutate()} />
+          <OutcomeForm d={d} cfg={cfg} readOnly={readOnly} onSaved={(m) => { mutate(); onSaved(m); onClose(); }} onReload={() => mutate()} />
         </div>
         <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
           <Snapshot d={d} />
