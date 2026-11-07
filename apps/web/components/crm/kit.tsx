@@ -49,14 +49,14 @@ export function CodeChip({ code, big = false, title }: { code: string | null | u
 }
 
 /** A lead's status as on the sheet: code chip + label in the code's colour; "New" has no code yet. */
-export function StatusBadge({ l }: { l: { status: string; current_code: Code | null } }) {
+export function StatusBadge({ l, wrap = false }: { l: { status: string; current_code: Code | null }; wrap?: boolean }) {
   const { meta, label } = useCrmCodes();
   if (l.status === "new" || !l.current_code) return <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: "#e7f0fb", color: "#2563a8" }}>New</span>;
   const m = meta(l.current_code);
   const [, fg] = CHIP[m?.kind ?? "retry"];
   return (
-    <span title={m?.rule} style={{ display: "inline-flex", gap: 6, alignItems: "center", whiteSpace: "nowrap", fontSize: 12.5, fontWeight: 700, color: l.status === "dropped" ? R.mute : fg }}>
-      <CodeChip code={l.current_code} />{label(l)}
+    <span title={m?.rule} style={{ display: "inline-flex", gap: 6, alignItems: "center", whiteSpace: wrap ? "normal" : "nowrap", fontSize: 12.5, fontWeight: 700, color: l.status === "dropped" ? R.mute : fg }}>
+      <CodeChip code={l.current_code} /><span style={{ minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.25 }}>{label(l)}</span>
     </span>
   );
 }
