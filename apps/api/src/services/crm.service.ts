@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/pool";
 import { IST_TODAY_START } from "../lib/dateRange";
 import { isFullPhone10, phone10 } from "../lib/crm/phone";
-import { bucketOf, compareQueue, type QueueBucket } from "../lib/crm/queue";
+import { DUE_WINDOW_MS, bucketOf, compareQueue, type QueueBucket } from "../lib/crm/queue";
 import {
   CODE_RE, DEFAULT_CODES, DEFAULT_RETRY, codeLetters, PERMISSIONS, STATUS_OF_ROLE, keepsAudio, nextState, validateOutcome,
   type CodeSettings, type OutcomeInput, type Permission, type RetryRules,
@@ -301,32 +301,38 @@ export const LEAD_LIST_JOINS = `
 const SECTION_CAP = 200;
 
 export async function queue(user: User, f: Filters, now = new Date()) {
-  const values: unknown[] = [];
-  // Retries/callbacks with no time come from the sheet import: they live in All leads, not the due lists
-  const where = ["(l.status = 'new' OR (l.status IN ('retry','callback') AND l.next_followup_at IS NOT NULL))", ...leadFilters(f, values, user.sub)];
-  const { rows } = await pool.query(
-    `SELECT ${LEAD_LIST_COLS}
-     FROM leads l ${LEAD_LIST_JOINS} WHERE ${where.join(" AND ")}`,
-    values
-  );
+  // Only what the Leads page shows: follow-ups due now, overdue, or due later today (IST). New leads
+  // are not loaded (thousands after the sheet import, and the page doesn't list them); their number
+  // comes from the tiles. Retries/callbacks with no time (sheet import) live in All leads only.
+  const values: unknown[] = [now];
+  const where = [
+    "l.status IN ('retry','callback')",
+    `l.next_followup_at < GREATEST(
+       ((($1::timestamptz AT TIME ZONE 'Asia/Kolkata')::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata'),
+       $1::timestamptz + make_interval(mins => ${DUE_WINDOW_MS / 60_000}))`,
+    ...leadFilters(f, values, user.sub),
+  ];
+  const [{ rows }, { rows: [k] }] = await Promise.all([
+    pool.query(`SELECT ${LEAD_LIST_COLS} FROM leads l ${LEAD_LIST_JOINS} WHERE ${where.join(" AND ")}`, values),
+    // The four tiles on the Leads page: counts on indexed columns, no rows loaded
+    pool.query(
+      `SELECT
+         (SELECT count(*) FROM leads)::int AS total,
+         (SELECT count(*) FROM leads WHERE status = 'new')::int AS new_leads,
+         (SELECT count(*) FROM leads WHERE status IN ('retry','callback')
+            AND (next_followup_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date)::int AS due_today,
+         (SELECT count(*) FROM leads WHERE status = 'converted')::int AS converted`
+    ),
+  ]);
   const leads = rows.map((r) => ({ ...r, next_followup_at: r.next_followup_at && new Date(r.next_followup_at), created_at: new Date(r.created_at) }));
   leads.sort((a, b) => compareQueue(a, b, now));
   const sections: Record<QueueBucket, unknown[]> = { due_now: [], overdue: [], new: [], retry: [], later: [] };
+  const counts: Record<QueueBucket, number> = { due_now: 0, overdue: 0, new: k.new_leads, retry: 0, later: 0 };
   for (const l of leads) {
     const b = bucketOf(l, now);
+    counts[b]++;
     if (sections[b].length < SECTION_CAP) sections[b].push({ ...l, bucket: b });
   }
-  const counts = Object.fromEntries(Object.entries(sections).map(([k]) => [k, leads.filter((l) => bucketOf(l, now) === k).length]));
-
-  // The four tiles on the Leads page
-  const { rows: [k] } = await pool.query(
-    `SELECT
-       (SELECT count(*) FROM leads)::int AS total,
-       (SELECT count(*) FROM leads WHERE status = 'new')::int AS new_leads,
-       (SELECT count(*) FROM leads WHERE status IN ('retry','callback')
-          AND (next_followup_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date)::int AS due_today,
-       (SELECT count(*) FROM leads WHERE status = 'converted')::int AS converted`
-  );
   return { server_now: now, counts, sections, kpis: { due_now: counts.due_now, overdue: counts.overdue, ...k } };
 }
 

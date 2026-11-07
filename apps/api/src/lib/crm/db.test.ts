@@ -201,3 +201,22 @@ test("changing a code's role in settings moves its leads to the new status", asy
   const { rows: [r] } = await pool.query("SELECT status, next_followup_at, version FROM leads WHERE id = $1", [l.id]);
   assert.deepEqual(r, { status: "dnc", next_followup_at: null, version: 3 });
 });
+
+test("queue loads only what the page shows: due, overdue, retry due and later today; no New leads, nothing from tomorrow", async () => {
+  const now = new Date("2026-11-08T06:30:00Z"); // 12:00 IST
+  const at = (h: number) => new Date(now.getTime() + h * 3_600_000);
+  const add = (name: string, p10: string, status: string, next: Date | null) => pool.query(
+    "INSERT INTO leads (name, phone_raw, phone10, source, status, next_followup_at) VALUES ($1, $2, $2, 'test', $3, $4)", [name, p10, status, next]);
+  await add("QTest due", "9000020060", "callback", at(5 / 60));
+  await add("QTest overdue", "9000020061", "callback", at(-2));
+  await add("QTest retry", "9000020062", "retry", at(-1));
+  await add("QTest tonight", "9000020063", "callback", at(6));        // 18:00 IST today
+  await add("QTest tomorrow", "9000020064", "callback", at(22));      // 10:00 IST tomorrow
+  await add("QTest new", "9000020065", "new", null);
+  const q = await queue(neha, { q: "QTest" }, now);
+  const names = (b: keyof typeof q.sections) => (q.sections[b] as { name: string }[]).map((l) => l.name);
+  assert.deepEqual([names("due_now"), names("overdue"), names("retry"), names("later"), names("new")],
+    [["QTest due"], ["QTest overdue"], ["QTest retry"], ["QTest tonight"], []]);
+  assert.equal(typeof q.kpis.new_leads, "number");
+  assert.equal(q.counts.new, q.kpis.new_leads, "New is a count only");
+});
