@@ -5,7 +5,7 @@ import { IST_TODAY_START } from "../lib/dateRange";
 import { isFullPhone10, phone10 } from "../lib/crm/phone";
 import { bucketOf, compareQueue, type QueueBucket } from "../lib/crm/queue";
 import {
-  CODES, DEFAULT_CODES, DEFAULT_RETRY, PERMISSIONS, STATUS_OF_ROLE, keepsAudio, nextState, validateOutcome,
+  CODE_RE, DEFAULT_CODES, DEFAULT_RETRY, codeLetters, PERMISSIONS, STATUS_OF_ROLE, keepsAudio, nextState, validateOutcome,
   type CodeSettings, type OutcomeInput, type Permission, type RetryRules,
 } from "../lib/crm/rules";
 import { audioUrlsFor } from "./audioUrls";
@@ -28,11 +28,25 @@ export async function getSetting<T>(key: string, fallback: T): Promise<T> {
   return rows[0] ? { ...fallback, ...rows[0].value } : fallback;
 }
 
-export const getCodes = () => getSetting<CodeSettings>("codes", DEFAULT_CODES);
+/** The owner's codes as stored (not merged with the defaults: a removed default must stay gone). */
+export async function getCodes(): Promise<CodeSettings> {
+  const { rows } = await pool.query("SELECT value FROM crm_settings WHERE key = 'codes'");
+  return rows[0]?.value ?? DEFAULT_CODES;
+}
+
+/** A letter the sheet uses but Settings doesn't know: add it as "Not used" for the owner to name. */
+async function addUnknownCode(codes: CodeSettings, letter: string) {
+  codes[letter] = { label: `Code ${letter}`, role: "unused" };
+  await pool.query(
+    `UPDATE crm_settings SET value = value || jsonb_build_object($1::text, $2::jsonb), updated_at = NOW()
+     WHERE key = 'codes' AND NOT value ? $1`,
+    [letter, JSON.stringify(codes[letter])]
+  );
+}
 
 /** After the owner changes what a code means, move leads on that code to the matching status. */
 export async function reapplyCodeRoles(client: PoolClient, codes: CodeSettings) {
-  const pairs = CODES.map((c) => [c, STATUS_OF_ROLE[codes[c].role]]);
+  const pairs = codeLetters(codes).map((c) => [c, STATUS_OF_ROLE[codes[c].role]]);
   await client.query(
     `UPDATE leads l SET status = v.status,
        next_followup_at = CASE WHEN v.status IN ('retry','callback') THEN l.next_followup_at END,
@@ -365,6 +379,8 @@ export async function ingestRows(input: unknown[], now = new Date()): Promise<In
     const p10 = phone10(row.phone);
     if (!isFullPhone10(p10)) { out.push({ index, external_id: extId, result: "invalid", error: "Phone needs 10 digits" }); continue; }
 
+    const letter = (row.status ?? "").trim().toUpperCase();
+    if (CODE_RE.test(letter) && !codes[letter]) await addUnknownCode(codes, letter);
     const sheet = fromSheet(row, codes, reps);
     const client = await pool.connect();
     try {
@@ -411,7 +427,7 @@ export async function ingestRows(input: unknown[], now = new Date()): Promise<In
       if (sheet.code) {
         await client.query(
           "INSERT INTO lead_interactions (lead_id, kind, code, note) VALUES ($1, 'system', $2, $3)",
-          [l.id, sheet.code, `Status ${sheet.code} · ${codes[sheet.code as keyof CodeSettings].label} from the lead sheet`]
+          [l.id, sheet.code, `Status ${sheet.code} · ${codes[sheet.code].label} from the lead sheet`]
         );
       }
       await client.query("UPDATE calls SET lead_id = $1 WHERE phone10 = $2 AND lead_id IS NULL", [l.id, p10]);
@@ -429,8 +445,9 @@ export async function ingestRows(input: unknown[], now = new Date()): Promise<In
 
 /** Status, rep, guitar and amount a sheet row already has. Unknown values are left empty. */
 function fromSheet(row: z.infer<typeof ingestRowSchema>, codes: CodeSettings, reps: { id: string; name: string }[]) {
-  const letter = (row.status ?? "").toUpperCase();
-  const code = (CODES as readonly string[]).includes(letter) ? (letter as keyof CodeSettings) : null;
+  // One letter = a code (unknown ones were just added to Settings); anything else ("NA", "1") is ignored
+  const letter = (row.status ?? "").trim().toUpperCase();
+  const code = CODE_RE.test(letter) && codes[letter] ? letter : null;
   const role = code ? codes[code].role : null;
   // Sheet → CallFlow rep: full name, else first name ("SHIVANI" → Shivani Jha), else the only first
   // name starting with it ("Raman" → Ramandeep Kaur)

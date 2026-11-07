@@ -1,11 +1,11 @@
 "use client";
 
-// CRM Settings (owner only): the status codes A–O and what each does, and which reps may export leads.
+// CRM Settings (owner only): the status codes (add, rename, what each does), and which reps may export leads.
 import { useEffect, useState } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { Avatar, Panel, R } from "@/components/report/kit";
 import { api, fetcher } from "@/lib/api";
-import { PERMISSION_LABELS, ROLE_LABEL, codeList, type Code, type CodeSetting, type Role } from "@/lib/crm";
+import { CODE_LETTERS, PERMISSION_LABELS, ROLE_LABEL, codeList, type Code, type CodeMeta, type CodeSetting, type Role } from "@/lib/crm";
 import { useCrmMe } from "@/hooks/useCrmMe";
 import { Btn, CRM_CSS, HeaderBand, inputStyle, tdStyle, thStyle } from "@/components/crm/kit";
 
@@ -44,14 +44,17 @@ function SaveRow({ onSave, saved, err }: { onSave: () => void; saved: boolean; e
   );
 }
 
-/** The sheet's codes A–O: the owner names each one and picks what saving it does. */
+/** The sheet's codes: the owner names each one, picks what saving it does, and can add new ones. */
 function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>; retry: any; onSaved: () => void }) {
   const [v, setV] = useState(() => codeList(codes));
+  const free = CODE_LETTERS.filter((c) => !v.some((x) => x.code === c));
+  const add = () => free[0] && setV([...v, { code: free[0], label: "", role: "callback", kind: "callback", rule: "" }]);
+  const isNew = (c: string) => !codes?.[c];
   const [maxAttempts, setMaxAttempts] = useState<number>(retry?.max_attempts ?? 0);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(false), 2500); return () => clearTimeout(t); }, [saved]);
-  const set = (i: number, patch: Partial<CodeSetting>) => setV(v.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  const set = (i: number, patch: Partial<CodeMeta>) => setV(v.map((c, j) => (j === i ? { ...c, ...patch } : c)));
   const save = async () => {
     setErr("");
     try {
@@ -72,15 +75,21 @@ function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>;
     <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px" }}>
       <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Statuses</h3>
       <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>
-        The codes from the lead sheet. Name each one and choose what it does. "Not used" codes are hidden from the lead form.
-        Changing what a code does also moves the leads already on it.</p>
+        The codes from the lead sheet. Name each one and choose what it does; add a new one with + Add status.
+        "Not used" hides a code from the lead form. Changing what a code does also moves the leads already on it.</p>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: 13.5, minWidth: 720 }}>
           <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>What it does</th><th style={thStyle}>Next follow-up</th></tr></thead>
           <tbody>
             {v.map((c, i) => (
               <tr key={c.code}>
-                <td style={{ ...tdStyle, fontWeight: 800, fontSize: 15 }}>{c.code}</td>
+                <td style={{ ...tdStyle, fontWeight: 800, fontSize: 15 }}>
+                  {isNew(c.code)
+                    ? <select aria-label="Letter of the new status" value={c.code} onChange={(e) => set(i, { code: e.target.value })} style={{ ...inputStyle, width: 64, fontWeight: 800 }}>
+                        {[c.code, ...free].sort().map((l) => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    : c.code}
+                </td>
                 <td style={tdStyle}><input aria-label={`Name of code ${c.code}`} value={c.label} maxLength={40} onChange={(e) => set(i, { label: e.target.value })} style={{ ...inputStyle, width: 190 }} /></td>
                 <td style={tdStyle}>
                   <select aria-label={`What code ${c.code} does`} value={c.role} onChange={(e) => set(i, { role: e.target.value as Role })} style={{ ...inputStyle, width: 250 }}>
@@ -97,9 +106,13 @@ function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>;
                         : <><input type="number" aria-label={`Code ${c.code} hours`} min={0.25} max={168} step={0.25} value={c.hours ?? 3} onChange={(e) => set(i, { hours: Number(e.target.value) })} style={{ ...inputStyle, width: 74 }} /> h</>}
                     </span>
                   ) : <span style={{ color: R.mute, fontSize: 12.5 }}>{c.role === "callback" ? "Rep picks date and time" : "—"}</span>}
+                  {isNew(c.code) && <button type="button" aria-label={`Remove new status ${c.code}`} onClick={() => setV(v.filter((_, j) => j !== i))}
+                    style={{ marginLeft: 10, border: 0, background: "none", color: R.mute, cursor: "pointer", fontSize: 16 }}>×</button>}
                 </td>
               </tr>
             ))}
+            {free.length > 0 && <tr><td style={tdStyle} colSpan={4}>
+              <Btn kind="ghost" onClick={add}>+ Add status</Btn></td></tr>}
             <tr><td style={tdStyle} colSpan={2}><b>Stop calling a lead</b></td><td style={tdStyle} colSpan={2}>
               <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
                 <select aria-label="Stop calling a lead" value={maxAttempts > 0 ? "after" : "never"} onChange={(e) => setMaxAttempts(e.target.value === "never" ? 0 : 6)} style={{ ...inputStyle, width: 190 }}>

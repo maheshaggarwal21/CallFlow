@@ -5,10 +5,10 @@ request (7 Nov 2026, "keep it simple") to two pages:
 
 - **Leads**: four tiles (total, new, follow-ups due today, converted), filters, a "due now" banner,
   and three lists: *Follow-up due now* (blinks 15 min before a callback), *Upcoming today*, *All leads*.
-- **Lead form** (pop-up): number with Copy, name, email from the sheet, WhatsApp link, Status (A–O
+- **Lead form** (pop-up): number with Copy, name, email from the sheet, WhatsApp link, Status (the client's
   codes in a coloured dropdown), Guitar, next follow-up date/time, representative, amount, notes,
   a reminder banner, Save. A side handle opens the follow-up snapshot and the call log with recordings.
-- **CRM Settings** (owner): **Statuses** (the sheet's codes A–O: name and role of each, follow-up wait,
+- **CRM Settings** (owner): **Statuses** (the sheet's letter codes: name and role of each, + Add status, follow-up wait,
   drop limit) and who may export leads.
 
 Leads come from the Meta lead Google Sheet through `scripts/apps-script/LeadSync.gs`. Reps dial on
@@ -24,8 +24,22 @@ exits unless the database host is `localhost` / `127.0.0.1`. The seed and DB tes
 
 ## Statuses
 
-The codes are the lead sheet's letters **A–O**. The owner names each one in CRM Settings → Statuses
-and picks its **role**, which decides what Save does:
+The codes are the lead sheet's letters (any capital A–Z). The owner names each one in CRM Settings →
+Statuses, picks its **role** (what Save does), and adds new ones with **+ Add status**. A letter that
+arrives from the sheet but isn't set up is added automatically as "Not used" for the owner to name.
+The client's codes (live since 7 Nov, migration 013):
+
+| Code | Name | Role |
+|---|---|---|
+| A | Not picked | No contact, retry after 3 h |
+| B | No guitar | Closed |
+| C | Language issue | Closed |
+| D | Talk to later | Talked, rep sets the follow-up |
+| G | Interested | Talked, rep sets the follow-up |
+| I | Not interested | Closed |
+| N | Joined | Converted |
+
+What each role does (the local demo uses its own codes A–G, shown on the right):
 
 | Role | What happens on Save | Default codes |
 |---|---|---|
@@ -33,7 +47,7 @@ and picks its **role**, which decides what Save does:
 | Talked · rep sets the follow-up | Follow-up date + time required, note ≥ 15 characters | D Call later, E Will pay later |
 | Converted (paid) | Note ≥ 15 characters; no follow-up; amount; recording kept past the 90-day cleanup | F Converted |
 | Closed · no more calls | No follow-up; recording kept past the 90-day cleanup | G Not interested |
-| Not used | Hidden from the form | H–O (placeholders until the client names them) |
+| Not used | Hidden from the form | — |
 
 Plus **New** (not called yet). Leads are never dropped for unanswered calls (client, 7 Nov); the
 owner can set a limit in Settings ("Stop calling a lead"), and then **Dropped** appears. Guitar is
@@ -127,6 +141,6 @@ it fails if any step fails. Playwright lives in `$CRM_VENV/pw` (`npm i playwrigh
 4. **Retention:** the `planDeletions()` refactor is safe before or after the migration (`keep_audio` is
    read through `to_jsonb`). Run one dry run (`node dist/retention.js`) and compare with the last log.
 5. **Never run `seedCrm.ts` in production** (it refuses a non-local host anyway).
-6. **Statuses first:** the owner sets the names and roles of A–O, because the sheet import uses them.
+6. **Statuses first:** the owner checks the names and roles, because the sheet import uses them.
 7. **Apps Script:** follow `scripts/apps-script/README.md`. Old rows are imported with their status,
    rep, guitar and (converted only) amount, with no follow-up time: they show in All leads only.

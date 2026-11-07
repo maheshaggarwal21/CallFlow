@@ -67,7 +67,7 @@ test("D/E/F validation", () => {
   assert.equal(validateOutcome(base({ code: "B" }), now), null);  // retries need nothing
   assert.equal(validateOutcome(base({ code: "G" }), now), null);
   assert.match(validateOutcome(base({ code: "H" }), now)!, /not in use/); // codes marked "Not used" in settings
-  assert.equal(outcomeSchema.safeParse({ version: 1, code: "X" }).success, false);
+  assert.equal(outcomeSchema.safeParse({ version: 1, code: "AB" }).success, false); // one capital letter only
 });
 
 test("next state: retry waits, drop after 6 failed attempts or an invalid number, F defaults to 299", () => {

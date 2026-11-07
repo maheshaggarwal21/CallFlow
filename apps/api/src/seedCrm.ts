@@ -15,6 +15,7 @@ import path from "path";
 import bcrypt from "bcryptjs";
 import pool from "./db/pool";
 import { assertLocalDb } from "./lib/crm/localDb";
+import { DEFAULT_CODES } from "./lib/crm/rules";
 import { istMidnight, istParts } from "./lib/dateRange";
 import { DEV_UPLOADS_DIR } from "./services/storage.service";
 
@@ -247,6 +248,11 @@ async function main() {
   await wipe();
   if (process.argv.includes("--wipe-only")) return;
   const { reps } = await people();
+  // The demo stories use the demo codes (A–C retry, D/E callback, F paid, G closed): local DB only
+  await pool.query(
+    `INSERT INTO crm_settings (key, value) VALUES ('codes', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    [JSON.stringify(DEFAULT_CODES)]
+  );
 
   const used = new Set<string>();
   const phone = () => { let x: string; do x = `900001${String(between(0, 9999)).padStart(4, "0")}`; while (used.has(x) || x[8] === x[9]); used.add(x); return x; };

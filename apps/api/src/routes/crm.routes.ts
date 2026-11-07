@@ -5,7 +5,7 @@ import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requireOwner } from "../middleware/requireOwner";
 import { requirePermission } from "../middleware/requirePermission";
-import { CODES, PERMISSIONS, ROLES, outcomeSchema } from "../lib/crm/rules";
+import { CODE_RE, PERMISSIONS, ROLES, outcomeSchema } from "../lib/crm/rules";
 import {
   CrmError, LEAD_LIST_COLS, LEAD_LIST_JOINS, MAX_INGEST_ROWS, claimLock, getCodes, getSetting, ingestRows, leadDetail, leadFilters,
   permissionsOf, queue, queueFilterSchema, reapplyCodeRoles, reconcile, releaseLock, saveOutcome,
@@ -185,13 +185,16 @@ const codeSetting = z.object({
 });
 const VALUE_SCHEMAS: Record<string, ZodTypeAny> = {
   retry_rules: z.object({ invalid: z.object({ never: z.boolean() }), max_attempts: z.number().int().min(0).max(50) }), // 0 = never drop
-  codes: z.object(Object.fromEntries(CODES.map((c) => [c, codeSetting])) as Record<(typeof CODES)[number], typeof codeSetting>),
+  codes: z.record(z.string().regex(CODE_RE, "Code must be one capital letter"), codeSetting)
+    .refine((v) => Object.keys(v).length >= 1, "At least one status"),
 };
 
 router.patch("/settings/values/:key", requireOwner, async (req, res) => {
   const schema = VALUE_SCHEMAS[req.params.key];
   if (!schema) throw new CrmError(404, "Unknown setting");
-  const value = parse(schema, req.body);
+  let value = parse(schema, req.body);
+  // Codes merge into what is stored: a code leads may carry is never removed, only set to "Not used"
+  if (req.params.key === "codes") value = { ...(await getCodes()), ...value };
   const client = await pool.connect();
   try {
     await client.query("BEGIN");

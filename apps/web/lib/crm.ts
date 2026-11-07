@@ -2,9 +2,10 @@
 // The whole CRM UI is hidden unless NEXT_PUBLIC_CRM_ENABLED=true (inlined at build time).
 export const CRM_ENABLED = process.env.NEXT_PUBLIC_CRM_ENABLED === "true";
 
-// The sheet's status letters. Label and role of each are set by the owner in CRM Settings (/crm/config).
-export const CODE_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"] as const;
-export type Code = (typeof CODE_LETTERS)[number];
+// The sheet's status letters (one capital letter each). Which exist, and the label and role of each,
+// are set by the owner in CRM Settings (/crm/config); the owner can add letters.
+export const CODE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+export type Code = string;
 export type Role = "retry" | "callback" | "paid" | "closed" | "unused";
 export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string };
 export type CodeMeta = CodeSetting & { code: Code; kind: Role; rule: string };
@@ -14,10 +15,10 @@ export const ROLE_LABEL: Record<Role, string> = {
 };
 const ruleText = (s: CodeSetting) =>
   s.role === "retry" ? `No contact · retried ${s.next_day_at ? `next day at ${s.next_day_at}` : `after ${s.hours ?? 3} h`}` : ROLE_LABEL[s.role];
-/** All 15 codes with their settings; a code missing from the settings counts as not used. */
-export const codeList = (codes?: Partial<Record<Code, CodeSetting>>): CodeMeta[] =>
-  CODE_LETTERS.map((code) => {
-    const s = codes?.[code] ?? { label: `Code ${code}`, role: "unused" as const };
+/** The codes in the settings, A→Z. */
+export const codeList = (codes?: Record<Code, CodeSetting>): CodeMeta[] =>
+  Object.keys(codes ?? {}).sort().map((code) => {
+    const s = codes![code];
     return { ...s, code, kind: s.role, rule: ruleText(s) };
   });
 export const MIN_NOTE = 15;

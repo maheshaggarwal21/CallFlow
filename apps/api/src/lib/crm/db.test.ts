@@ -7,7 +7,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import pool from "../../db/pool";
 import { assertLocalDb } from "./localDb";
-import { claimLock, CrmError, ingestRows, queue, reapplyCodeRoles, reconcile, saveOutcome } from "../../services/crm.service";
+import { claimLock, CrmError, getCodes, ingestRows, queue, reapplyCodeRoles, reconcile, saveOutcome } from "../../services/crm.service";
 import { DEFAULT_CODES, outcomeSchema } from "./rules";
 
 assertLocalDb(process.env.DATABASE_URL, "crm db.test");
@@ -49,7 +49,10 @@ const linkedCall = async (interactionId: string) =>
 const out = (o: object) => outcomeSchema.parse(o);
 const min = (m: number) => new Date(Date.now() + m * 60_000);
 
+let storedCodes: unknown;
 before(async () => {
+  storedCodes = (await pool.query("SELECT value FROM crm_settings WHERE key = 'codes'")).rows[0]?.value;
+  await pool.query("UPDATE crm_settings SET value = $1 WHERE key = 'codes'", [JSON.stringify(DEFAULT_CODES)]);
   await cleanup();
   neha = await rep("Neha");
   priya = await rep("Priya");
@@ -57,6 +60,7 @@ before(async () => {
 });
 after(async () => {
   await cleanup();
+  if (storedCodes) await pool.query("UPDATE crm_settings SET value = $1 WHERE key = 'codes'", [JSON.stringify(storedCodes)]);
   await pool.end();
 });
 
@@ -172,6 +176,20 @@ test("sheet import: status, rep, guitar and amount come across; no follow-up tim
   assert.deepEqual(history.rows, [{ kind: "system", code: "D" }]);
   const q = await queue(neha, { q: "Old D" });
   assert.equal(Object.values(q.sections).flat().length, 0);
+});
+
+test("a letter the sheet uses but Settings doesn't know is added as Not used; other junk is ignored", async () => {
+  await pool.query("UPDATE crm_settings SET value = value - 'X' WHERE key = 'codes'");
+  const res = await ingestRows([
+    { external_id: "t-u1", name: "Typo", phone: "9000020050", source: "test", status: "x" },
+    { external_id: "t-u2", name: "Junk", phone: "9000020051", source: "test", status: "NA" },
+  ]);
+  assert.deepEqual(res.map((r) => r.result), ["created", "created"]);
+  const codes = await getCodes();
+  assert.deepEqual(codes.X, { label: "Code X", role: "unused" });
+  const { rows } = await pool.query("SELECT current_code, status FROM leads WHERE phone10 IN ('9000020050','9000020051') ORDER BY phone10");
+  assert.deepEqual(rows, [{ current_code: "X", status: "dnc" }, { current_code: null, status: "new" }]);
+  await pool.query("UPDATE crm_settings SET value = value - 'X' WHERE key = 'codes'");
 });
 
 test("changing a code's role in settings moves its leads to the new status", async () => {

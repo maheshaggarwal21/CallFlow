@@ -1,23 +1,25 @@
 import { z } from "zod";
 import { istMidnight, istParts } from "../dateRange";
 
-// The client's sheet codes A–O. What each one means is a CRM setting ("codes"), set by the owner.
-export const CODES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"] as const;
-export type Code = (typeof CODES)[number];
+// The client's sheet codes: one capital letter each. Which letters exist and what each means is a
+// CRM setting ("codes") the owner edits; new letters can be added there.
+export const CODE_RE = /^[A-Z]$/;
+export type Code = string;
 /** retry: no contact, follows up by itself · callback: talked, rep sets the time · paid: converted ·
  *  closed: no more calls · unused: not offered in the form */
 export const ROLES = ["retry", "callback", "paid", "closed", "unused"] as const;
 export type Role = (typeof ROLES)[number];
 export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string };
 export type CodeSettings = Record<Code, CodeSetting>;
+/** The setting's own letters, A→Z. */
+export const codeLetters = (codes: CodeSettings) => Object.keys(codes).filter((c) => CODE_RE.test(c)).sort();
 
-const unused = (c: string): CodeSetting => ({ label: `Code ${c}`, role: "unused" });
+/** The local demo's and the tests' codes. Production holds the client's own set (migration 013). */
 export const DEFAULT_CODES: CodeSettings = {
   A: { label: "Not reachable", role: "retry", hours: 6 }, B: { label: "No response", role: "retry", hours: 3 },
   C: { label: "Call cut", role: "retry", next_day_at: "10:00" }, D: { label: "Call later", role: "callback" },
   E: { label: "Will pay later", role: "callback" }, F: { label: "Converted", role: "paid" },
   G: { label: "Not interested", role: "closed" },
-  H: unused("H"), I: unused("I"), J: unused("J"), K: unused("K"), L: unused("L"), M: unused("M"), N: unused("N"), O: unused("O"),
 };
 /** Lead status a code puts the lead in (before the drop limit). */
 export const STATUS_OF_ROLE: Record<Role, LeadState["status"]> = { retry: "retry", callback: "callback", paid: "converted", closed: "dnc", unused: "dnc" };
@@ -48,7 +50,7 @@ export function retryAt(rule: RetryRule | undefined, now: Date): Date {
 
 export const outcomeSchema = z.object({
   version: z.number().int().positive(),
-  code: z.enum(CODES),
+  code: z.string().regex(CODE_RE, "Code must be one capital letter"),
   reason: z.string().trim().max(150).nullish(),
   note: z.string().trim().max(2000).nullish(),
   callback_at: z.string().datetime({ offset: true }).nullish(),
