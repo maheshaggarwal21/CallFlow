@@ -17,6 +17,8 @@ const PAGE_LABELS: Record<string, string> = {
   students:   "Students",
   settings:   "Settings",
   employees:  "Employees",
+  "crm/":         "Leads",
+  "crm/settings": "CRM Settings",
 };
 
 export default function Topbar() {
@@ -24,7 +26,7 @@ export default function Topbar() {
   const { isLive } = useSystemStatus();
 
   const segments = pathname.split("/").filter(Boolean); // ["dashboard", "overview"]
-  const section  = segments[1] ?? "";
+  const section  = segments[1] === "crm" ? `crm/${segments[2] ?? ""}` : segments[1] ?? "";
   const empId    = segments[1] === "employees" && segments[2] ? segments[2] : null;
 
   const { data: emp } = useSWR<Employee>(empId ? `/employees/${empId}` : null, fetcher);

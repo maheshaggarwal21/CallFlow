@@ -8,6 +8,7 @@ import { fetcher } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
 import type { EmployeeName } from "@callflow/shared-types";
+import { CRM_ENABLED } from "@/lib/crm";
 
 export default function Sidebar() {
   const router   = useRouter();
@@ -125,6 +126,14 @@ export default function Sidebar() {
       {/* Nav */}
       <nav style={{ flex: 1, padding: "12px 12px", overflowY: "auto" }}>
 
+
+            {CRM_ENABLED && (
+              <>
+                <SectionLabel label="CRM" />
+                <NavBtn id="crm-leads" label="Leads" path="/dashboard/crm" icon="☰" exact />
+                <NavBtn id="crm-settings" label="CRM Settings" path="/dashboard/crm/settings" icon="⚙" />
+              </>
+            )}
 
             <SectionLabel label="Calls" />
             <NavBtn id="recordings" label="Recordings" path="/dashboard/recordings" icon="▷" />
