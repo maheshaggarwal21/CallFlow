@@ -169,10 +169,11 @@ router.get("/settings", settingsAccess, async (req, res) => {
     pool.query("SELECT key, value, updated_at FROM crm_settings"),
     u.role === "owner"
       ? pool.query(
-          `SELECT e.id, e.name, e.email, e.employee_code,
+          // Every active account, as on the Team tab; owners are listed but always have everything
+          `SELECT e.id, e.name, e.email, e.employee_code, e.role,
                   coalesce(array_agg(p.permission ORDER BY p.permission) FILTER (WHERE p.permission IS NOT NULL), '{}') AS permissions
            FROM employees e LEFT JOIN employee_permissions p ON p.employee_id = e.id
-           WHERE e.role = 'employee' AND e.status = 'active' GROUP BY e.id ORDER BY e.name`)
+           WHERE e.status = 'active' GROUP BY e.id ORDER BY e.role = 'owner', e.name`)
       : Promise.resolve({ rows: null }),
   ]);
   return res.json({

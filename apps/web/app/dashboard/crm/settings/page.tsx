@@ -11,7 +11,7 @@ import { Btn, CRM_CSS, HeaderBand, NoAccess, inputStyle, tdStyle, thStyle } from
 
 type Settings = {
   values: Record<string, any>;
-  team: { id: string; name: string; email: string; employee_code: number; permissions: string[] }[] | null;
+  team: { id: string; name: string; email: string; employee_code: number; role: "owner" | "employee"; permissions: string[] }[] | null;
 };
 export default function CrmSettingsPage() {
   const { me, can } = useCrmMe();
@@ -147,17 +147,17 @@ function TeamPermissions({ team, all, onSaved }: { team: NonNullable<Settings["t
     }
   };
   return (
-    <Panel title="Who can use the CRM" sub="Every active employee. The owner always has everything. Also editable in Team → Edit. Applies on the employee's next click.">
+    <Panel title="Who can use the CRM" sub="Every active account on the Team tab. Owners always have everything. Also editable in Team → Edit. Applies on the employee's next click.">
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
           <thead><tr><th style={thStyle}>Rep</th>{all.map((p) => <th key={p} style={{ ...thStyle, textAlign: "center", whiteSpace: "normal" }}>{PERMISSION_LABELS[p] ?? p}</th>)}</tr></thead>
           <tbody>{team.map((m) => (
             <tr key={m.id} className="crm-row">
-              <td style={tdStyle}><span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}><Avatar name={m.name} size={30} /><span><b>{m.name}</b><div style={{ fontSize: 11.5, color: R.mute }}>{m.email}</div></span></span></td>
+              <td style={tdStyle}><span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}><Avatar name={m.name} size={30} /><span><b>{m.name}</b><div style={{ fontSize: 11.5, color: R.mute }}>{m.role === "owner" ? "Owner · always has access" : m.email}</div></span></span></td>
               {all.map((p) => (
                 <td key={p} style={{ ...tdStyle, textAlign: "center" }}>
-                  <input type="checkbox" aria-label={`${m.name}: ${PERMISSION_LABELS[p]}`} checked={m.permissions.includes(p)} disabled={busy === `${m.id}-${p}`}
-                    onChange={() => toggle(m.id, m.permissions, p)} style={{ width: 18, height: 18, accentColor: R.out, cursor: "pointer" }} />
+                  <input type="checkbox" aria-label={`${m.name}: ${PERMISSION_LABELS[p]}`} checked={m.role === "owner" || m.permissions.includes(p)} disabled={m.role === "owner" || busy === `${m.id}-${p}`}
+                    onChange={() => toggle(m.id, m.permissions, p)} style={{ width: 18, height: 18, accentColor: R.out, cursor: m.role === "owner" ? "default" : "pointer" }} />
                 </td>
               ))}
             </tr>))}</tbody>
