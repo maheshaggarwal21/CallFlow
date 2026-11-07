@@ -47,7 +47,7 @@ function SaveRow({ onSave, saved, err }: { onSave: () => void; saved: boolean; e
 /** The sheet's codes A–O: the owner names each one and picks what saving it does. */
 function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>; retry: any; onSaved: () => void }) {
   const [v, setV] = useState(() => codeList(codes));
-  const [maxAttempts, setMaxAttempts] = useState<number>(retry?.max_attempts ?? 6);
+  const [maxAttempts, setMaxAttempts] = useState<number>(retry?.max_attempts ?? 0);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(false), 2500); return () => clearTimeout(t); }, [saved]);
@@ -100,8 +100,13 @@ function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>;
                 </td>
               </tr>
             ))}
-            <tr><td style={tdStyle} colSpan={2}><b>Drop a lead after</b></td><td style={tdStyle} colSpan={2}>
-              <input type="number" aria-label="Drop after" min={1} max={50} value={maxAttempts} onChange={(e) => setMaxAttempts(Number(e.target.value))} style={{ ...inputStyle, width: 74 }} /> "no contact" calls in a row</td></tr>
+            <tr><td style={tdStyle} colSpan={2}><b>Stop calling a lead</b></td><td style={tdStyle} colSpan={2}>
+              <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+                <select aria-label="Stop calling a lead" value={maxAttempts > 0 ? "after" : "never"} onChange={(e) => setMaxAttempts(e.target.value === "never" ? 0 : 6)} style={{ ...inputStyle, width: 190 }}>
+                  <option value="never">Never, keep calling</option><option value="after">After a number of tries</option>
+                </select>
+                {maxAttempts > 0 && <><input type="number" aria-label="Tries before stopping" min={1} max={50} value={maxAttempts} onChange={(e) => setMaxAttempts(Math.max(1, Number(e.target.value)))} style={{ ...inputStyle, width: 74 }} /> "no contact" calls in a row</>}
+              </span></td></tr>
           </tbody>
         </table>
       </div>

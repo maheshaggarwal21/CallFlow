@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS crm_match_errors (
 -- codes: the sheet's status letters A–O; role = what saving that status does (see lib/crm/rules.ts)
 
 INSERT INTO crm_settings (key, value) VALUES
-  ('retry_rules', '{"invalid":{"never":true},"max_attempts":6}'),
+  ('retry_rules', '{"invalid":{"never":true},"max_attempts":0}'),
   ('codes', '{"A":{"label":"Not reachable","role":"retry","hours":6},"B":{"label":"No response","role":"retry","hours":3},
     "C":{"label":"Call cut","role":"retry","next_day_at":"10:00"},"D":{"label":"Call later","role":"callback"},
     "E":{"label":"Will pay later","role":"callback"},"F":{"label":"Converted","role":"paid"},"G":{"label":"Not interested","role":"closed"},

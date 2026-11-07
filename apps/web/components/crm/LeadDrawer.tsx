@@ -177,7 +177,8 @@ function SectionLabel({ icon, children }: { icon: Parameters<typeof Icon>[0]["na
 
 /** The automatic follow-up for "no contact" outcomes, using the same retry rules as the server. */
 function autoRetry(rule: CodeMeta | undefined, attempts: number, rules: CrmConfig["retry_rules"]): string | null {
-  if (!rule || attempts + 1 >= (rules.max_attempts ?? 6)) return null; // this try drops the lead
+  const max = rules.max_attempts ?? 0; // 0 = never drop
+  if (!rule || (max > 0 && attempts + 1 >= max)) return null; // this try drops the lead
   if (rule.next_day_at) {
     const day = new Date(Date.now() + 86_400_000).toLocaleDateString("en-CA", { timeZone: IST });
     return new Date(`${day}T${rule.next_day_at}:00+05:30`).toISOString();

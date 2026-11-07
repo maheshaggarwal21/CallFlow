@@ -62,7 +62,7 @@ source and lead ID on screen.
 | **Follow-up** | When to call next (`next_followup_at`). Rep-chosen for D/E; pre-filled from Settings for A/B/C. |
 | **Due now / Overdue** | A D/E follow-up is *due* from 15 min before to 15 min after its time (row blinks), then *overdue*. |
 | **Retry due** | An A/B/C lead whose wait is over. |
-| **Dropped** | 6 no-contact saves in a row (setting). No more follow-ups. |
+| **Dropped** | Off by default: the client keeps calling however many times (`retry_rules.max_attempts` = 0). If the owner sets a limit, that many no-contact saves in a row drop the lead. |
 | **Representative** | Who should make the next call (`assigned_to`). Every rep still sees every lead. |
 | **Lock** | While a rep has a lead open, others see it read-only ("Neha Sharma is on this lead"). 5 minutes, renewed while active. |
 | **Version** | A counter on each lead. Saving an out-of-date copy gets "This lead was updated by X, reload". |
@@ -151,7 +151,7 @@ The CRM:
 4. The **reminder banner** previews "[rep] will be reminded on [date at time]" as the date/time are picked.
 5. **Save** (`POST /crm/leads/:id/outcome`), in one database transaction:
    - checks the lock and version, then the rules (`lib/crm/rules.ts`);
-   - computes the new state from the code's role: retry → Retry (attempt count +1; 6th → Dropped),
+   - computes the new state from the code's role: retry → Retry (attempt count +1; Dropped only if a limit is set),
      callback → Callback, paid → Converted, closed → Do not call;
    - writes a history row in `lead_interactions` and updates the lead (status, code, follow-up,
      representative, guitar, amount, version +1, lock released);
@@ -176,7 +176,7 @@ Rule: **same phone10, same rep (`calls.employee_id` from the KoreCall line), cal
 
 ### 5.7 Settings
 - **Statuses** (owner): name and role of each code A–O, the wait for retry codes (hours, or "next day at"),
-  and drop after N no-contact saves. Saving a new role moves leads on that code to the matching status
+  and "Stop calling a lead" (never, the default, or after N no-contact saves). Saving a new role moves leads on that code to the matching status
   (`reapplyCodeRoles`).
 - **Who can export leads** (owner ticks reps). Checked against the database on every request.
 
@@ -199,7 +199,7 @@ Migrations `apps/api/src/db/migrations/011_crm_1_core.sql` and `011_crm_2_calls.
 
 | Method & path | Who | What |
 |---|---|---|
-| `POST /leads/ingest` | Sheet script (secret) | Up to 500 rows; idempotent on the sheet id. |
+| `POST /leads/ingest` | Sheet script (secret) | Up to 500 rows (the script sends 200); idempotent on the row ID. |
 | `POST /leads/reconcile` | Sheet script (secret) | Which ids are missing. |
 | `GET /me` | Logged in | Permissions, owner or not. |
 | `GET /config` | Logged in | Codes, representatives and drop limit for the form. |
@@ -258,7 +258,7 @@ browser and fails if any step fails.
 3. Retention dry run; compare with the previous night.
 4. Owner sets Statuses A–O, then install `LeadSync.gs` in the real sheet (`scripts/apps-script/README.md`):
    it imports every old row with its status, rep, guitar and amount, then new rows each minute.
-5. Client decides: do reps work in the CRM or keep using the sheet (later sheet edits are not synced).
+5. Decided 7 Nov: reps update statuses in the CRM only; the sheet just feeds new leads in.
 
 ## 11. Good questions to ask
 

@@ -80,6 +80,8 @@ test("next state: retry waits, drop after 6 failed attempts or an invalid number
   assert.equal(nextState(4, base({ code: "A" }), rules, now).status, "retry");
   assert.equal(nextState(5, base({ code: "A" }), rules, now).status, "dropped");
   assert.equal(nextState(0, base({ code: "A", reason: "Invalid number" }), rules, now).status, "dropped");
+  // 0 = never drop (the client's choice): the 50th "no contact" is still a retry
+  assert.equal(nextState(49, base({ code: "A" }), { max_attempts: 0 }, now).status, "retry");
   const f = nextState(3, base({ code: "F", reason: "UPI", note: "Paid 299 on the call today" }), rules, now);
   assert.equal(f.status, "converted");
   assert.equal(f.amount, 299);

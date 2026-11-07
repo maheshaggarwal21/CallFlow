@@ -184,7 +184,7 @@ const codeSetting = z.object({
   hours: z.number().min(0.25).max(168).optional(), next_day_at: hhmm.optional(),
 });
 const VALUE_SCHEMAS: Record<string, ZodTypeAny> = {
-  retry_rules: z.object({ invalid: z.object({ never: z.boolean() }), max_attempts: z.number().int().min(1).max(50) }),
+  retry_rules: z.object({ invalid: z.object({ never: z.boolean() }), max_attempts: z.number().int().min(0).max(50) }), // 0 = never drop
   codes: z.object(Object.fromEntries(CODES.map((c) => [c, codeSetting])) as Record<(typeof CODES)[number], typeof codeSetting>),
 };
 

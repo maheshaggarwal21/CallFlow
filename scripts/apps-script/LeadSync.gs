@@ -1,5 +1,5 @@
 /**
- * CallFlow CRM — Google Sheet → CRM lead sync (NOT DEPLOYED; see README.md).
+ * CallFlow CRM — Google Sheet → CRM lead sync (see README.md to install).
  *
  * - syncLeads() runs on a 1-minute time-driven trigger (no onEdit/onFormSubmit:
  *   those miss rows written by the Meta integration and can't hold a lock).
@@ -16,11 +16,11 @@
  *   CRM_SECRET      same value as CRM_INGEST_SECRET on the server (32+ chars)
  */
 var CONFIG = {
-  API_BASE: 'https://callflow.maxmusicschool.co.in/api/v1/crm',   // placeholder until go-live
+  API_BASE: 'https://callflow.maxmusicschool.co.in/api/v1/crm',
   SHEET_NAME: 'Lead',
-  HEALTHCHECK_URL: 'https://hc-ping.com/REPLACE-WITH-CHECK-UUID',  // placeholder
-  ALERT_EMAIL: 'owner@example.com',                                // placeholder
-  BATCH_MAX: 500,                                                  // server limit per request
+  HEALTHCHECK_URL: '',   // optional: a healthchecks.io ping URL, alerts if the sync stops silently
+  ALERT_EMAIL: '',       // empty = the Google account that installed the script
+  BATCH_MAX: 200,       // rows per run; ~7 DB round trips a row must finish inside Apps Script's 60 s fetch limit
   SYNC_COLUMN: 'CRM Sync',
   // Sheet header → intake field (the client's "Lead" tab). It has no id column, so the row ID is
   // built from Timestamp + Contact (see rowId_); a header that isn't found is sent empty.
@@ -89,7 +89,7 @@ function reconcileYesterday() {
       var redo = mine.filter(function (x) { return missing.indexOf(rowId_(x.values, h)) >= 0; });
       resent = post_('/leads/ingest', redo.map(function (x) { return toLead_(x.values, h); }));
     }
-    MailApp.sendEmail(CONFIG.ALERT_EMAIL, 'CRM lead reconcile ' + day + ': ' + missing.length + ' missing',
+    MailApp.sendEmail(alertTo_(), 'CRM lead reconcile ' + day + ': ' + missing.length + ' missing',
       ids.length + ' sheet rows checked, ' + missing.length + ' missing on the server.' +
       (missing.length ? '\nRe-sent: ' + resent.map(function (r) { return r.external_id + ' → ' + r.result; }).join(', ') : ''));
   } catch (e) {
@@ -158,8 +158,11 @@ function post_(path, body) {
 }
 
 function ping_() {
+  if (!CONFIG.HEALTHCHECK_URL) return;
   try { UrlFetchApp.fetch(CONFIG.HEALTHCHECK_URL, { muteHttpExceptions: true }); } catch (e) { /* the ping is best-effort */ }
 }
+
+function alertTo_() { return CONFIG.ALERT_EMAIL || Session.getEffectiveUser().getEmail(); }
 
 /** Email an error at most once per hour per distinct message. */
 function notify_(subject, e) {
@@ -169,5 +172,5 @@ function notify_(subject, e) {
   var lastSent = Number(props.getProperty(key) || 0);
   if (Date.now() - lastSent < 3600e3) return;
   props.setProperty(key, String(Date.now()));
-  MailApp.sendEmail(CONFIG.ALERT_EMAIL, 'CallFlow CRM: ' + subject, msg + '\n\n' + (e && e.stack || ''));
+  MailApp.sendEmail(alertTo_(), 'CallFlow CRM: ' + subject, msg + '\n\n' + (e && e.stack || ''));
 }

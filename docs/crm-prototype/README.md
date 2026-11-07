@@ -35,7 +35,8 @@ and picks its **role**, which decides what Save does:
 | Closed · no more calls | No follow-up; recording kept past the 90-day cleanup | G Not interested |
 | Not used | Hidden from the form | H–O (placeholders until the client names them) |
 
-Plus **New** (not called yet) and **Dropped** (after 6 no-contact saves in a row, a setting). Guitar is
+Plus **New** (not called yet). Leads are never dropped for unanswered calls (client, 7 Nov); the
+owner can set a limit in Settings ("Stop calling a lead"), and then **Dropped** appears. Guitar is
 required once the rep has spoken to the student. Changing a code's role moves the leads already on it.
 
 ## Run it locally (macOS)

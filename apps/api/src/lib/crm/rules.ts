@@ -32,8 +32,9 @@ export const INVALID_REASON = "Invalid number";
 export const MIN_NOTE = 15;
 
 export type RetryRule = { hours?: number; next_day_at?: string };
+/** max_attempts: drop the lead after this many "no contact" saves in a row; 0 = never (client, 7 Nov). */
 export type RetryRules = { invalid?: { never?: boolean }; max_attempts?: number };
-export const DEFAULT_RETRY: Required<Pick<RetryRules, "max_attempts">> & RetryRules = { invalid: { never: true }, max_attempts: 6 };
+export const DEFAULT_RETRY: Required<Pick<RetryRules, "max_attempts">> & RetryRules = { invalid: { never: true }, max_attempts: 0 };
 
 /** When a retry becomes due: now + N hours, or the next IST day at HH:MM. */
 export function retryAt(rule: RetryRule | undefined, now: Date): Date {
@@ -91,7 +92,7 @@ export function nextState(prevAttempts: number, o: OutcomeInput, rules: RetryRul
     const attempts = prevAttempts + 1;
     const max = rules.max_attempts ?? DEFAULT_RETRY.max_attempts;
     const invalid = o.reason === INVALID_REASON && rules.invalid?.never !== false;
-    if (invalid || attempts >= max) return { ...base, status: "dropped", next_followup_at: null, attempts };
+    if (invalid || (max > 0 && attempts >= max)) return { ...base, status: "dropped", next_followup_at: null, attempts };
     return { ...base, status: "retry", next_followup_at: o.callback_at ? new Date(o.callback_at) : retryAt(c, now), attempts };
   }
   if (c?.role === "callback") {
