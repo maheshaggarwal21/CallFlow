@@ -70,7 +70,7 @@ test("D/E/F validation", () => {
   assert.equal(outcomeSchema.safeParse({ version: 1, code: "AB" }).success, false); // one capital letter only
 });
 
-test("next state: retry waits, drop after 6 failed attempts or an invalid number, F defaults to 299", () => {
+test("next state: retry waits, drop after 6 failed attempts or an invalid number, F takes the amount given", () => {
   const now = new Date("2026-11-06T12:00:00Z"); // 17:30 IST
   const rules = { A: { hours: 6 }, B: { hours: 3 }, C: { next_day_at: "10:00" }, invalid: { never: true }, max_attempts: 6 };
   assert.deepEqual(nextState(0, base({ code: "B" }), rules, now).next_followup_at, new Date("2026-11-06T15:00:00Z"));
@@ -84,7 +84,8 @@ test("next state: retry waits, drop after 6 failed attempts or an invalid number
   assert.equal(nextState(49, base({ code: "A" }), { max_attempts: 0 }, now).status, "retry");
   const f = nextState(3, base({ code: "F", reason: "UPI", note: "Paid 299 on the call today" }), rules, now);
   assert.equal(f.status, "converted");
-  assert.equal(f.amount, 299);
+  assert.equal(f.amount, null); // no default price: the saved amount stays as it was
+  assert.equal(nextState(0, base({ code: "F", note: "Paid on the call today", amount: 499 }), rules, now).amount, 499);
   assert.equal(f.attempts, 0);
   assert.equal(nextState(2, base({ code: "G" }), rules, now).status, "dnc");
   // "Other": follow-up only when the rep set one; no note or time required

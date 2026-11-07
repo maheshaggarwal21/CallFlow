@@ -30,7 +30,6 @@ export const keepsAudio = (role: Role | undefined) => role === "paid" || role ==
 export const PERMISSIONS = ["crm_leads", "crm_settings", "export_leads"] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
-export const TRIAL_AMOUNT = 299; // the only product
 export const INVALID_REASON = "Invalid number";
 export const MIN_NOTE = 15;
 
@@ -103,6 +102,6 @@ export function nextState(prevAttempts: number, o: OutcomeInput, rules: RetryRul
   }
   // "Other": a follow-up only if the rep set one; without it the lead rests in All leads
   if (c?.role === "other") return { ...base, status: "callback", next_followup_at: o.callback_at ? new Date(o.callback_at) : null, attempts: 0 };
-  if (c?.role === "paid") return { ...base, status: "converted", next_followup_at: null, attempts: 0, amount: o.amount ?? TRIAL_AMOUNT };
+  if (c?.role === "paid") return { ...base, status: "converted", next_followup_at: null, attempts: 0, amount: o.amount ?? null }; // price varies; none = keep what the lead has
   return { ...base, status: "dnc", next_followup_at: null, attempts: 0 };
 }

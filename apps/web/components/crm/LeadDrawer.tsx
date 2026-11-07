@@ -287,7 +287,7 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
   const [code, setCode] = useState<Code | "">("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
-  const [amount, setAmount] = useState(l.amount ? String(Number(l.amount)) : "299");
+  const [amount, setAmount] = useState(l.amount ? String(Number(l.amount)) : ""); // price varies: no default
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
@@ -397,7 +397,7 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
                   {cfg.reps.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select></label>
               <label>{lbl("Amount (₹)", false)}
-                <input type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} style={inputStyle} /></label>
+                <input type="number" min={0} placeholder="e.g. 299" value={amount} onChange={(e) => setAmount(e.target.value)} style={inputStyle} /></label>
             </div>
             <label>
               <span style={{ ...labelStyle, display: "flex" }}>Notes / conversation summary{star(needsNote)}

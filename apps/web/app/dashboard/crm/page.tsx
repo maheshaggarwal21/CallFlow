@@ -113,7 +113,7 @@ function LeadsBoard() {
           <BandTile label="Total leads" value={data?.kpis.total ?? "—"} />
           <BandTile label="New leads" value={data?.kpis.new_leads ?? "—"} sub="not called yet" />
           <BandTile label="Follow-ups due today" value={data?.kpis.due_today ?? "—"} />
-          <BandTile label="Converted" value={data?.kpis.converted ?? "—"} sub="₹299 trials paid" accent="#a9d39b" />
+          <BandTile label="Converted" value={data?.kpis.converted ?? "—"} accent="#a9d39b" />
         </div>
       </HeaderBand>
 
