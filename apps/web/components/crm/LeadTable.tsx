@@ -14,6 +14,16 @@ const IST = "Asia/Kolkata";
 const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric" });
 const actBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: `1px solid ${R.line}`, background: R.card, color: R.ink,
   display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, textDecoration: "none" };
+// #, Received, Name, Contact, Assigned to (representative), Status, Amount, Guitar, Last contacted, Next follow-up, Follow-up alert, Actions
+// (sums to the table's width on a 1440 px screen; wider screens share out the extra)
+const COL_PX = [30, 94, 108, 112, 96, 150, 70, 64, 94, 100, 104, 84];
+// Actions stays visible while the table scrolls sideways; its cell needs the row's own background
+const STICKY_CSS = `
+  .crm-sticky{position:sticky;right:0;z-index:1;box-shadow:-8px 0 10px -8px rgba(43,33,24,.18)}
+  th.crm-sticky{background:${R.soft}}
+  .crm-row .crm-sticky{background:${R.card}}
+  .crm-row:hover .crm-sticky{background:${R.soft}}
+  .crm-due .crm-sticky{background:#fff4dc}`;
 const NAME_CLAMP: CSSProperties = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere", wordBreak: "break-word" };
 const time = (d: string) => new Date(d).toLocaleTimeString("en-US", { timeZone: IST, hour: "2-digit", minute: "2-digit", hour12: true });
 
@@ -36,7 +46,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
     const on = sort && key && sort.sort === key;
     const click = key && onSort ? () => onSort({ sort: key, dir: on && sort!.dir === "desc" ? "asc" : "desc" }) : undefined;
     return (
-      <th key={label} style={{ ...thStyle, whiteSpace: "normal", ...style, cursor: click ? "pointer" : "default" }} onClick={click}
+      <th key={label} className={label === "Actions" ? "crm-sticky" : undefined} style={{ ...thStyle, whiteSpace: "normal", padding: "10px 11px", ...style, cursor: click ? "pointer" : "default" }} onClick={click}
         aria-sort={on ? (sort!.dir === "asc" ? "ascending" : "descending") : undefined}>
         {label}{on ? (sort!.dir === "asc" ? " ↑" : " ↓") : ""}
       </th>
@@ -44,16 +54,17 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
   };
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, tableLayout: "fixed", minWidth: 1100 }}>
-        {/* Fixed widths so every section lines up */}
-        <colgroup>{[2.6, 7.8, 10.5, 9.6, 9.1, 10.9, 5, 4.8, 7.8, 8, 6.8, 9.1, 8].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
+      <style>{STICKY_CSS}</style>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, tableLayout: "fixed", minWidth: COL_PX.reduce((a, b) => a + b, 0) }}>
+        {/* Fixed widths so every section lines up; narrower screens scroll sideways with Actions pinned */}
+        <colgroup>{COL_PX.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
         <thead><tr>
-          {head("#")}{head("Received", "created_at")}{head("Name", "name")}{head("Contact")}{head("Representative")}{head("Status", "status")}
-          {head("Amount")}{head("Guitar")}{head("Last contacted", "last_contacted_at")}{head("Follow-up date", "next_followup_at")}{head("Follow-up time")}{head("Follow-up alert")}{head("Actions")}
+          {head("#")}{head("Received", "created_at")}{head("Name", "name")}{head("Contact")}{head("Assigned to")}{head("Status", "status")}
+          {head("Amount")}{head("Guitar")}{head("Last contacted", "last_contacted_at")}{head("Next follow-up", "next_followup_at")}{head("Follow-up alert")}{head("Actions")}
         </tr></thead>
         <tbody>
           {rows.map((l, i) => {
-            const td = (extra?: CSSProperties): CSSProperties => ({ ...tdStyle, padding: "10px 8px", ...extra });
+            const td = (extra?: CSSProperties): CSSProperties => ({ ...tdStyle, padding: "12px 11px", ...extra });
             const alert = followUpAlert(l, now);
             const f = l.next_followup_at && ["retry", "callback"].includes(l.status) ? l.next_followup_at : null;
             return (
@@ -76,10 +87,9 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                 <td style={td({ fontSize: 12.5, fontWeight: 600, color: l.has_guitar ? R.good : l.has_guitar === false ? R.bad : "#c2b39c" })}>
                   {l.has_guitar == null ? "—" : l.has_guitar ? "Yes" : "No"}</td>
                 <td style={td({ fontSize: 12.5, whiteSpace: "nowrap" })}>{l.last_contacted_at ? <>{day(l.last_contacted_at)}<div style={{ color: R.mute, fontSize: 11.5 }}>{time(l.last_contacted_at)}</div></> : "—"}</td>
-                <td style={td({ fontSize: 12.5, fontWeight: f ? 700 : 400, whiteSpace: "nowrap" })}>{f ? day(f) : "—"}</td>
-                <td style={td({ fontSize: 12.5, fontWeight: f ? 700 : 400, whiteSpace: "nowrap" })}>{f ? time(f) : "—"}</td>
+                <td style={td({ fontSize: 12.5, whiteSpace: "nowrap" })}>{f ? <><b>{day(f)}</b><div style={{ fontWeight: 700, fontSize: 12 }}>{time(f)}</div></> : "—"}</td>
                 <td style={td()}>{alert ? <Tag tone={alert.tone}>{alert.tone === "gold" ? "🔔 " : ""}{alert.text}</Tag> : <span style={{ color: "#c2b39c" }}>—</span>}</td>
-                <td style={td({ whiteSpace: "nowrap" })} onClick={(e) => e.stopPropagation()}>
+                <td className="crm-sticky" style={td({ whiteSpace: "nowrap" })} onClick={(e) => e.stopPropagation()}>
                   <span style={{ display: "inline-flex", gap: 5 }}>
                     <a className="crm-btn" style={{ ...actBtn, color: "#1fa855" }} href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer"
                       title="Chat on WhatsApp" aria-label={`WhatsApp ${l.name}`}><WhatsAppIcon size={15} /></a>
