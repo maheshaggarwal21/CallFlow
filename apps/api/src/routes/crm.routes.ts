@@ -92,9 +92,15 @@ router.get("/leads", leadsAccess, async (req, res) => {
   const where = leadFilters(f, values, user(req).sub);
   const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const [list, count] = await Promise.all([
+    // Pick the page's ids first (cheap, filters use leads columns only), then build the full rows
+    // (last call, rep names) for those 25 alone: deep pages no longer pay for every row they skip.
+    // l.id breaks ties so both orderings agree and paging is stable.
     pool.query(
-      `SELECT ${LEAD_LIST_COLS} FROM leads l ${LEAD_LIST_JOINS} ${w}
-       ORDER BY ${SORTS[f.sort]} ${f.dir} NULLS LAST, l.created_at DESC LIMIT ${f.limit} OFFSET ${f.offset}`,
+      `WITH page AS (
+         SELECT l.id FROM leads l ${w}
+         ORDER BY ${SORTS[f.sort]} ${f.dir} NULLS LAST, l.created_at DESC, l.id LIMIT ${f.limit} OFFSET ${f.offset})
+       SELECT ${LEAD_LIST_COLS} FROM page JOIN leads l ON l.id = page.id ${LEAD_LIST_JOINS}
+       ORDER BY ${SORTS[f.sort]} ${f.dir} NULLS LAST, l.created_at DESC, l.id`,
       values
     ),
     pool.query(`SELECT count(*)::int AS n FROM leads l ${w}`, values),
