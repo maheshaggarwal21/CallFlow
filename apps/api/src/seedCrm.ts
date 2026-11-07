@@ -50,7 +50,7 @@ function makeAudio() {
 // ── Wipe by markers only ───────────────────────────────────────────────────
 async function wipe() {
   await pool.query(`DELETE FROM crm_match_errors WHERE call_id IN (SELECT id FROM calls WHERE source_file_key LIKE 'crmdemo/%')`);
-  const calls = await pool.query(`DELETE FROM calls WHERE source_file_key LIKE 'crmdemo/%'`);           // cascades call_checks
+  const calls = await pool.query(`DELETE FROM calls WHERE source_file_key LIKE 'crmdemo/%'`);
   const leads = await pool.query(`DELETE FROM leads WHERE source = 'demo'`);                              // cascades interactions
   await pool.query(`DELETE FROM lines WHERE purpose = 'crm-demo'`);
   const staff = await pool.query(`DELETE FROM employees WHERE email LIKE '%@crm-demo.local'`);           // cascades permissions
@@ -82,7 +82,7 @@ async function people() {
     );
     reps.push({ id: e.id, name, line });
   }
-  await pool.query(`INSERT INTO employee_permissions (employee_id, permission) VALUES ($1, 'manage_templates'), ($2, 'view_crm_reports')`, [reps[0].id, reps[1].id]);
+  await pool.query(`INSERT INTO employee_permissions (employee_id, permission) VALUES ($1, 'export_leads')`, [reps[0].id]);
   return { owner: owner.id as string, reps };
 }
 
@@ -90,7 +90,7 @@ async function people() {
 type Step = {
   rep: number; at: Date; code: string; reason?: string; note?: string;
   dur?: number;          // seconds of the matched recording; omitted = no recording
-  check?: string;        // call_checks label for that recording
+  check?: string;        // what the recording sounds like ("busy" picks the busy-tone sample)
   link?: boolean;        // false = recording exists but no form linked to it (mismatch)
   form?: boolean;        // false = recording only
   followup?: Date;
@@ -99,7 +99,7 @@ type Step = {
 };
 type Story = {
   name: string; campaign: string; created: Date; status: string; code?: string; followup?: Date;
-  setBy?: number; studentTime?: boolean; attempts?: number; amount?: number; tags?: string[];
+  setBy?: number; attempts?: number; amount?: number; tags?: string[];
   steps: Step[]; reenquiry?: Date;
 };
 
@@ -156,7 +156,7 @@ function stories(): Story[] {
   // 1. Callback due in ~10 min, set by Neha; earlier calls by Priya and Neha (the demo opener)
   const dueAt = ahead(10 * MIN);
   S.push({
-    name: "Arjun Mehta", campaign: CAMPAIGNS[0], created: daysAgo(3), status: "callback", code: "D", followup: dueAt, setBy: 0, studentTime: true,
+    name: "Arjun Mehta", campaign: CAMPAIGNS[0], created: daysAgo(3), status: "callback", code: "D", followup: dueAt, setBy: 0,
     steps: [
       { rep: 1, at: daysAgo(2), code: "B", reason: "Rang, no answer", dur: 26, check: "no_answer" },
       { rep: 0, at: ago(5 * HOUR), code: "D", reason: "Asked to call in the evening", note: "Spoke to Arjun, keen on guitar. Student asked for this evening, call back then.", dur: 214, check: "possible_conversation", followup: dueAt },
@@ -247,7 +247,6 @@ async function main() {
   await wipe();
   if (process.argv.includes("--wipe-only")) return;
   const { reps } = await people();
-  const { rows: [guitarQ] } = await pool.query("SELECT id, label FROM lead_questions ORDER BY sort_order LIMIT 1");
 
   const used = new Set<string>();
   const phone = () => { let x: string; do x = `900001${String(between(0, 9999)).padStart(4, "0")}`; while (used.has(x) || x[8] === x[9]); used.add(x); return x; };
@@ -257,10 +256,10 @@ async function main() {
     const p10 = phone();
     const { rows: [lead] } = await pool.query(
       `INSERT INTO leads (name, email, phone_raw, phone10, source, campaign, external_id, status, current_code, next_followup_at,
-                          callback_set_by, student_set_time, attempts, last_contacted_at, amount, tags, created_at, updated_at, raw, assigned_to)
-       VALUES ($1, $2, $3, $4, 'demo', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), $17, $10) RETURNING id`,
+                          callback_set_by, attempts, last_contacted_at, amount, tags, created_at, updated_at, raw, assigned_to)
+       VALUES ($1, $2, $3, $4, 'demo', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), $16, $10) RETURNING id`,
       [s.name, `${s.name.split(" ")[0].toLowerCase()}@example.com`, `+91 ${p10.slice(0, 5)} ${p10.slice(5)}`, p10, s.campaign,
-       `demo-${p10}`, s.status, s.code ?? null, s.followup ?? null, s.setBy !== undefined ? reps[s.setBy].id : null, !!s.studentTime,
+       `demo-${p10}`, s.status, s.code ?? null, s.followup ?? null, s.setBy !== undefined ? reps[s.setBy].id : null,
        s.attempts ?? 0, s.steps.length ? s.steps[s.steps.length - 1].at : null, s.amount ?? null, s.tags ?? [], s.created,
        JSON.stringify({ demo: true })]
     );
@@ -283,29 +282,15 @@ async function main() {
         );
         callId = c.id;
         calls++;
-        if (st.check && st.dur < 60) {
-          await pool.query("INSERT INTO call_checks (call_id, label, confidence, source) VALUES ($1, $2, $3, 'preview')",
-            [callId, st.check, Number((0.72 + rnd() * 0.26).toFixed(2))]);
-        }
       }
       if (st.form === false) continue;
       const linkCall = callId && st.link !== false && !st.phoneOverride ? callId : null;
       await pool.query(
-        `INSERT INTO lead_interactions (lead_id, employee_id, kind, code, reason, note, next_followup_at, call_id, answers, created_at)
-         VALUES ($1, $2, 'call_outcome', $3, $4, $5, $6, $7, $8, $9)`,
-        [lead.id, rep.id, st.code, st.reason ?? null, st.note ?? null, st.followup ?? null, linkCall,
-         JSON.stringify(["D", "E", "F"].includes(st.code) && guitarQ ? [{ question_id: guitarQ.id, label: guitarQ.label, value: pick(["Yes", "No"]) }] : []), st.at]
+        `INSERT INTO lead_interactions (lead_id, employee_id, kind, code, reason, note, next_followup_at, call_id, created_at)
+         VALUES ($1, $2, 'call_outcome', $3, $4, $5, $6, $7, $8)`,
+        [lead.id, rep.id, st.code, st.reason ?? null, st.note ?? null, st.followup ?? null, linkCall, st.at]
       );
       forms++;
-      if ((st.code === "E" || st.code === "F") && rnd() < 0.6) {
-        const tpl = st.code === "F" ? "class_link" : "trial_details";
-        await pool.query(
-          `INSERT INTO lead_interactions (lead_id, employee_id, kind, template_id, note, meta, created_at)
-           SELECT $1, $2, 'whatsapp', id, body, '{"mode":"mock"}', $3 FROM wati_templates WHERE name = $4`,
-          [lead.id, rep.id, new Date(st.at.getTime() + 2 * MIN), tpl]
-        );
-        forms++;
-      }
     }
     if (s.reenquiry) {
       await pool.query(

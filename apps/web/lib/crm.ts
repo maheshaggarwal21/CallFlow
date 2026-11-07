@@ -18,11 +18,7 @@ export const MIN_NOTE = 15;
 export const DUE_WINDOW_MS = 15 * 60_000;
 
 export const PERMISSION_LABELS: Record<string, string> = {
-  manage_questions: "Manage questions",
-  manage_templates: "Manage reasons & note templates",
-  reassign_leads: "Revive / reassign leads",
   export_leads: "Export leads",
-  view_crm_reports: "View CRM reports",
 };
 
 export const STATUS_LABEL: Record<string, string> = {
@@ -57,8 +53,8 @@ export type LastCall = { id: string; duration_secs: number; called_at: string; h
 export type LeadRow = {
   id: string; lead_code: string; name: string; phone10: string; source: string | null; campaign: string | null;
   status: string; current_code: Code | null; attempts: number; last_contacted_at: string | null; next_followup_at: string | null;
-  created_at: string; amount: string | null; tags: string[]; student_set_time: boolean;
-  locked_by: string | null; locked_by_name: string | null; callback_set_by_name: string | null; callback_note?: string | null;
+  created_at: string; amount: string | null; tags: string[];
+  locked_by: string | null; locked_by_name: string | null; callback_set_by_name: string | null;
   assigned_to?: string | null; assigned_to_name?: string | null; has_guitar: boolean | null;
   last_call: LastCall; bucket?: "due_now" | "overdue" | "new" | "retry" | "later";
 };
@@ -71,34 +67,23 @@ export type QueueResponse = {
 
 export type CallInfo = {
   id: string; called_at: string; duration_secs: number; direction: string; employee_id: string | null; employee_name: string | null;
-  keep_audio: boolean; check: { label: string; confidence: number } | null;
+  keep_audio: boolean;
   audio_urls: { opus: string; mp3: string } | null; audio_format: string | null; audio_state: "ok" | "expired" | "missing";
 };
 export type TimelineEntry =
-  | { type: "interaction"; at: string; id: string; kind: "call_outcome" | "whatsapp" | "system" | "reenquiry"; code: Code | null; reason: string | null; employee_id: string | null;
-      note: string | null; next_followup_at: string | null; employee_name: string | null; template_label: string | null;
-      meta: Record<string, unknown> | null; call: CallInfo | null; contradiction: boolean }
+  | { type: "interaction"; at: string; id: string; kind: "call_outcome" | "system" | "reenquiry"; code: Code | null; reason: string | null; employee_id: string | null;
+      note: string | null; next_followup_at: string | null; employee_name: string | null;
+      meta: Record<string, unknown> | null; call: CallInfo | null }
   | { type: "call"; at: string; call: CallInfo };
 export type LeadDetail = {
-  lead: LeadRow & { email: string | null; phone_raw: string; answers: { question_id: string; label: string; value: string }[];
+  lead: LeadRow & { email: string | null; phone_raw: string;
     version: number; locked_until: string | null; updated_by_name: string | null; external_id: string | null };
   timeline: TimelineEntry[];
-  /** Assignment changes, newest first (owner assigns + D/E callbacks); name null = back to the shared pool */
-  assignments: { at: string; name: string | null; by_name: string | null; previous_name: string | null }[];
-  wa_vars: Record<string, string>;
-  callback_note: string | null;
   server_now: string;
 };
 export type CrmConfig = {
-  questions: { id: string; label: string; type: "yesno" | "select" | "text"; options: string[] }[];
-  reasons: { id: string; label: string; codes: Code[] }[];
-  note_templates: { id: string; label: string; text: string; codes: Code[]; category: string | null }[];
-  wati_templates: { id: string; name: string; label: string; body: string }[];
-  wati_mode: "mock" | "live";
   reps: { id: string; name: string }[];
   retry_rules: { A?: RetryRule; B?: RetryRule; C?: RetryRule; invalid?: { never?: boolean }; max_attempts?: number };
 };
 export type RetryRule = { hours?: number; next_day_at?: string };
 export type CrmMe = { permissions: string[]; is_owner: boolean };
-
-export const fillVars = (body: string, vars: Record<string, string>) => body.replace(/\{(\w+)\}/g, (m, k) => vars[k] || m);

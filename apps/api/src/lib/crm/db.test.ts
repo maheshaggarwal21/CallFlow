@@ -7,7 +7,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import pool from "../../db/pool";
 import { assertLocalDb } from "./localDb";
-import { assignLeads, claimLock, CrmError, ingestRows, reconcile, saveOutcome } from "../../services/crm.service";
+import { claimLock, CrmError, ingestRows, reconcile, saveOutcome } from "../../services/crm.service";
 import { outcomeSchema } from "./rules";
 
 assertLocalDb(process.env.DATABASE_URL, "crm db.test");
@@ -141,21 +141,11 @@ test("ingest is idempotent; the same number re-enquires instead of duplicating",
   assert.deepEqual(await reconcile(["t-1", "t-3", "t-404"]), ["t-404"]);
 });
 
-test("assign: leads go to a rep and back to the pool, bumping version and logging it", async () => {
-  const a = await lead("9000020020"), b = await lead("9000020021");
-  const owner = { sub: priya.sub, role: "owner" as const, name: "Owner" } as unknown as U;
-  const r = await assignLeads([a.id, b.id], neha.sub, owner);
-  assert.deepEqual(r, { updated: 2, assigned_to_name: "Neha" });
-  assert.equal((await assignLeads([a.id], neha.sub, owner)).updated, 0);  // already Neha's: no-op
-  const { rows } = await pool.query("SELECT assigned_to, version FROM leads WHERE id = $1", [a.id]);
-  assert.deepEqual(rows[0], { assigned_to: neha.sub, version: 2 });
-  // A form opened before the assignment now gets the 409 reload
-  await assert.rejects(saveOutcome(a.id, neha, out({ version: 1, code: "B" })), (e: CrmError) => e.status === 409);
-  await assignLeads([a.id], null, owner);
-  assert.equal((await pool.query("SELECT assigned_to FROM leads WHERE id = $1", [a.id])).rows[0].assigned_to, null);
-  const notes = (await pool.query("SELECT note FROM lead_interactions WHERE lead_id = $1 AND kind = 'system' ORDER BY created_at", [a.id])).rows.map((x) => x.note);
-  assert.deepEqual(notes, ["Assigned to Neha by Owner", "Moved back to the shared pool by Owner"]);
-  const prev = (await pool.query("SELECT meta->>'previous' AS p FROM lead_interactions WHERE lead_id = $1 AND kind = 'system' ORDER BY created_at DESC LIMIT 1", [a.id])).rows[0].p;
-  assert.equal(prev, neha.sub);  // the unassign remembers Neha had it
-  await assert.rejects(assignLeads([b.id], "00000000-0000-0000-0000-000000000000", owner), (e: CrmError) => e.status === 400);
+test("form save: representative and guitar are kept; a later save without them keeps both", async () => {
+  const l = await lead("9000020020");
+  await saveOutcome(l.id, neha, out({ version: 1, code: "B", assigned_to: priya.sub, has_guitar: true }));
+  const row = async () => (await pool.query("SELECT assigned_to, has_guitar, version FROM leads WHERE id = $1", [l.id])).rows[0];
+  assert.deepEqual(await row(), { assigned_to: priya.sub, has_guitar: true, version: 2 });
+  await saveOutcome(l.id, neha, out({ version: 2, code: "B" }));
+  assert.deepEqual(await row(), { assigned_to: priya.sub, has_guitar: true, version: 3 });
 });

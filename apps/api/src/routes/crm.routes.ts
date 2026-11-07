@@ -5,14 +5,11 @@ import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requireOwner } from "../middleware/requireOwner";
 import { requirePermission } from "../middleware/requirePermission";
-import { resolveRange } from "../lib/dateRange";
-import { CODES, PERMISSIONS, outcomeSchema } from "../lib/crm/rules";
+import { PERMISSIONS, outcomeSchema } from "../lib/crm/rules";
 import {
-  CrmError, LEAD_LIST_COLS, assignLeads, LEAD_LIST_JOINS, MAX_INGEST_ROWS, claimLock, getSetting, ingestRows, leadDetail, leadFilters,
-  permissionsOf, queue, queueFilterSchema, reconcile, releaseLock, reviveLead, saveOutcome,
+  CrmError, LEAD_LIST_COLS, LEAD_LIST_JOINS, MAX_INGEST_ROWS, claimLock, getSetting, ingestRows, leadDetail, leadFilters,
+  permissionsOf, queue, queueFilterSchema, reconcile, releaseLock, saveOutcome,
 } from "../services/crm.service";
-import { crmReport, digestData, digestHtml, linkPair } from "../services/crmReports.service";
-import { fillTemplate, sendWhatsAppTemplate, watiMode } from "../services/wati.service";
 import { audioUrlsFor } from "../services/audioUrls";
 
 // Mounted at /api/v1/crm only when CRM_ENABLED=true (see index.ts).
@@ -62,17 +59,13 @@ router.get("/me", async (req, res) => {
   return res.json({ permissions: await permissionsOf(user(req)), is_owner: user(req).role === "owner" });
 });
 
-/** Lists the lead drawer needs: active questions, reasons, note templates, WhatsApp templates. */
+/** What the lead form needs: the representatives and the follow-up rules. */
 router.get("/config", async (_req, res) => {
-  const [q, r, t, w, retry, reps] = await Promise.all([
-    pool.query("SELECT id, label, type, options FROM lead_questions WHERE active ORDER BY sort_order, created_at"),
-    pool.query("SELECT id, label, codes FROM lead_reasons WHERE active ORDER BY sort_order, created_at"),
-    pool.query("SELECT id, label, text, codes, category FROM note_templates WHERE active ORDER BY sort_order, created_at"),
-    pool.query("SELECT id, name, label, body FROM wati_templates WHERE active ORDER BY sort_order, created_at"),
+  const [retry, reps] = await Promise.all([
     getSetting("retry_rules", {}),
     pool.query("SELECT id, name FROM employees WHERE role = 'employee' AND status = 'active' ORDER BY name"),
   ]);
-  return res.json({ questions: q.rows, reasons: r.rows, note_templates: t.rows, wati_templates: w.rows, retry_rules: retry, wati_mode: watiMode(), reps: reps.rows });
+  return res.json({ retry_rules: retry, reps: reps.rows });
 });
 
 router.get("/queue", async (req, res) => {
@@ -129,11 +122,6 @@ router.get("/leads/export.csv", requirePermission("export_leads"), async (req, r
   return res.send([cols.join(","), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(","))].join("\n"));
 });
 
-router.post("/leads/assign", requirePermission("reassign_leads"), async (req, res) => {
-  const b = parse(z.object({ lead_ids: z.array(uuid).min(1).max(500), employee_id: uuid.nullable() }), req.body);
-  return res.json(await assignLeads(b.lead_ids, b.employee_id, user(req)));
-});
-
 router.get("/leads/:id", async (req, res) => {
   return res.json(await leadDetail(parse(uuid, req.params.id)));
 });
@@ -149,25 +137,6 @@ router.delete("/leads/:id/lock", async (req, res) => {
 
 router.post("/leads/:id/outcome", async (req, res) => {
   return res.json(await saveOutcome(parse(uuid, req.params.id), user(req), parse(outcomeSchema, req.body)));
-});
-
-router.post("/leads/:id/revive", requirePermission("reassign_leads"), async (req, res) => {
-  await reviveLead(parse(uuid, req.params.id), user(req));
-  return res.status(204).end();
-});
-
-router.post("/leads/:id/whatsapp", async (req, res) => {
-  const leadId = parse(uuid, req.params.id);
-  const { template_id } = parse(z.object({ template_id: uuid }), req.body);
-  const { rows: [t] } = await pool.query("SELECT id, name, label, body FROM wati_templates WHERE id = $1 AND active", [template_id]);
-  if (!t) throw new CrmError(404, "Template not found");
-  const detail = await leadDetail(leadId);
-  const sent = await sendWhatsAppTemplate({ phone10: detail.lead.phone10, template: t.name, body: t.body, vars: detail.wa_vars });
-  await pool.query(
-    `INSERT INTO lead_interactions (lead_id, employee_id, kind, template_id, note, meta) VALUES ($1, $2, 'whatsapp', $3, $4, $5)`,
-    [leadId, user(req).sub, t.id, fillTemplate(t.body, detail.wa_vars), JSON.stringify({ mode: sent.mode, message_id: sent.message_id })]
-  );
-  return res.json({ mode: sent.mode, template: t.label });
 });
 
 /** Playback for one recording of a LEAD's number (any rep), e.g. the queue row's play button. */
@@ -189,33 +158,11 @@ router.post("/calls/:id/keep", requireOwner, async (req, res) => {
   return res.json(r.rows[0]);
 });
 
-// ── Owner reports ──────────────────────────────────────────────────────────
-
-router.get("/reports", requirePermission("view_crm_reports"), async (req, res) => {
-  const { start, end } = resolveRange(String(req.query.date_from ?? "") || null, String(req.query.date_to ?? "") || null);
-  return res.json({ ...(await crmReport(start, end)), range: { start, end } });
-});
-
-router.post("/mismatches/link", requirePermission("view_crm_reports"), async (req, res) => {
-  const b = parse(z.object({ interaction_id: uuid, call_id: uuid }), req.body);
-  await linkPair(b.interaction_id, b.call_id);
-  return res.status(204).end();
-});
-
-router.get("/digest/preview", requirePermission("view_crm_reports"), async (req, res) => {
-  const date = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? new Date(`${req.query.date}T12:00:00+05:30`) : new Date();
-  return res.type("html").send(digestHtml(await digestData(date)));
-});
-
 // ── Settings ───────────────────────────────────────────────────────────────
 
 router.get("/settings", async (req, res) => {
   const u = user(req);
-  const [q, r, t, w, s, team] = await Promise.all([
-    pool.query("SELECT * FROM lead_questions ORDER BY sort_order, created_at"),
-    pool.query("SELECT * FROM lead_reasons ORDER BY sort_order, created_at"),
-    pool.query("SELECT * FROM note_templates ORDER BY sort_order, created_at"),
-    pool.query("SELECT id, name, label, body, active FROM wati_templates ORDER BY sort_order"),
+  const [s, team] = await Promise.all([
     pool.query("SELECT key, value, updated_at FROM crm_settings"),
     u.role === "owner"
       ? pool.query(
@@ -226,61 +173,15 @@ router.get("/settings", async (req, res) => {
       : Promise.resolve({ rows: null }),
   ]);
   return res.json({
-    questions: q.rows, reasons: r.rows, note_templates: t.rows, wati_templates: w.rows,
     values: Object.fromEntries(s.rows.map((x) => [x.key, x.value])),
-    team: team.rows, permissions: await permissionsOf(u), wati_mode: watiMode(), all_permissions: PERMISSIONS,
+    team: team.rows, permissions: await permissionsOf(u), all_permissions: PERMISSIONS,
   });
 });
-
-const questionSchema = z.object({
-  label: z.string().trim().min(1).max(150),
-  type: z.enum(["yesno", "select", "text"]),
-  options: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
-  sort_order: z.number().int().min(0).max(999).default(0),
-  active: z.boolean().default(true),
-});
-const codesSchema = z.array(z.enum(CODES)).min(1);
-const reasonSchema = z.object({ label: z.string().trim().min(1).max(100), codes: codesSchema, sort_order: z.number().int().min(0).max(999).default(0), active: z.boolean().default(true) });
-const templateSchema = z.object({
-  label: z.string().trim().min(1).max(100), text: z.string().trim().min(1).max(1000), codes: codesSchema,
-  category: z.string().trim().max(50).nullish(), sort_order: z.number().int().min(0).max(999).default(0), active: z.boolean().default(true),
-});
-
-/** Create + edit for an owner-managed list. There is no delete: deactivate instead. */
-function listCrud(path: string, table: string, schema: z.AnyZodObject, perm: "manage_questions" | "manage_templates") {
-  const cols = Object.keys(schema.shape);
-  const json = (k: string, v: unknown) => (k === "options" ? JSON.stringify(v) : v);
-  router.post(`/settings/${path}`, requirePermission(perm), async (req, res) => {
-    const b = parse(schema, req.body);
-    const { rows } = await pool.query(
-      `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(", ")}) RETURNING *`,
-      cols.map((c) => json(c, b[c]))
-    );
-    return res.status(201).json(rows[0]);
-  });
-  router.patch(`/settings/${path}/:id`, requirePermission(perm), async (req, res) => {
-    const b = parse(schema.partial(), req.body);
-    const keys = cols.filter((c) => b[c] !== undefined);
-    if (!keys.length) throw new CrmError(400, "Nothing to change");
-    const { rows } = await pool.query(
-      `UPDATE ${table} SET ${keys.map((k, i) => `${k} = $${i + 2}`).join(", ")} WHERE id = $1 RETURNING *`,
-      [parse(uuid, req.params.id), ...keys.map((k) => json(k, b[k]))]
-    );
-    if (!rows[0]) throw new CrmError(404, "Not found");
-    return res.json(rows[0]);
-  });
-}
-listCrud("questions", "lead_questions", questionSchema, "manage_questions");
-listCrud("reasons", "lead_reasons", reasonSchema, "manage_templates");
-listCrud("templates", "note_templates", templateSchema, "manage_templates");
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const retryRule = z.object({ hours: z.number().min(0.25).max(168).optional(), next_day_at: hhmm.optional() });
 const VALUE_SCHEMAS: Record<string, ZodTypeAny> = {
   retry_rules: z.object({ A: retryRule, B: retryRule, C: retryRule, invalid: z.object({ never: z.boolean() }), max_attempts: z.number().int().min(1).max(50) }),
-  digest: z.object({ send_time: hhmm, recipients: z.array(z.string().trim().email()).max(20) }),
-  call_check: z.object({ mode: z.enum(["off", "preview"]) }),
-  links: z.object({ payment_link: z.string().url().max(300), class_link: z.string().url().max(300) }),
 };
 
 router.patch("/settings/values/:key", requireOwner, async (req, res) => {

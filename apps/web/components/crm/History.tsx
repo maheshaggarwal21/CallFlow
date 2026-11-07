@@ -130,15 +130,6 @@ function Entry({ e, first, isOwner, onChanged }: { e: TimelineEntry; first: bool
       </li>
     );
   }
-  if (e.kind === "whatsapp") {
-    return (
-      <li style={{ ...box, background: "#f1f7ee", borderColor: "#d5e6cd" }}>{dot(R.good)}
-        {head(<span style={{ color: R.good, marginTop: 1 }}><Icon name="chat" /></span>, <>WhatsApp: {e.template_label ?? "template"}</>, e.employee_name,
-          <><span style={{ fontSize: 12, color: R.mute }}>{timeOf(e.at)}</span>{e.meta?.mode === "mock" && <Tag>mock</Tag>}</>)}
-        {e.note && <p style={{ margin: "6px 0 0", fontSize: 12, color: R.mute, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{e.note}</p>}
-      </li>
-    );
-  }
   if (e.kind === "reenquiry" || e.kind === "system") {
     return (
       <li style={{ ...box, background: R.soft, borderStyle: "dashed" }}>{dot(R.gold)}

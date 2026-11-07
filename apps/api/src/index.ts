@@ -19,7 +19,6 @@ import devRoutes from "./routes/dev.routes";
 import crmRoutes from "./routes/crm.routes";
 import { DEV_UPLOADS_DIR } from "./services/storage.service";
 import { startReportScheduler } from "./services/report.service";
-import { startDigestScheduler } from "./services/crmReports.service";
 
 dotenv.config();
 
@@ -112,5 +111,4 @@ const port = Number(process.env.PORT || 4000);
 app.listen(port, () => {
   console.log(`API listening on port ${port}`);
   startReportScheduler();
-  if (CRM_ENABLED) startDigestScheduler();
 });

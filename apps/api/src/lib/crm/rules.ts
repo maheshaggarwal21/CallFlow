@@ -11,7 +11,7 @@ export const TALKED_CODES: readonly Code[] = ["D", "E", "F", "Z"];
 /** Matched recordings for these are kept past the 90-day retention. */
 export const KEEP_AUDIO_CODES: readonly Code[] = ["F", "Z"];
 
-export const PERMISSIONS = ["manage_questions", "manage_templates", "reassign_leads", "export_leads", "view_crm_reports"] as const;
+export const PERMISSIONS = ["export_leads"] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
 export const TRIAL_AMOUNT = 299; // the only product
@@ -39,13 +39,7 @@ export const outcomeSchema = z.object({
   code: z.enum(CODES),
   reason: z.string().trim().max(150).nullish(),
   note: z.string().trim().max(2000).nullish(),
-  answers: z.array(z.object({
-    question_id: z.string().uuid(),
-    label: z.string().max(150),
-    value: z.string().max(200),
-  })).max(50).default([]),
   callback_at: z.string().datetime({ offset: true }).nullish(),
-  student_set_time: z.boolean().optional(),
   amount: z.number().positive().max(100000).nullish(),
   assigned_to: z.string().uuid().nullish(),
   has_guitar: z.boolean().nullish(),

@@ -5,7 +5,7 @@ import { IST_TODAY_START } from "../lib/dateRange";
 import { isFullPhone10, phone10 } from "../lib/crm/phone";
 import { bucketOf, compareQueue, type QueueBucket } from "../lib/crm/queue";
 import {
-  DEFAULT_RETRY, KEEP_AUDIO_CODES, PERMISSIONS, TALKED_CODES, nextState, validateOutcome,
+  DEFAULT_RETRY, KEEP_AUDIO_CODES, PERMISSIONS, nextState, validateOutcome,
   type OutcomeInput, type Permission, type RetryRules,
 } from "../lib/crm/rules";
 import { audioUrlsFor } from "./audioUrls";
@@ -121,24 +121,22 @@ export async function saveOutcome(leadId: string, user: User, input: OutcomeInpu
     }
 
     const s = nextState(lead.attempts, input, rules, now);
-    const answers = input.answers.length ? input.answers : lead.answers;
     const { rows: [ix] } = await client.query(
-      `INSERT INTO lead_interactions (lead_id, employee_id, kind, code, reason, note, answers, next_followup_at, meta)
-       VALUES ($1, $2, 'call_outcome', $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
-      [leadId, user.sub, input.code, input.reason || null, input.note || null, JSON.stringify(input.answers),
-       s.next_followup_at, JSON.stringify({ status: s.status, attempts: s.attempts, student_set_time: !!input.student_set_time, amount: s.amount, assigned_to: input.assigned_to ?? null, previous: lead.assigned_to })]
+      `INSERT INTO lead_interactions (lead_id, employee_id, kind, code, reason, note, next_followup_at, meta)
+       VALUES ($1, $2, 'call_outcome', $3, $4, $5, $6, $7) RETURNING id, created_at`,
+      [leadId, user.sub, input.code, input.reason || null, input.note || null,
+       s.next_followup_at, JSON.stringify({ status: s.status, attempts: s.attempts, amount: s.amount, assigned_to: input.assigned_to ?? null, previous: lead.assigned_to })]
     );
     const { rows: [saved] } = await client.query(
       `UPDATE leads SET status = $2::text, current_code = $3, next_followup_at = $4, attempts = $5,
-         amount = COALESCE($6, amount), answers = $7,
-         callback_set_by = CASE WHEN $2::text = 'callback' THEN $8::uuid END,
-         student_set_time = ($2::text = 'callback' AND $9::boolean),
-         last_contacted_at = NOW(), version = version + 1, updated_by = $8, updated_at = NOW(),
+         amount = COALESCE($6, amount),
+         callback_set_by = CASE WHEN $2::text = 'callback' THEN $7::uuid END,
+         last_contacted_at = NOW(), version = version + 1, updated_by = $7, updated_at = NOW(),
          locked_by = NULL, locked_until = NULL,
-         assigned_to = COALESCE($10::uuid, CASE WHEN $2::text = 'callback' THEN $8::uuid ELSE assigned_to END),
-         has_guitar = COALESCE($11, has_guitar)
+         assigned_to = COALESCE($8::uuid, CASE WHEN $2::text = 'callback' THEN $7::uuid ELSE assigned_to END),
+         has_guitar = COALESCE($9, has_guitar)
        WHERE id = $1 RETURNING version`,
-      [leadId, s.status, s.current_code, s.next_followup_at, s.attempts, s.amount, JSON.stringify(answers), user.sub, !!input.student_set_time, input.assigned_to ?? null, input.has_guitar ?? null]
+      [leadId, s.status, s.current_code, s.next_followup_at, s.attempts, s.amount, user.sub, input.assigned_to ?? null, input.has_guitar ?? null]
     );
     const callId = await linkNearestCall(client, ix.id, lead.phone10, user.sub, new Date(ix.created_at), input.code);
     await client.query("COMMIT");
@@ -151,51 +149,13 @@ export async function saveOutcome(leadId: string, user: User, input: OutcomeInpu
   }
 }
 
-/** Owner: bring a Dropped lead back into the queue as a retry due now. */
-export async function reviveLead(leadId: string, user: User) {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const { rowCount } = await client.query(
-      `UPDATE leads SET status = 'retry', attempts = 0, next_followup_at = NOW(), version = version + 1,
-         updated_by = $2, updated_at = NOW() WHERE id = $1 AND status = 'dropped'`,
-      [leadId, user.sub]
-    );
-    if (!rowCount) throw new CrmError(400, "Only a Dropped lead can be revived");
-    await client.query(
-      `INSERT INTO lead_interactions (lead_id, employee_id, kind, note) VALUES ($1, $2, 'system', 'Revived from Dropped')`,
-      [leadId, user.sub]
-    );
-    await client.query("COMMIT");
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
-  } finally {
-    client.release();
-  }
-}
-
 // ── Lead detail + history ──────────────────────────────────────────────────
-
-const NOT_TALKING = ["busy", "no_answer", "switched_off", "invalid_number"];
-
-/** A rep's code that disagrees with the automatic call check (e.g. D saved on a "busy" call). */
-export function contradicts(code: string | null, check: string | null): boolean {
-  if (!code || !check) return false;
-  if ((TALKED_CODES as readonly string[]).includes(code)) return NOT_TALKING.includes(check);
-  return (code === "A" || code === "B") && check === "possible_conversation";
-}
-
-async function callCheckOn(): Promise<boolean> {
-  const s = await getSetting<{ mode: string }>("call_check", { mode: "preview" });
-  return s.mode !== "off";
-}
 
 export async function leadDetail(leadId: string) {
   const { rows: [lead] } = await pool.query(
     `SELECT l.id, l.lead_code, l.name, l.email, l.phone_raw, l.phone10, l.source, l.campaign, l.external_id,
-            l.status, l.current_code, l.next_followup_at, l.student_set_time, l.attempts, l.last_contacted_at,
-            l.amount, l.has_guitar, l.answers, l.tags, l.version, l.created_at, l.updated_at, l.locked_until,
+            l.status, l.current_code, l.next_followup_at, l.attempts, l.last_contacted_at,
+            l.amount, l.has_guitar, l.tags, l.version, l.created_at, l.updated_at, l.locked_until,
             l.locked_by, k.name AS locked_by_name, cb.name AS callback_set_by_name, u.name AS updated_by_name,
             l.assigned_to, a.name AS assigned_to_name
      FROM leads l
@@ -208,39 +168,24 @@ export async function leadDetail(leadId: string) {
   );
   if (!lead) throw new CrmError(404, "Lead not found");
   if (!lead.locked_by_name) lead.locked_by = null;
-  const checks = await callCheckOn();
 
-  const [ixRes, callRes, links, assigns] = await Promise.all([
+  const [ixRes, callRes] = await Promise.all([
     pool.query(
-      `SELECT i.id, i.kind, i.code, i.reason, i.note, i.answers, i.next_followup_at, i.call_id, i.meta, i.created_at,
-              i.employee_id, e.name AS employee_name, t.label AS template_label
+      `SELECT i.id, i.kind, i.code, i.reason, i.note, i.next_followup_at, i.call_id, i.meta, i.created_at,
+              i.employee_id, e.name AS employee_name
        FROM lead_interactions i
        LEFT JOIN employees e ON e.id = i.employee_id
-       LEFT JOIN wati_templates t ON t.id = i.template_id
        WHERE i.lead_id = $1 ORDER BY i.created_at DESC`,
       [leadId]
     ),
     // Every recording of this number, by every rep — not scoped like /calls/search
     pool.query(
       `SELECT c.id, c.called_at, c.duration_secs, c.call_direction, c.employee_id, e.name AS employee_name,
-              c.audio_storage_key, c.keep_audio, cc.label AS check_label, cc.confidence AS check_confidence
+              c.audio_storage_key, c.keep_audio
        FROM calls c
        LEFT JOIN employees e ON e.id = c.employee_id
-       LEFT JOIN call_checks cc ON cc.call_id = c.id
        WHERE c.phone10 = $1 ORDER BY c.called_at DESC LIMIT 200`,
       [lead.phone10]
-    ),
-    getSetting<Record<string, string>>("links", {}),
-    // Every assignment change, newest first: owner assigns and D/E callbacks (meta.assigned_to)
-    pool.query(
-      `SELECT i.created_at AS at, a.name, b.name AS by_name, p.name AS previous_name
-       FROM lead_interactions i
-       LEFT JOIN employees a ON a.id = (i.meta ->> 'assigned_to')::uuid
-       LEFT JOIN employees p ON p.id = (i.meta ->> 'previous')::uuid
-       LEFT JOIN employees b ON b.id = i.employee_id
-       WHERE i.lead_id = $1 AND ((i.kind = 'system' AND i.meta ? 'assigned_to') OR i.meta ->> 'assigned_to' IS NOT NULL)
-       ORDER BY i.created_at DESC`,
-      [leadId]
     ),
   ]);
 
@@ -250,7 +195,6 @@ export async function leadDetail(leadId: string) {
     return {
       id: c.id, called_at: c.called_at, duration_secs: c.duration_secs, direction: c.call_direction,
       employee_id: c.employee_id, employee_name: c.employee_name, keep_audio: c.keep_audio,
-      check: checks && c.check_label ? { label: c.check_label, confidence: c.check_confidence } : null,
       audio_urls: audio?.audio_urls ?? null,
       audio_format: audio?.audio_format ?? null,
       audio_state: audio?.audio_urls ? "ok" : !c.audio_storage_key && new Date(c.called_at).getTime() < expiredBefore ? "expired" : "missing",
@@ -262,27 +206,12 @@ export async function leadDetail(leadId: string) {
   const timeline: Record<string, unknown>[] = ixRes.rows.map((i) => {
     const call = i.call_id ? byId.get(i.call_id) ?? null : null;
     if (call) linked.add(call.id);
-    return {
-      type: "interaction", at: i.created_at, ...i, call,
-      contradiction: call?.check ? contradicts(i.code, call.check.label) : false,
-    };
+    return { type: "interaction", at: i.created_at, ...i, call };
   });
   for (const c of calls) if (!linked.has(c.id)) timeline.push({ type: "call", at: c.called_at, call: c });
   timeline.sort((a, b) => new Date(b.at as string).getTime() - new Date(a.at as string).getTime());
 
-  const followup = lead.next_followup_at ? new Date(lead.next_followup_at) : null;
-  const istFmt = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", ...o });
-  const waVars: Record<string, string> = {
-    name: lead.name.split(/\s+/)[0] || "there",
-    amount: String(lead.amount ?? 299),
-    date: followup ? istFmt(followup, { day: "numeric", month: "short" }) : "",
-    time: followup ? istFmt(followup, { hour: "numeric", minute: "2-digit", hour12: true }) : "",
-    payment_link: links.payment_link ?? "",
-    class_link: links.class_link ?? "",
-  };
-
-  const lastCallback = ixRes.rows.find((i) => i.code === "D" || i.code === "E");
-  return { lead, timeline, assignments: assigns.rows, wa_vars: waVars, callback_note: lastCallback ? (lastCallback.note ?? lastCallback.reason) : null, server_now: new Date() };
+  return { lead, timeline, server_now: new Date() };
 }
 
 // ── Queue ──────────────────────────────────────────────────────────────────
@@ -328,7 +257,7 @@ export function leadFilters(f: Filters, values: unknown[], meId?: string): strin
 
 export const LEAD_LIST_COLS = `
   l.id, l.lead_code, l.name, l.phone10, l.source, l.campaign, l.status, l.current_code, l.attempts,
-  l.last_contacted_at, l.next_followup_at, l.created_at, l.amount, l.tags, l.student_set_time, l.has_guitar,
+  l.last_contacted_at, l.next_followup_at, l.created_at, l.amount, l.tags, l.has_guitar,
   CASE WHEN l.locked_until > NOW() THEN k.name END AS locked_by_name,
   CASE WHEN l.locked_until > NOW() THEN l.locked_by END AS locked_by,
   cb.name AS callback_set_by_name, l.assigned_to, asg.name AS assigned_to_name,
@@ -346,9 +275,7 @@ export async function queue(user: User, f: Filters, now = new Date()) {
   const values: unknown[] = [];
   const where = ["l.status IN ('new','retry','callback')", ...leadFilters(f, values, user.sub)];
   const { rows } = await pool.query(
-    `SELECT ${LEAD_LIST_COLS},
-       (SELECT coalesce(i.note, i.reason) FROM lead_interactions i
-        WHERE i.lead_id = l.id AND i.code IN ('D','E') ORDER BY i.created_at DESC LIMIT 1) AS callback_note
+    `SELECT ${LEAD_LIST_COLS}
      FROM leads l ${LEAD_LIST_JOINS} WHERE ${where.join(" AND ")}`,
     values
   );
@@ -361,18 +288,14 @@ export async function queue(user: User, f: Filters, now = new Date()) {
   }
   const counts = Object.fromEntries(Object.entries(sections).map(([k]) => [k, leads.filter((l) => bucketOf(l, now) === k).length]));
 
+  // The four tiles on the Leads page
   const { rows: [k] } = await pool.query(
     `SELECT
-       (SELECT count(*) FROM leads WHERE created_at >= ${IST_TODAY_START})::int AS new_today,
-       (SELECT count(*) FROM lead_interactions WHERE code = 'F' AND created_at >= ${IST_TODAY_START})::int AS converted_today,
-       (SELECT count(*) FROM calls WHERE employee_id = $1 AND called_at >= ${IST_TODAY_START})::int AS my_calls_today,
-       (SELECT count(*) FROM leads WHERE assigned_to = $1 AND status IN ('new','retry','callback'))::int AS my_leads,
        (SELECT count(*) FROM leads)::int AS total,
        (SELECT count(*) FROM leads WHERE status = 'new')::int AS new_leads,
        (SELECT count(*) FROM leads WHERE status IN ('retry','callback')
           AND (next_followup_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date)::int AS due_today,
-       (SELECT count(*) FROM leads WHERE status = 'converted')::int AS converted`,
-    [user.sub]
+       (SELECT count(*) FROM leads WHERE status = 'converted')::int AS converted`
   );
   return { server_now: now, counts, sections, kpis: { due_now: counts.due_now, overdue: counts.overdue, ...k } };
 }
@@ -477,46 +400,4 @@ export async function reconcile(ids: string[]): Promise<string[]> {
     [ids]
   );
   return rows.map((r) => r.x);
-}
-
-/**
- * Owner / reassign_leads: give leads to a rep (or back to the pool with null).
- * Bumps each lead's version so an open form elsewhere gets the 409 reload, and
- * logs who did it in the lead's history.
- */
-export async function assignLeads(leadIds: string[], employeeId: string | null, user: User) {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    let repName: string | null = null;
-    if (employeeId) {
-      const { rows: [e] } = await client.query("SELECT name FROM employees WHERE id = $1 AND status = 'active' AND role = 'employee'", [employeeId]);
-      if (!e) throw new CrmError(400, "Pick an active representative");
-      repName = e.name;
-    }
-    // Keep who had each lead before, so the drawer can say "previously assigned to"
-    const { rows } = await client.query(
-      `WITH old AS (SELECT id, assigned_to FROM leads WHERE id = ANY($1::uuid[]) FOR UPDATE)
-       UPDATE leads l SET assigned_to = $2, version = l.version + 1, updated_by = $3, updated_at = NOW()
-       FROM old WHERE l.id = old.id AND old.assigned_to IS DISTINCT FROM $2
-       RETURNING l.id, old.assigned_to AS previous`,
-      [leadIds, employeeId, user.sub]
-    );
-    if (rows.length) {
-      await client.query(
-        `INSERT INTO lead_interactions (lead_id, employee_id, kind, note, meta)
-         SELECT x.id, $3, 'system', $4, jsonb_build_object('assigned_to', $5::uuid, 'previous', x.previous)
-         FROM unnest($1::uuid[], $2::uuid[]) AS x(id, previous)`,
-        [rows.map((r) => r.id), rows.map((r) => r.previous), user.sub,
-         repName ? `Assigned to ${repName} by ${user.name}` : `Moved back to the shared pool by ${user.name}`, employeeId]
-      );
-    }
-    await client.query("COMMIT");
-    return { updated: rows.length, assigned_to_name: repName };
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
-  } finally {
-    client.release();
-  }
 }

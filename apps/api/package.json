@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "crm:dev": "tsc -p tsconfig.json && node -r ./dist/crmDevEnv.js dist/index.js",
-    "crm:migrate": "tsc -p tsconfig.json && cp -R src/db/migrations dist/db/ && node -r ./dist/crmDevEnv.js dist/migrate.js",
+    "crm:migrate": "tsc -p tsconfig.json && rm -rf dist/db/migrations && cp -R src/db/migrations dist/db/ && node -r ./dist/crmDevEnv.js dist/migrate.js",
     "crm:seed": "tsc -p tsconfig.json && node -r ./dist/crmDevEnv.js dist/seedCrm.js",
     "crm:reset-demo": "tsc -p tsconfig.json && node -r ./dist/crmDevEnv.js dist/seedCrm.js --reset",
     "crm:test": "tsc -p tsconfig.json && node -r ./dist/crmDevEnv.js --test dist/lib/crm/*.test.js dist/lib/retentionPlan.test.js"
