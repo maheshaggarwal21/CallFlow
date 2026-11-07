@@ -29,6 +29,7 @@ const CHIP: Record<string, [string, string]> = {
   callback: ["#f8ead2", "#8a5a12"],
   paid: ["#e5efe0", R.good],
   closed: ["#f8e3df", R.bad],
+  other: ["#e3eef6", "#2f6690"],
   unused: ["#ece7df", "#8f8577"],
 };
 

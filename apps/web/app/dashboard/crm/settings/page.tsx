@@ -61,6 +61,7 @@ function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>;
       const body = Object.fromEntries(v.map((c) => [c.code, {
         label: c.label.trim() || `Code ${c.code}`, role: c.role,
         ...(c.role === "retry" ? (c.next_day_at ? { next_day_at: c.next_day_at } : { hours: c.hours ?? 3 }) : {}),
+        ...(c.role === "other" ? { description: (c.description ?? "").trim() } : {}),
       }]));
       await api.patch("/crm/settings/values/codes", body);
       await api.patch("/crm/settings/values/retry_rules", { invalid: { never: retry?.invalid?.never !== false }, max_attempts: maxAttempts });
@@ -104,6 +105,12 @@ function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>;
                       </select>
                       {c.next_day_at ? <input type="time" aria-label={`Code ${c.code} next day time`} value={c.next_day_at} onChange={(e) => set(i, { next_day_at: e.target.value })} style={{ ...inputStyle, width: 110 }} />
                         : <><input type="number" aria-label={`Code ${c.code} hours`} min={0.25} max={168} step={0.25} value={c.hours ?? 3} onChange={(e) => set(i, { hours: Number(e.target.value) })} style={{ ...inputStyle, width: 74 }} /> h</>}
+                    </span>
+                  ) : c.role === "other" ? (
+                    <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+                      <input aria-label={`What code ${c.code} does, in your words`} placeholder="What it does, e.g. Demo class booked" maxLength={80}
+                        value={c.description ?? ""} onChange={(e) => set(i, { description: e.target.value })} style={{ ...inputStyle, width: 250 }} />
+                      <span style={{ color: R.mute, fontSize: 12 }}>Follow-up optional</span>
                     </span>
                   ) : <span style={{ color: R.mute, fontSize: 12.5 }}>{c.role === "callback" ? "Rep picks date and time" : "—"}</span>}
                   {isNew(c.code) && <button type="button" aria-label={`Remove new status ${c.code}`} onClick={() => setV(v.filter((_, j) => j !== i))}

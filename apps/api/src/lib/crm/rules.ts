@@ -6,10 +6,10 @@ import { istMidnight, istParts } from "../dateRange";
 export const CODE_RE = /^[A-Z]$/;
 export type Code = string;
 /** retry: no contact, follows up by itself · callback: talked, rep sets the time · paid: converted ·
- *  closed: no more calls · unused: not offered in the form */
-export const ROLES = ["retry", "callback", "paid", "closed", "unused"] as const;
+ *  closed: no more calls · other: the owner describes it; follow-up time optional · unused: not offered */
+export const ROLES = ["retry", "callback", "paid", "closed", "other", "unused"] as const;
 export type Role = (typeof ROLES)[number];
-export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string };
+export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string; description?: string };
 export type CodeSettings = Record<Code, CodeSetting>;
 /** The setting's own letters, A→Z. */
 export const codeLetters = (codes: CodeSettings) => Object.keys(codes).filter((c) => CODE_RE.test(c)).sort();
@@ -22,7 +22,7 @@ export const DEFAULT_CODES: CodeSettings = {
   G: { label: "Not interested", role: "closed" },
 };
 /** Lead status a code puts the lead in (before the drop limit). */
-export const STATUS_OF_ROLE: Record<Role, LeadState["status"]> = { retry: "retry", callback: "callback", paid: "converted", closed: "dnc", unused: "dnc" };
+export const STATUS_OF_ROLE: Record<Role, LeadState["status"]> = { retry: "retry", callback: "callback", paid: "converted", closed: "dnc", other: "callback", unused: "dnc" };
 /** Matched recordings of these roles are kept past the 90-day retention. */
 export const keepsAudio = (role: Role | undefined) => role === "paid" || role === "closed";
 
@@ -100,6 +100,8 @@ export function nextState(prevAttempts: number, o: OutcomeInput, rules: RetryRul
   if (c?.role === "callback") {
     return { ...base, status: "callback", next_followup_at: new Date(o.callback_at!), attempts: 0 };
   }
+  // "Other": a follow-up only if the rep set one; without it the lead rests in All leads
+  if (c?.role === "other") return { ...base, status: "callback", next_followup_at: o.callback_at ? new Date(o.callback_at) : null, attempts: 0 };
   if (c?.role === "paid") return { ...base, status: "converted", next_followup_at: null, attempts: 0, amount: o.amount ?? TRIAL_AMOUNT };
   return { ...base, status: "dnc", next_followup_at: null, attempts: 0 };
 }

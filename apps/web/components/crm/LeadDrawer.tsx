@@ -46,6 +46,7 @@ const KIND = {
   callback: { tint: "#fdf1da", ring: R.gold, text: "#8a5a12" },
   paid: { tint: "#e8f2e3", ring: R.good, text: R.good },
   closed: { tint: "#fbe7e3", ring: R.bad, text: R.bad },
+  other: { tint: "#e9f2f9", ring: "#5b8db8", text: "#2f6690" },
   unused: { tint: "#f1ede6", ring: "#c9bfb1", text: "#8f8577" },
 } as const;
 
@@ -341,6 +342,7 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
   const reminder = noFollowUp ? { at: null, live: false, note: `No follow-up needed: ${meta(code)?.label}.` }
     : drops ? { at: null, live: false, note: "This try drops the lead: no more follow-ups." }
     : draftAt ? { at: draftAt, live: true, note: "The lead blinks in Follow-up due now 15 minutes before. Saved when you press Save." }
+    : kind === "other" ? { at: null, live: false, note: "No follow-up unless you add a date and time above." }
     : savedAt ? { at: savedAt, live: l.status === "callback", note: "Already scheduled. Pick a new date and time above to change it." }
     : { at: null, live: false, note: "No follow-up set yet. Add the date and time above." };
 

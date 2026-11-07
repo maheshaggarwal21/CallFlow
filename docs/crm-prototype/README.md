@@ -47,6 +47,7 @@ What each role does (the local demo uses its own codes A–G, shown on the right
 | Talked · rep sets the follow-up | Follow-up date + time required, note ≥ 15 characters | D Call later, E Will pay later |
 | Converted (paid) | Note ≥ 15 characters; no follow-up; amount; recording kept past the 90-day cleanup | F Converted |
 | Closed · no more calls | No follow-up; recording kept past the 90-day cleanup | G Not interested |
+| Other (write what it does) | The owner types what it means; follow-up date/time optional (with one the lead comes back like a callback, without it the lead rests in All leads); no note or guitar required | — |
 | Not used | Hidden from the form | — |
 
 Plus **New** (not called yet). Leads are never dropped for unanswered calls (client, 7 Nov); the

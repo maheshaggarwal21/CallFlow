@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { groupPhone, isProbableTypo, phone10 } from "./phone";
 import { bucketOf, compareQueue, type QueueLead } from "./queue";
-import { nextState, outcomeSchema, retryAt, validateOutcome, type OutcomeInput } from "./rules";
+import { DEFAULT_CODES, nextState, outcomeSchema, retryAt, validateOutcome, type OutcomeInput } from "./rules";
 
 test("phone10 normalisation", () => {
   assert.equal(phone10("09465658112"), "9465658112");
@@ -87,4 +87,9 @@ test("next state: retry waits, drop after 6 failed attempts or an invalid number
   assert.equal(f.amount, 299);
   assert.equal(f.attempts, 0);
   assert.equal(nextState(2, base({ code: "G" }), rules, now).status, "dnc");
+  // "Other": follow-up only when the rep set one; no note or time required
+  const codes = { ...DEFAULT_CODES, X: { label: "Demo booked", role: "other" as const, description: "Free demo class booked" } };
+  assert.equal(validateOutcome(base({ code: "X" }), now, codes), null);
+  assert.deepEqual(nextState(0, base({ code: "X" }), rules, now, codes).next_followup_at, null);
+  assert.deepEqual(nextState(0, base({ code: "X", callback_at: "2026-11-07T06:00:00Z" }), rules, now, codes).next_followup_at, new Date("2026-11-07T06:00:00Z"));
 });

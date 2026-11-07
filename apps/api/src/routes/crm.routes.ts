@@ -182,7 +182,8 @@ const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const codeSetting = z.object({
   label: z.string().trim().min(1).max(40), role: z.enum(ROLES),
   hours: z.number().min(0.25).max(168).optional(), next_day_at: hhmm.optional(),
-});
+  description: z.string().trim().max(80).optional(),
+}).refine((c) => c.role !== "other" || !!c.description, "Write what an \"Other\" status does");
 const VALUE_SCHEMAS: Record<string, ZodTypeAny> = {
   retry_rules: z.object({ invalid: z.object({ never: z.boolean() }), max_attempts: z.number().int().min(0).max(50) }), // 0 = never drop
   codes: z.record(z.string().regex(CODE_RE, "Code must be one capital letter"), codeSetting)

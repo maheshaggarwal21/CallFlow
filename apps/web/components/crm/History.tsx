@@ -13,7 +13,7 @@ import { CodeChip, StatusBadge, Tag } from "./kit";
 import { Icon } from "./icons";
 
 const asCall = (c: CallInfo) => ({ ...c, audio_presigned_url: null }) as unknown as Call;
-const KIND_COLOR = { retry: "#9a8770", callback: "#b07a1c", paid: R.good, closed: R.bad, unused: "#8f8577" } as const;
+const KIND_COLOR = { retry: "#9a8770", callback: "#b07a1c", paid: R.good, closed: R.bad, other: "#2f6690", unused: "#8f8577" } as const;
 const IST = "Asia/Kolkata";
 const longDate = (d: string | Date) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric" });
 const timeOf = (d: string | Date) => new Date(d).toLocaleTimeString("en-US", { timeZone: IST, hour: "2-digit", minute: "2-digit", hour12: true });

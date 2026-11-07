@@ -6,15 +6,16 @@ export const CRM_ENABLED = process.env.NEXT_PUBLIC_CRM_ENABLED === "true";
 // are set by the owner in CRM Settings (/crm/config); the owner can add letters.
 export const CODE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 export type Code = string;
-export type Role = "retry" | "callback" | "paid" | "closed" | "unused";
-export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string };
+export type Role = "retry" | "callback" | "paid" | "closed" | "other" | "unused";
+export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string; description?: string };
 export type CodeMeta = CodeSetting & { code: Code; kind: Role; rule: string };
 export const ROLE_LABEL: Record<Role, string> = {
   retry: "No contact · follows up by itself", callback: "Talked · rep sets the follow-up",
-  paid: "Converted (paid)", closed: "Closed · no more calls", unused: "Not used",
+  paid: "Converted (paid)", closed: "Closed · no more calls", other: "Other (write what it does)", unused: "Not used",
 };
 const ruleText = (s: CodeSetting) =>
-  s.role === "retry" ? `No contact · retried ${s.next_day_at ? `next day at ${s.next_day_at}` : `after ${s.hours ?? 3} h`}` : ROLE_LABEL[s.role];
+  s.role === "retry" ? `No contact · retried ${s.next_day_at ? `next day at ${s.next_day_at}` : `after ${s.hours ?? 3} h`}`
+  : s.role === "other" ? s.description || "Other" : ROLE_LABEL[s.role];
 /** The codes in the settings, A→Z. */
 export const codeList = (codes?: Record<Code, CodeSetting>): CodeMeta[] =>
   Object.keys(codes ?? {}).sort().map((code) => {
