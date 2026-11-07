@@ -13,14 +13,15 @@ reps update statuses in the CRM (client, 7 Nov 2026).
    **Script properties** add `CRM_SECRET` = the server's `CRM_INGEST_SECRET`.
 3. Back in the editor choose `setup` → **Run** → approve the permissions. It installs the
    1-minute sync and the 00:15 reconcile.
-4. Old rows import 200 a minute (~40 min for 8,100). Watch the new **CRM Sync** column fill
+4. Old rows import in batches of 50, about 200 a minute (~40 min for 8,100). Watch the new **CRM Sync** column fill
    (`synced … (created LMS-…)`). To skip old rows instead, add the script property
    `LAST_SYNCED_ROW` = the last row number before step 3.
 
 ## Behaviour
 - Time-driven only (no onEdit/onFormSubmit). `LockService` prevents overlap; an idle
   run exits right after comparing `getLastRow()` with `LAST_SYNCED_ROW`.
-- One request per run (up to 200 rows). Each row gets `synced <time> (created LMS-…)`,
+- Batches of 50 rows back to back for up to 4 minutes per run (each request well inside
+  the 60 s fetch limit; 200 rows in one request timed out on the live server). Each row gets `synced <time> (created LMS-…)`,
   `(duplicate)`, `(reenquired …)` or `error: …` in the **CRM Sync** column.
 - The server is idempotent on the row ID (the sheet has no id column, so Timestamp +
   Contact), so a re-run never duplicates; the same phone number re-opens the existing lead

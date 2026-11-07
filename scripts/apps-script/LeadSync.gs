@@ -20,7 +20,8 @@ var CONFIG = {
   SHEET_NAME: 'Lead',
   HEALTHCHECK_URL: '',   // optional: a healthchecks.io ping URL, alerts if the sync stops silently
   ALERT_EMAIL: '',       // empty = the Google account that installed the script
-  BATCH_MAX: 200,       // rows per run; ~7 DB round trips a row must finish inside Apps Script's 60 s fetch limit
+  BATCH_MAX: 50,        // rows per request: ~7 DB round trips a row, must finish inside the 60 s fetch limit
+  RUN_MS: 4 * 60 * 1000, // a run keeps sending batches for up to 4 min (Apps Script stops a run at 6)
   SYNC_COLUMN: 'CRM Sync',
   // Sheet header → intake field (the client's "Lead" tab). It has no id column, so the row ID is
   // built from Timestamp + Contact (see rowId_); a header that isn't found is sent empty.
@@ -41,26 +42,33 @@ function setup() {
 function syncLeads() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) return;               // previous run still going
+  var started = Date.now();
   try {
     var props = PropertiesService.getScriptProperties();
     var sheet = SpreadsheetApp.getActive().getSheetByName(CONFIG.SHEET_NAME);
-    var last = sheet.getLastRow();
-    var synced = Number(props.getProperty('LAST_SYNCED_ROW') || 1); // row 1 = header
-    if (last <= synced) { ping_(); return; }     // fast exit: nothing new
+    var h = null;
+    // Small batches back to back: each request stays well inside the 60 s fetch limit, and a run
+    // stops starting new ones after RUN_MS (Apps Script allows 6 min per run)
+    while (Date.now() - started < CONFIG.RUN_MS) {
+      var last = sheet.getLastRow();
+      var synced = Number(props.getProperty('LAST_SYNCED_ROW') || 1); // row 1 = header
+      if (last <= synced) break;                 // fast exit: nothing new
 
-    var end = Math.min(last, synced + CONFIG.BATCH_MAX);
-    var h = headers_(sheet);
-    var rows = sheet.getRange(synced + 1, 1, end - synced, h.width).getValues();
-    var results = post_('/leads/ingest', rows.map(function (r) { return toLead_(r, h); }));
+      var end = Math.min(last, synced + CONFIG.BATCH_MAX);
+      h = h || headers_(sheet);
+      var rows = sheet.getRange(synced + 1, 1, end - synced, h.width).getValues();
+      var results = post_('/leads/ingest', rows.map(function (r) { return toLead_(r, h); }));
 
-    var stamp = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'dd MMM HH:mm');
-    var out = results.map(function (r) {
-      return [r.result === 'error' || r.result === 'invalid'
-        ? 'error: ' + (r.error || r.result)
-        : 'synced ' + stamp + ' (' + r.result + (r.lead_code ? ' ' + r.lead_code : '') + ')'];
-    });
-    sheet.getRange(synced + 1, h.sync, out.length, 1).setValues(out);
-    props.setProperty('LAST_SYNCED_ROW', String(end));
+      var stamp = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'dd MMM HH:mm');
+      var out = results.map(function (r) {
+        return [r.result === 'error' || r.result === 'invalid'
+          ? 'error: ' + (r.error || r.result)
+          : 'synced ' + stamp + ' (' + r.result + (r.lead_code ? ' ' + r.lead_code : '') + ')'];
+      });
+      sheet.getRange(synced + 1, h.sync, out.length, 1).setValues(out);
+      props.setProperty('LAST_SYNCED_ROW', String(end));
+      SpreadsheetApp.flush();                    // show progress in the sheet as it goes
+    }
     ping_();
   } catch (e) {
     notify_('Lead sync failed', e);
