@@ -26,7 +26,8 @@ export const STATUS_OF_ROLE: Record<Role, LeadState["status"]> = { retry: "retry
 /** Matched recordings of these roles are kept past the 90-day retention. */
 export const keepsAudio = (role: Role | undefined) => role === "paid" || role === "closed";
 
-export const PERMISSIONS = ["export_leads"] as const;
+/** Per-employee CRM access, set by the owner (Team → Edit, or CRM Settings). The owner has all. */
+export const PERMISSIONS = ["crm_leads", "crm_settings", "export_leads"] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
 export const TRIAL_AMOUNT = 299; // the only product

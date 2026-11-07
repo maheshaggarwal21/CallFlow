@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { mutate } from "swr";
+import useSWR, { mutate } from "swr";
 import { C } from "@/lib/colors";
-import { api } from "@/lib/api";
+import { api, fetcher } from "@/lib/api";
+import { CRM_ENABLED, PERMISSIONS, PERMISSION_LABELS } from "@/lib/crm";
 import type { Employee } from "@callflow/shared-types";
 
 interface Props {
@@ -39,6 +40,13 @@ export default function EmployeeModal({ employee, onClose }: Props) {
   const [saving,         setSaving]         = useState(false);
   const [error,          setError]          = useState("");
 
+  // CRM access (owner sets it here or in CRM Settings). Owners have everything, so only employees get boxes.
+  const crmOn = CRM_ENABLED && (isEdit ? employee!.role === "employee" : role === "employee");
+  const { data: crmTeam } = useSWR<{ team: { id: string; permissions: string[] }[] | null }>(crmOn && isEdit ? "/crm/settings" : null, fetcher);
+  const [perms, setPerms] = useState<string[] | null>(isEdit ? null : ["crm_leads"]);
+  const shownPerms = perms ?? crmTeam?.team?.find((t) => t.id === employee?.id)?.permissions ?? null;
+  const togglePerm = (p: string) => setPerms((shownPerms ?? []).includes(p) ? (shownPerms ?? []).filter((x) => x !== p) : [...(shownPerms ?? []), p]);
+
   async function handleSave() {
     if (!name.trim() || !email.trim()) {
       setError("Name and email are required.");
@@ -69,10 +77,15 @@ export default function EmployeeModal({ employee, onClose }: Props) {
         payload.password = newPassword.trim();
       }
 
+      let id = employee?.id;
       if (isEdit) {
         await api.patch(`/employees/${employee.id}`, payload);
       } else {
-        await api.post("/employees", payload);
+        id = (await api.post<{ id: string }>("/employees", payload)).id;
+      }
+      if (crmOn && perms && id) {
+        await api.put(`/crm/settings/team/${id}`, { permissions: perms });
+        await mutate("/crm/settings");
       }
       await mutate("/employees");
       onClose();
@@ -170,6 +183,23 @@ export default function EmployeeModal({ employee, onClose }: Props) {
                 <option value="employee">Employee</option>
                 <option value="owner">Owner</option>
               </select>
+            </div>
+          )}
+
+          {crmOn && (
+            <div>
+              <label style={fieldLabel}>CRM access</label>
+              {shownPerms === null ? <p style={{ margin: 0, fontSize: 13, color: C.muted }}>Loading…</p> : (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {PERMISSIONS.map((p) => (
+                    <label key={p} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 13, color: C.text, cursor: "pointer" }}>
+                      <input type="checkbox" checked={shownPerms.includes(p)} onChange={() => togglePerm(p)}
+                        style={{ width: 16, height: 16, accentColor: C.orange, cursor: "pointer" }} />
+                      {PERMISSION_LABELS[p]}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

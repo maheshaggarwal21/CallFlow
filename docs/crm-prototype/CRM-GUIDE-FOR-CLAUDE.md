@@ -46,7 +46,7 @@ What the client approved (after asking to "keep it simple"):
   date/time**, **Representative**, **Amount**, **Notes**, the **reminder banner** (siren) and **Save**.
   A vertical **History** handle on the right opens the follow-up snapshot and the call log with every
   recording of that number.
-- **CRM Settings** (owner) — Statuses: the sheet's letter codes, each with a name and a role, + Add status; who may export leads.
+- **CRM Settings** (owner) — Statuses: the sheet's letter codes, each with a name and a role, + Add status; who can use the CRM (owner only).
 
 Removed on the client's request: CRM Reports, bulk assign / My leads, WhatsApp templates (WATI),
 reasons and note chips, extra questions, the daily paid-trials email, short-call auto-checks, lead
@@ -178,7 +178,10 @@ Rule: **same phone10, same rep (`calls.employee_id` from the KoreCall line), cal
 - **Statuses** (owner): name and role of each code, + Add status (saves merge, so a code is never removed, only set to Not used), the wait for retry codes (hours, or "next day at"),
   and "Stop calling a lead" (never, the default, or after N no-contact saves). Saving a new role moves leads on that code to the matching status
   (`reapplyCodeRoles`).
-- **Who can export leads** (owner ticks reps). Checked against the database on every request.
+- **Who can use the CRM** (owner only): per active employee, `crm_leads` (Leads tab and every lead route), `crm_settings`
+  (CRM Settings: Statuses), `export_leads`. Same checkboxes in Team → Edit / Add Employee (new staff get Leads ticked).
+  Checked against the database on every request (`requirePermission`); granting stays owner-only, so a settings
+  holder can't give themselves more. Migration 014 gave `crm_leads` to the employees active on 7 Nov.
 
 ## 6. Database
 
@@ -188,7 +191,7 @@ Migrations `apps/api/src/db/migrations/011_crm_1_core.sql` and `011_crm_2_calls.
 |---|---|
 | `leads` | One per person: name, email, phone_raw, **phone10 (unique)**, source/campaign (stored, not shown), sheet id, status, code, next_followup_at, attempts, last_contacted_at, amount, **has_guitar**, **assigned_to**, callback_set_by, tags, lock (`locked_by`, `locked_until`), **version**, `updated_by`. Codes look like `LMS-105901`. |
 | `lead_interactions` | History: one row per save (`call_outcome`), re-enquiry or system note; `call_id` = linked recording (unique). |
-| `employee_permissions` | Only `export_leads`. |
+| `employee_permissions` | `crm_leads`, `crm_settings`, `export_leads`. |
 | `crm_settings` | `codes` (letter → label, role, wait) and `retry_rules` (drop limit, 0 = never). |
 | `crm_match_errors` | Errors caught inside the matching trigger. |
 | `calls.phone10` | Generated from `caller_phone`. **Adding it rewrites and locks `calls`** — run after hours. |

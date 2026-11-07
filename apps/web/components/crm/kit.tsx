@@ -61,6 +61,18 @@ export function StatusBadge({ l }: { l: { status: string; current_code: Code | n
   );
 }
 
+/** Shown instead of a CRM page the employee has no access to (the owner grants it in Team → Edit). */
+export function NoAccess({ what }: { what: string }) {
+  return (
+    <div style={{ padding: "8px 4px", color: R.ink }}>
+      <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "18px 20px", maxWidth: 560 }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>No access to {what}</h3>
+        <p style={{ margin: "6px 0 0", fontSize: 13, color: R.mute }}>Ask the owner to give you access in Team → Edit.</p>
+      </section>
+    </div>
+  );
+}
+
 export function Tag({ children, tone = "neu", title }: { children: ReactNode; tone?: "neu" | "ok" | "bad" | "gold"; title?: string }) {
   const c = { neu: ["#efe6d8", R.mute], ok: ["#e5efe0", R.good], bad: ["#f8e3df", R.bad], gold: ["#f8ead2", "#8a5a12"] }[tone];
   return <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, padding: "2px 9px", borderRadius: 999, background: c[0], color: c[1], whiteSpace: "nowrap" }}>{children}</span>;

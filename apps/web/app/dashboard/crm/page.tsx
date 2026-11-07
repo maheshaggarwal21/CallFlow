@@ -10,7 +10,7 @@ import { type CrmConfig, type LeadRow, type QueueResponse } from "@/lib/crm";
 import { useAuth } from "@/hooks/useAuth";
 import { useCrmMe } from "@/hooks/useCrmMe";
 import { useCrmCodes } from "@/hooks/useCrmCodes";
-import { BandTile, Btn, CRM_CSS, HeaderBand, SectionTitle, inputStyle } from "@/components/crm/kit";
+import { BandTile, Btn, CRM_CSS, HeaderBand, NoAccess, SectionTitle, inputStyle } from "@/components/crm/kit";
 import LeadTable, { type SortState } from "@/components/crm/LeadTable";
 import LeadDrawer from "@/components/crm/LeadDrawer";
 import { Icon } from "@/components/crm/icons";
@@ -32,6 +32,13 @@ function qs(f: Filters, extra: Record<string, string | number> = {}) {
 }
 
 export default function LeadsPage() {
+  const { me, can } = useCrmMe();
+  if (!me) return <p style={{ color: R.mute, padding: 8 }}>Loading…</p>;
+  if (!can("crm_leads")) return <NoAccess what="the Leads tab" />;
+  return <LeadsBoard />;
+}
+
+function LeadsBoard() {
   const { isOwner, id: meId } = useAuth();
   const { can } = useCrmMe();
   const codes = useCrmCodes();

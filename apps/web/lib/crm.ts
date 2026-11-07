@@ -26,9 +26,11 @@ export const MIN_NOTE = 15;
 /** Same window as the server: a follow-up is "due" 15 min either side of its time. */
 export const DUE_WINDOW_MS = 15 * 60_000;
 
+/** Per-employee CRM access (the owner has all), set in Team → Edit or CRM Settings. */
 export const PERMISSION_LABELS: Record<string, string> = {
-  export_leads: "Export leads",
+  crm_leads: "Leads tab", crm_settings: "CRM Settings tab", export_leads: "Export leads",
 };
+export const PERMISSIONS = Object.keys(PERMISSION_LABELS);
 
 export const STATUS_LABEL: Record<string, string> = {
   new: "New", retry: "Retry", callback: "Callback", converted: "Converted", dnc: "Do not call", dropped: "Dropped",

@@ -54,6 +54,9 @@ router.post("/leads/reconcile", requireIngestSecret, async (req, res) => {
 // ── Everything else needs a login ───────────────────────────────────────────
 
 router.use(requireAuth);
+// The Leads tab and everything on it; CRM Settings; export has its own permission
+const leadsAccess = requirePermission("crm_leads");
+const settingsAccess = requirePermission("crm_settings");
 
 router.get("/me", async (req, res) => {
   return res.json({ permissions: await permissionsOf(user(req)), is_owner: user(req).role === "owner" });
@@ -68,7 +71,7 @@ router.get("/config", async (_req, res) => {
   return res.json({ retry_rules: retry, codes, reps: reps.rows });
 });
 
-router.get("/queue", async (req, res) => {
+router.get("/queue", leadsAccess, async (req, res) => {
   return res.json(await queue(user(req), parse(queueFilterSchema, req.query)));
 });
 
@@ -83,7 +86,7 @@ const listSchema = queueFilterSchema.extend({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-router.get("/leads", async (req, res) => {
+router.get("/leads", leadsAccess, async (req, res) => {
   const f = parse(listSchema, req.query);
   const values: unknown[] = [];
   const where = leadFilters(f, values, user(req).sub);
@@ -122,25 +125,25 @@ router.get("/leads/export.csv", requirePermission("export_leads"), async (req, r
   return res.send([cols.join(","), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(","))].join("\n"));
 });
 
-router.get("/leads/:id", async (req, res) => {
+router.get("/leads/:id", leadsAccess, async (req, res) => {
   return res.json(await leadDetail(parse(uuid, req.params.id)));
 });
 
-router.post("/leads/:id/lock", async (req, res) => {
+router.post("/leads/:id/lock", leadsAccess, async (req, res) => {
   return res.json(await claimLock(parse(uuid, req.params.id), user(req).sub));
 });
 
-router.delete("/leads/:id/lock", async (req, res) => {
+router.delete("/leads/:id/lock", leadsAccess, async (req, res) => {
   await releaseLock(parse(uuid, req.params.id), user(req).sub);
   return res.status(204).end();
 });
 
-router.post("/leads/:id/outcome", async (req, res) => {
+router.post("/leads/:id/outcome", leadsAccess, async (req, res) => {
   return res.json(await saveOutcome(parse(uuid, req.params.id), user(req), parse(outcomeSchema, req.body)));
 });
 
 /** Playback for one recording of a LEAD's number (any rep), e.g. the queue row's play button. */
-router.get("/calls/:id/audio", async (req, res) => {
+router.get("/calls/:id/audio", leadsAccess, async (req, res) => {
   const id = parse(uuid, req.params.id);
   const { rows: [c] } = await pool.query(
     "SELECT c.audio_storage_key FROM calls c JOIN leads l ON l.phone10 = c.phone10 WHERE c.id = $1",
@@ -160,7 +163,7 @@ router.post("/calls/:id/keep", requireOwner, async (req, res) => {
 
 // ── Settings ───────────────────────────────────────────────────────────────
 
-router.get("/settings", async (req, res) => {
+router.get("/settings", settingsAccess, async (req, res) => {
   const u = user(req);
   const [s, team] = await Promise.all([
     pool.query("SELECT key, value, updated_at FROM crm_settings"),
@@ -190,7 +193,7 @@ const VALUE_SCHEMAS: Record<string, ZodTypeAny> = {
     .refine((v) => Object.keys(v).length >= 1, "At least one status"),
 };
 
-router.patch("/settings/values/:key", requireOwner, async (req, res) => {
+router.patch("/settings/values/:key", settingsAccess, async (req, res) => {
   const schema = VALUE_SCHEMAS[req.params.key];
   if (!schema) throw new CrmError(404, "Unknown setting");
   let value = parse(schema, req.body);
@@ -243,7 +246,7 @@ router.put("/settings/team/:employeeId", requireOwner, async (req, res) => {
 const FIRST = ["Aarav", "Diya", "Kabir", "Meera", "Rohan", "Saanvi", "Vihaan", "Anaya", "Ishaan", "Tara"];
 const LAST = ["Sharma", "Verma", "Iyer", "Nair", "Gill", "Kapoor", "Joshi", "Bose"];
 // Checked per request: at import time .env may not be loaded yet
-router.post("/dev/simulate-lead", async (_req, res) => {
+router.post("/dev/simulate-lead", leadsAccess, async (_req, res) => {
   if (process.env.NODE_ENV === "production") return res.status(404).json({ error: "Not found" });
   const name = `${FIRST[randomInt(FIRST.length)]} ${LAST[randomInt(LAST.length)]}`;
   const phone = `90000 1${String(randomInt(10000)).padStart(4, "0")}`; // clearly fake

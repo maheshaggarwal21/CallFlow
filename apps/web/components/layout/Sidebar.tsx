@@ -9,11 +9,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
 import type { EmployeeName } from "@callflow/shared-types";
 import { CRM_ENABLED } from "@/lib/crm";
+import { useCrmMe } from "@/hooks/useCrmMe";
 
 export default function Sidebar() {
   const router   = useRouter();
   const pathname = usePathname();
   const { name, role, color_index, isOwner } = useAuth();
+  const crm = useCrmMe();
   const { syncLabel, isLive } = useSystemStatus();
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [empOpen, setEmpOpen]       = useState(true);
@@ -127,11 +129,11 @@ export default function Sidebar() {
       <nav style={{ flex: 1, padding: "12px 12px", overflowY: "auto" }}>
 
 
-            {CRM_ENABLED && (
+            {CRM_ENABLED && (crm.can("crm_leads") || crm.can("crm_settings")) && (
               <>
                 <SectionLabel label="CRM" />
-                <NavBtn id="crm-leads" label="Leads" path="/dashboard/crm" icon="☰" exact />
-                <NavBtn id="crm-settings" label="CRM Settings" path="/dashboard/crm/settings" icon="⚙" />
+                {crm.can("crm_leads") && <NavBtn id="crm-leads" label="Leads" path="/dashboard/crm" icon="☰" exact />}
+                {crm.can("crm_settings") && <NavBtn id="crm-settings" label="CRM Settings" path="/dashboard/crm/settings" icon="⚙" />}
               </>
             )}
 

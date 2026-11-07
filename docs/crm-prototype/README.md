@@ -9,7 +9,8 @@ request (7 Nov 2026, "keep it simple") to two pages:
   codes in a coloured dropdown), Guitar, next follow-up date/time, representative, amount, notes,
   a reminder banner, Save. A side handle opens the follow-up snapshot and the call log with recordings.
 - **CRM Settings** (owner): **Statuses** (the sheet's letter codes: name and role of each, + Add status, follow-up wait,
-  drop limit) and who may export leads.
+  drop limit) and **who can use the CRM**: per employee, Leads tab / CRM Settings tab / Export leads,
+  also set in Team → Edit. The owner has everything; only the owner hands out access.
 
 Leads come from the Meta lead Google Sheet through `scripts/apps-script/LeadSync.gs`. Reps dial on
 the KoreCall landline; the recording reaches CallFlow over FTP as before and is linked to the saved
@@ -96,7 +97,7 @@ cd ../web && npx next dev   # web on :3000
 ```
 
 Logins (password `Demo@1234`): owner `owner@crm-demo.local`; reps `neha@ priya@ ritika@ anjali@ sneha@
-pooja@ simran@crm-demo.local`. Neha may export leads. The seed puts one callback 10 minutes after
+pooja@ simran@crm-demo.local`. Every demo rep has the Leads tab; Neha may also export. The seed puts one callback 10 minutes after
 *now*, so reset right before showing it. Reset deletes only demo rows (staff `@crm-demo.local`, leads
 `source='demo'`, calls `crmdemo/…`).
 

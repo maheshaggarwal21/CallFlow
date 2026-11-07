@@ -5,30 +5,29 @@ import { useEffect, useState } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { Avatar, Panel, R } from "@/components/report/kit";
 import { api, fetcher } from "@/lib/api";
-import { CODE_LETTERS, PERMISSION_LABELS, ROLE_LABEL, codeList, type Code, type CodeMeta, type CodeSetting, type Role } from "@/lib/crm";
+import { CODE_LETTERS, PERMISSIONS, PERMISSION_LABELS, ROLE_LABEL, codeList, type Code, type CodeMeta, type CodeSetting, type Role } from "@/lib/crm";
 import { useCrmMe } from "@/hooks/useCrmMe";
-import { Btn, CRM_CSS, HeaderBand, inputStyle, tdStyle, thStyle } from "@/components/crm/kit";
+import { Btn, CRM_CSS, HeaderBand, NoAccess, inputStyle, tdStyle, thStyle } from "@/components/crm/kit";
 
 type Settings = {
   values: Record<string, any>;
   team: { id: string; name: string; email: string; employee_code: number; permissions: string[] }[] | null;
 };
-/** The only permission still used by the simplified CRM. */
-const SHOWN_PERMISSIONS = ["export_leads"];
-
 export default function CrmSettingsPage() {
-  const { data, error, mutate } = useSWR<Settings>("/crm/settings", fetcher);
-  const { me } = useCrmMe();
+  const { me, can } = useCrmMe();
+  const allowed = !!me && can("crm_settings");
+  const { data, error, mutate } = useSWR<Settings>(allowed ? "/crm/settings" : null, fetcher);
+  if (me && !allowed) return <NoAccess what="CRM Settings" />;
 
   return (
     <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gap: 14 }}>
       <style>{CRM_CSS}</style>
-      <HeaderBand eyebrow="CRM" title="CRM Settings" sub="Statuses and who can export leads" />
+      <HeaderBand eyebrow="CRM" title="CRM Settings" sub="Statuses and who can use the CRM" />
       {error ? <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p> : !data || !me ? <p style={{ color: R.mute }}>Loading…</p>
-        : !me.is_owner ? <Panel title="Owner only"><p style={{ margin: 0, color: R.mute, fontSize: 13 }}>Only the owner can change CRM settings.</p></Panel>
         : <>
           <Statuses codes={data.values.codes} retry={data.values.retry_rules} onSaved={() => mutate()} />
-          <TeamPermissions team={data.team ?? []} all={SHOWN_PERMISSIONS} onSaved={() => mutate()} />
+          {/* Only the owner hands out access, so nobody can grant themselves more */}
+          {me.is_owner && <TeamPermissions team={data.team ?? []} all={PERMISSIONS} onSaved={() => mutate()} />}
         </>}
     </div>
   );
@@ -148,7 +147,7 @@ function TeamPermissions({ team, all, onSaved }: { team: NonNullable<Settings["t
     }
   };
   return (
-    <Panel title="Who can export leads" sub="The owner always can. Applies on the rep's next click.">
+    <Panel title="Who can use the CRM" sub="Every active employee. The owner always has everything. Also editable in Team → Edit. Applies on the employee's next click.">
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
           <thead><tr><th style={thStyle}>Rep</th>{all.map((p) => <th key={p} style={{ ...thStyle, textAlign: "center", whiteSpace: "normal" }}>{PERMISSION_LABELS[p] ?? p}</th>)}</tr></thead>

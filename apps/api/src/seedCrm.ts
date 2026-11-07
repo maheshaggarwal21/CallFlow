@@ -83,6 +83,8 @@ async function people() {
     );
     reps.push({ id: e.id, name, line });
   }
+  // Every demo rep works leads; Neha may also export
+  for (const r of reps) await pool.query(`INSERT INTO employee_permissions (employee_id, permission) VALUES ($1, 'crm_leads')`, [r.id]);
   await pool.query(`INSERT INTO employee_permissions (employee_id, permission) VALUES ($1, 'export_leads')`, [reps[0].id]);
   return { owner: owner.id as string, reps };
 }
