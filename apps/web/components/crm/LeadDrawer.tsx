@@ -350,9 +350,14 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
         <div className="lf-2" style={{ alignItems: "end" }}>
           <div>{lbl("Name", false)}<div style={box}><Icon name="user" size={15} style={{ color: R.mute }} />{l.name || "—"}</div></div>
           <div>
-            {lbl("Contact", false)}
+            {lbl("Email", false)}
+            {/* From the lead sheet's email column; the number is already in the box at the top */}
             <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ ...box, flex: 1, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}><Icon name="phone" size={15} style={{ color: R.mute }} />{groupPhone(l.phone10)}</div>
+              <div style={{ ...box, flex: 1, minWidth: 0 }} title={l.email ?? undefined}>
+                <Icon name="mail" size={15} style={{ color: R.mute }} />
+                {l.email ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.email}</span>
+                  : <span style={{ color: "#a8977f" }}>Not in the sheet</span>}
+              </div>
               <a href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer" className="crm-btn" title="Chat on WhatsApp"
                 style={{ display: "inline-flex", gap: 6, alignItems: "center", background: "#25D366", color: "#fff", borderRadius: 10, padding: "0 14px", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
                 <WhatsAppIcon size={16} />WhatsApp</a>
