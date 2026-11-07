@@ -129,7 +129,8 @@ it fails if any step fails. Playwright lives in `$CRM_VENV/pw` (`npm i playwrigh
 - The Representative chosen in the form is saved on every status; leads stay visible to every rep.
 
 ## Not done / limits
-- `LeadSync.gs` is written and its server side tested, but not installed in a real sheet.
+- `LeadSync.gs` is installed in the client's sheet (8 Nov 2026). Its logic is covered offline by
+  `node scripts/apps-script/LeadSync.test.mjs` (fake sheet, server and clock); see `scripts/apps-script/README.md`.
 - Laptop widths (1280–1440 px) are tuned; phones are not.
 - Dropped leads cannot be revived from the screen (open the lead and save a new status instead).
 

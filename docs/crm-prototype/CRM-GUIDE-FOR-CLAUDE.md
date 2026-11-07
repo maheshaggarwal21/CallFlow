@@ -118,8 +118,11 @@ The CRM:
 
 ### 5.1 A lead arrives
 1. Meta writes the lead into the Google Sheet (existing).
-2. `LeadSync.gs` runs every minute, sends new rows (id, created time, name, phone, **email**,
-   campaign, platform) to `POST /api/v1/crm/leads/ingest` with the `X-CRM-Secret` header.
+2. `LeadSync.gs` runs every minute (fixed pace; no self-throttling), sends new rows (row ID = Timestamp +
+   Contact, name, phone, **email**, status, rep, guitar, amount) in batches of 50 to
+   `POST /api/v1/crm/leads/ingest` with the `X-CRM-Secret` header. Row errors go to a retry list (by ID,
+   5 tries); an hourly sweep re-sends rows with a blank CRM Sync cell; a nightly job reconciles
+   yesterday and emails `OK n / n` with run-time totals. Details: `scripts/apps-script/README.md`.
 3. The server checks the secret (constant-time; 503 if not configured), works out `phone10`, then:
    - same sheet id seen before → **duplicate**, nothing changes (safe to re-send);
    - phone already a lead → **re-enquired**: back to New with a tag (a Converted lead only gets the tag);
