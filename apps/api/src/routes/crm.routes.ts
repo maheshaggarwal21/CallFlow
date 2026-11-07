@@ -115,20 +115,41 @@ const csvCell = (v: unknown) => {
   return `"${s.replace(/"/g, '""')}"`;
 };
 
+// Opens straight in Excel: UTF-8 marker (names in other scripts stay readable), IST dates as
+// dd/mm/yyyy hh:mm, the status as the CRM shows it, plain headers.
+// One shared formatter: building one per date (toLocaleString) cost ~0.5 s on 8k leads
+const IST_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+});
+const istCsv = (d: unknown) => (d ? IST_FMT.format(new Date(d as string)).replace(",", "") : "");
+const STATE_LABEL: Record<string, string> = { new: "New", dropped: "Dropped" };
+
 router.get("/leads/export.csv", requirePermission("export_leads"), async (req, res) => {
   const f = parse(listSchema, req.query);
   const values: unknown[] = [];
   const where = leadFilters(f, values, user(req).sub);
-  const { rows } = await pool.query(
-    `SELECT l.lead_code, l.name, l.phone10, l.email, l.status, l.current_code, l.attempts, l.has_guitar,
-            l.last_contacted_at, l.next_followup_at, l.amount, l.tags, l.created_at, a.name AS assigned_to
-     FROM leads l LEFT JOIN employees a ON a.id = l.assigned_to ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-     ORDER BY ${SORTS[f.sort]} ${f.dir} NULLS LAST LIMIT 50000`,
-    values
-  );
-  const cols = ["lead_code", "name", "phone10", "email", "status", "current_code", "assigned_to", "has_guitar", "attempts", "last_contacted_at", "next_followup_at", "amount", "tags", "created_at"];
-  res.type("text/csv").set("Content-Disposition", `attachment; filename="leads.csv"`);
-  return res.send([cols.join(","), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(","))].join("\n"));
+  const [{ rows }, codes] = await Promise.all([
+    pool.query(
+      `SELECT l.lead_code, l.name, l.phone10, l.email, l.status, l.current_code, l.attempts, l.has_guitar,
+              l.last_contacted_at, l.next_followup_at, l.amount, l.tags, l.created_at, a.name AS assigned_to
+       FROM leads l LEFT JOIN employees a ON a.id = l.assigned_to ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+       ORDER BY ${SORTS[f.sort]} ${f.dir} NULLS LAST, l.created_at DESC, l.id LIMIT 50000`,
+      values
+    ),
+    getCodes(),
+  ]);
+  const status = (r: { status: string; current_code: string | null }) =>
+    STATE_LABEL[r.status] ?? (r.current_code ? `${r.current_code} · ${codes[r.current_code]?.label ?? `Code ${r.current_code}`}` : r.status);
+  const cols: [string, (r: Record<string, any>) => unknown][] = [
+    ["Lead code", (r) => r.lead_code], ["Received (IST)", (r) => istCsv(r.created_at)], ["Name", (r) => r.name],
+    ["Phone", (r) => r.phone10], ["Email", (r) => r.email], ["Status", (r) => status(r as never)],
+    ["Assigned to", (r) => r.assigned_to], ["Guitar", (r) => (r.has_guitar == null ? "" : r.has_guitar ? "Yes" : "No")],
+    ["Amount", (r) => (r.amount == null ? "" : Number(r.amount))], ["Attempts", (r) => r.attempts],
+    ["Last contacted (IST)", (r) => istCsv(r.last_contacted_at)], ["Next follow-up (IST)", (r) => istCsv(r.next_followup_at)],
+    ["Tags", (r) => r.tags],
+  ];
+  res.type("text/csv; charset=utf-8").set("Content-Disposition", `attachment; filename="leads.csv"`);
+  return res.send("\uFEFF" + [cols.map(([h]) => csvCell(h)).join(","), ...rows.map((r) => cols.map(([, get]) => csvCell(get(r))).join(","))].join("\r\n"));
 });
 
 router.get("/leads/:id", leadsAccess, async (req, res) => {
