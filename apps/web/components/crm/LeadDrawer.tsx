@@ -6,7 +6,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import useSWR from "swr";
 import { R } from "@/components/report/kit";
 import { API_BASE, api, fetcher } from "@/lib/api";
-import { CODES, MIN_NOTE, groupPhone, statusLabel, type Code, type CrmConfig, type LeadDetail } from "@/lib/crm";
+import { MIN_NOTE, groupPhone, type Code, type CodeMeta, type CrmConfig, type LeadDetail } from "@/lib/crm";
+import { useCrmCodes } from "@/hooks/useCrmCodes";
 import { useAuth } from "@/hooks/useAuth";
 import { WhatsAppIcon } from "@/components/ui/WABtn";
 import { Btn, CodeChip, Modal, inputStyle, labelStyle } from "./kit";
@@ -45,6 +46,7 @@ const KIND = {
   callback: { tint: "#fdf1da", ring: R.gold, text: "#8a5a12" },
   paid: { tint: "#e8f2e3", ring: R.good, text: R.good },
   closed: { tint: "#fbe7e3", ring: R.bad, text: R.bad },
+  unused: { tint: "#f1ede6", ring: "#c9bfb1", text: "#8f8577" },
 } as const;
 
 const received = (d: string) => new Date(d).toLocaleString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
@@ -174,9 +176,8 @@ function SectionLabel({ icon, children }: { icon: Parameters<typeof Icon>[0]["na
 }
 
 /** The automatic follow-up for "no contact" outcomes, using the same retry rules as the server. */
-function autoRetry(code: Code, attempts: number, rules: CrmConfig["retry_rules"]): string | null {
-  if (attempts + 1 >= (rules.max_attempts ?? 6)) return null; // this try drops the lead
-  const rule = rules[code as "A" | "B" | "C"] ?? { hours: 3 };
+function autoRetry(rule: CodeMeta | undefined, attempts: number, rules: CrmConfig["retry_rules"]): string | null {
+  if (!rule || attempts + 1 >= (rules.max_attempts ?? 6)) return null; // this try drops the lead
   if (rule.next_day_at) {
     const day = new Date(Date.now() + 86_400_000).toLocaleDateString("en-CA", { timeZone: IST });
     return new Date(`${day}T${rule.next_day_at}:00+05:30`).toISOString();
@@ -188,7 +189,8 @@ function autoRetry(code: Code, attempts: number, rules: CrmConfig["retry_rules"]
 function StatusPicker({ value, onChange }: { value: Code | ""; onChange: (c: Code) => void }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
-  const cur = CODES.find((c) => c.code === value);
+  const { inUse, meta } = useCrmCodes();
+  const cur = meta(value);
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
@@ -217,7 +219,7 @@ function StatusPicker({ value, onChange }: { value: Code | ""; onChange: (c: Cod
       {open && (
         <div role="listbox" aria-label="Status" style={{ position: "absolute", zIndex: 5, top: "calc(100% + 6px)", left: 0, right: 0, background: R.card,
           border: `1px solid ${R.line}`, borderRadius: 12, boxShadow: "0 18px 40px -18px rgba(43,33,24,.45)", padding: 6, display: "grid", gap: 2 }}>
-          {CODES.map((c) => {
+          {inUse.map((c) => {
             const kk = KIND[c.kind], on = c.code === value;
             return (
               <button key={c.code} type="button" role="option" aria-selected={on} className="lf-opt" onClick={() => { onChange(c.code); setOpen(false); }}
@@ -288,20 +290,21 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const kind = CODES.find((c) => c.code === code)?.kind;
+  const { meta } = useCrmCodes();
+  const kind = meta(code)?.kind;
   const talked = kind === "callback" || kind === "paid" || kind === "closed";
   const needsNote = kind === "callback" || kind === "paid";
   const noFollowUp = kind === "paid" || kind === "closed";
-  const drops = kind === "retry" && !autoRetry(code as Code, l.attempts, cfg.retry_rules);
+  const drops = kind === "retry" && !autoRetry(meta(code), l.attempts, cfg.retry_rules);
   const dateOff = noFollowUp || drops;
 
   const pickStatus = (c: Code) => {
     setCode(c);
     setErr("");
-    const k = CODES.find((x) => x.code === c)?.kind;
+    const k = meta(c)?.kind;
     if (k === "paid" || k === "closed") { setDate(""); setTime(""); return; }
     // "No contact" outcomes pre-fill the automatic retry time unless the rep already chose one
-    const auto = k === "retry" && !(date && time) ? autoRetry(c, l.attempts, cfg.retry_rules) : null;
+    const auto = k === "retry" && !(date && time) ? autoRetry(meta(c), l.attempts, cfg.retry_rules) : null;
     if (auto) { const p = istParts(auto); setDate(p.date); setTime(p.time); }
   };
 
@@ -322,7 +325,7 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
         assigned_to: repId,
         has_guitar: guitar ? guitar === "Yes" : null,
       });
-      onSaved(`${l.name || "Lead"} saved as ${code} · ${statusLabel({ status: "x", current_code: code })}`);
+      onSaved(`${l.name || "Lead"} saved as ${code} · ${meta(code)?.label}`);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -334,7 +337,7 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
   const repName = cfg.reps.find((r) => r.id === repId)?.name ?? null;
   const draftAt = !dateOff && date && time ? new Date(`${date}T${time}:00+05:30`).toISOString() : null;
   const savedAt = ["retry", "callback"].includes(l.status) ? l.next_followup_at : null;
-  const reminder = noFollowUp ? { at: null, live: false, note: `No follow-up needed: ${statusLabel({ status: "x", current_code: code as Code })}.` }
+  const reminder = noFollowUp ? { at: null, live: false, note: `No follow-up needed: ${meta(code)?.label}.` }
     : drops ? { at: null, live: false, note: "This try drops the lead: no more follow-ups." }
     : draftAt ? { at: draftAt, live: true, note: "The lead blinks in Follow-up due now 15 minutes before. Saved when you press Save." }
     : savedAt ? { at: savedAt, live: l.status === "callback", note: "Already scheduled. Pick a new date and time above to change it." }

@@ -5,10 +5,10 @@ import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requireOwner } from "../middleware/requireOwner";
 import { requirePermission } from "../middleware/requirePermission";
-import { PERMISSIONS, outcomeSchema } from "../lib/crm/rules";
+import { CODES, PERMISSIONS, ROLES, outcomeSchema } from "../lib/crm/rules";
 import {
-  CrmError, LEAD_LIST_COLS, LEAD_LIST_JOINS, MAX_INGEST_ROWS, claimLock, getSetting, ingestRows, leadDetail, leadFilters,
-  permissionsOf, queue, queueFilterSchema, reconcile, releaseLock, saveOutcome,
+  CrmError, LEAD_LIST_COLS, LEAD_LIST_JOINS, MAX_INGEST_ROWS, claimLock, getCodes, getSetting, ingestRows, leadDetail, leadFilters,
+  permissionsOf, queue, queueFilterSchema, reapplyCodeRoles, reconcile, releaseLock, saveOutcome,
 } from "../services/crm.service";
 import { audioUrlsFor } from "../services/audioUrls";
 
@@ -59,13 +59,13 @@ router.get("/me", async (req, res) => {
   return res.json({ permissions: await permissionsOf(user(req)), is_owner: user(req).role === "owner" });
 });
 
-/** What the lead form needs: the representatives and the follow-up rules. */
+/** What the lead form needs: the status codes, the representatives and the follow-up rules. */
 router.get("/config", async (_req, res) => {
-  const [retry, reps] = await Promise.all([
-    getSetting("retry_rules", {}),
+  const [retry, codes, reps] = await Promise.all([
+    getSetting("retry_rules", {}), getCodes(),
     pool.query("SELECT id, name FROM employees WHERE role = 'employee' AND status = 'active' ORDER BY name"),
   ]);
-  return res.json({ retry_rules: retry, reps: reps.rows });
+  return res.json({ retry_rules: retry, codes, reps: reps.rows });
 });
 
 router.get("/queue", async (req, res) => {
@@ -179,20 +179,35 @@ router.get("/settings", async (req, res) => {
 });
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
-const retryRule = z.object({ hours: z.number().min(0.25).max(168).optional(), next_day_at: hhmm.optional() });
+const codeSetting = z.object({
+  label: z.string().trim().min(1).max(40), role: z.enum(ROLES),
+  hours: z.number().min(0.25).max(168).optional(), next_day_at: hhmm.optional(),
+});
 const VALUE_SCHEMAS: Record<string, ZodTypeAny> = {
-  retry_rules: z.object({ A: retryRule, B: retryRule, C: retryRule, invalid: z.object({ never: z.boolean() }), max_attempts: z.number().int().min(1).max(50) }),
+  retry_rules: z.object({ invalid: z.object({ never: z.boolean() }), max_attempts: z.number().int().min(1).max(50) }),
+  codes: z.object(Object.fromEntries(CODES.map((c) => [c, codeSetting])) as Record<(typeof CODES)[number], typeof codeSetting>),
 };
 
 router.patch("/settings/values/:key", requireOwner, async (req, res) => {
   const schema = VALUE_SCHEMAS[req.params.key];
   if (!schema) throw new CrmError(404, "Unknown setting");
   const value = parse(schema, req.body);
-  await pool.query(
-    `INSERT INTO crm_settings (key, value, updated_by, updated_at) VALUES ($1, $2, $3, NOW())
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
-    [req.params.key, JSON.stringify(value), user(req).sub]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO crm_settings (key, value, updated_by, updated_at) VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+      [req.params.key, JSON.stringify(value), user(req).sub]
+    );
+    if (req.params.key === "codes") await reapplyCodeRoles(client, value);
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
   return res.json(value);
 });
 

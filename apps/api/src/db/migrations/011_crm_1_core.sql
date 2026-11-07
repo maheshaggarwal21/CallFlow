@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS leads (
   external_id       VARCHAR(150) UNIQUE,             -- sheet / Meta lead id; NULLs allowed
   status            VARCHAR(10) NOT NULL DEFAULT 'new'
                     CHECK (status IN ('new','retry','callback','converted','dnc','dropped')),
-  current_code      CHAR(1) CHECK (current_code IN ('A','B','C','D','E','F','Z')),
+  current_code      CHAR(1) CHECK (current_code ~ '^[A-O]$'),
   next_followup_at  TIMESTAMPTZ,
   callback_set_by   UUID REFERENCES employees(id) ON DELETE SET NULL,
   attempts          INTEGER NOT NULL DEFAULT 0,      -- failed attempts (A/B/C) since last real contact
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS lead_interactions (
   lead_id          UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
   employee_id      UUID REFERENCES employees(id) ON DELETE SET NULL,
   kind             VARCHAR(15) NOT NULL CHECK (kind IN ('call_outcome','system','reenquiry')),
-  code             CHAR(1) CHECK (code IN ('A','B','C','D','E','F','Z')),
+  code             CHAR(1) CHECK (code ~ '^[A-O]$'),
   reason           VARCHAR(150),
   note             TEXT,
   next_followup_at TIMESTAMPTZ,
@@ -87,8 +87,15 @@ CREATE TABLE IF NOT EXISTS crm_match_errors (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── Default follow-up rules (kept if the owner already changed them) ──
+-- ── Defaults (kept if the owner already changed them in CRM Settings) ──
+-- codes: the sheet's status letters A–O; role = what saving that status does (see lib/crm/rules.ts)
 
 INSERT INTO crm_settings (key, value) VALUES
-  ('retry_rules', '{"A":{"hours":6},"B":{"hours":3},"C":{"next_day_at":"10:00"},"invalid":{"never":true},"max_attempts":6}')
+  ('retry_rules', '{"invalid":{"never":true},"max_attempts":6}'),
+  ('codes', '{"A":{"label":"Not reachable","role":"retry","hours":6},"B":{"label":"No response","role":"retry","hours":3},
+    "C":{"label":"Call cut","role":"retry","next_day_at":"10:00"},"D":{"label":"Call later","role":"callback"},
+    "E":{"label":"Will pay later","role":"callback"},"F":{"label":"Converted","role":"paid"},"G":{"label":"Not interested","role":"closed"},
+    "H":{"label":"Code H","role":"unused"},"I":{"label":"Code I","role":"unused"},"J":{"label":"Code J","role":"unused"},
+    "K":{"label":"Code K","role":"unused"},"L":{"label":"Code L","role":"unused"},"M":{"label":"Code M","role":"unused"},
+    "N":{"label":"Code N","role":"unused"},"O":{"label":"Code O","role":"unused"}}')
 ON CONFLICT (key) DO NOTHING;

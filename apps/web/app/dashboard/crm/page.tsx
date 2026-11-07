@@ -6,9 +6,10 @@ import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { R } from "@/components/report/kit";
 import { api, fetcher } from "@/lib/api";
-import { CODES, type CrmConfig, type LeadRow, type QueueResponse } from "@/lib/crm";
+import { type CrmConfig, type LeadRow, type QueueResponse } from "@/lib/crm";
 import { useAuth } from "@/hooks/useAuth";
 import { useCrmMe } from "@/hooks/useCrmMe";
+import { useCrmCodes } from "@/hooks/useCrmCodes";
 import { BandTile, Btn, CRM_CSS, HeaderBand, SectionTitle, inputStyle } from "@/components/crm/kit";
 import LeadTable, { type SortState } from "@/components/crm/LeadTable";
 import LeadDrawer from "@/components/crm/LeadDrawer";
@@ -33,6 +34,7 @@ function qs(f: Filters, extra: Record<string, string | number> = {}) {
 export default function LeadsPage() {
   const { isOwner, id: meId } = useAuth();
   const { can } = useCrmMe();
+  const codes = useCrmCodes();
   const [f, setF] = useState<Filters>(EMPTY);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -116,7 +118,7 @@ export default function LeadsPage() {
         <label style={{ ...filterLabel, flex: "1 1 130px" }}>Lead status
           <select value={statusValue} onChange={(e) => setStatus(e.target.value)} style={sel("1")}>
             <option value="">All statuses</option><option value="s:new">New</option>
-            {CODES.map((c) => <option key={c.code} value={`c:${c.code}`}>{c.label}</option>)}
+            {codes.inUse.map((c) => <option key={c.code} value={`c:${c.code}`}>{c.code} · {c.label}</option>)}
             <option value="s:dropped">Dropped</option>
           </select></label>
         <label style={{ ...filterLabel, flex: "1 1 150px" }}>Representative

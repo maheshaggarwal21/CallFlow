@@ -17,14 +17,17 @@
  */
 var CONFIG = {
   API_BASE: 'https://callflow.maxmusicschool.co.in/api/v1/crm',   // placeholder until go-live
-  SHEET_NAME: 'Leads',
+  SHEET_NAME: 'Lead',
   HEALTHCHECK_URL: 'https://hc-ping.com/REPLACE-WITH-CHECK-UUID',  // placeholder
   ALERT_EMAIL: 'owner@example.com',                                // placeholder
   BATCH_MAX: 500,                                                  // server limit per request
   SYNC_COLUMN: 'CRM Sync',
-  // Sheet header → intake field. Meta Lead Ads sheets use these names by default.
-  COLUMNS: { external_id: 'id', created_at: 'created_time', name: 'full_name', phone: 'phone_number',
-             email: 'email', campaign: 'campaign_name', source: 'platform' },
+  // Sheet header → intake field (the client's "Lead" tab). It has no id column, so the row ID is
+  // built from Timestamp + Contact (see rowId_); a header that isn't found is sent empty.
+  // '#F' means column F by position: the rep column has no header.
+  COLUMNS: { external_id: 'id', created_at: 'Timestamp', name: 'Name', phone: 'Contact',
+             email: 'Email', campaign: 'Campaign', source: 'Source',
+             status: 'Status', rep: '#F', amount: 'Amount', guitar: 'Guitar' },
 };
 
 /** Run once by hand: installs both triggers (and removes old copies). */
@@ -76,15 +79,14 @@ function reconcileYesterday() {
     var day = Utilities.formatDate(new Date(Date.now() - 864e5), 'Asia/Kolkata', 'yyyy-MM-dd');
     var all = sheet.getRange(2, 1, Math.max(0, sheet.getLastRow() - 1), h.width).getValues();
     var mine = all.map(function (r, i) { return { row: i + 2, values: r }; }).filter(function (x) {
-      var t = x.values[h.cols.created_at];
-      var d = t instanceof Date ? Utilities.formatDate(t, 'Asia/Kolkata', 'yyyy-MM-dd') : String(t).slice(0, 10);
-      return d === day && x.values[h.cols.external_id];
+      var t = when_(x.values[h.cols.created_at]);
+      return t && Utilities.formatDate(t, 'Asia/Kolkata', 'yyyy-MM-dd') === day && rowId_(x.values, h);
     });
-    var ids = mine.map(function (x) { return String(x.values[h.cols.external_id]); });
+    var ids = mine.map(function (x) { return rowId_(x.values, h); });
     var missing = ids.length ? post_('/leads/reconcile', { external_ids: ids }).missing : [];
     var resent = [];
     if (missing.length) {
-      var redo = mine.filter(function (x) { return missing.indexOf(String(x.values[h.cols.external_id])) >= 0; });
+      var redo = mine.filter(function (x) { return missing.indexOf(rowId_(x.values, h)) >= 0; });
       resent = post_('/leads/ingest', redo.map(function (x) { return toLead_(x.values, h); }));
     }
     MailApp.sendEmail(CONFIG.ALERT_EMAIL, 'CRM lead reconcile ' + day + ': ' + missing.length + ' missing',
@@ -104,18 +106,41 @@ function headers_(sheet) {
   var sync = names.indexOf(CONFIG.SYNC_COLUMN);
   if (sync < 0) { sync = names.length; sheet.getRange(1, sync + 1).setValue(CONFIG.SYNC_COLUMN); }
   var cols = {};
-  Object.keys(CONFIG.COLUMNS).forEach(function (k) { cols[k] = names.indexOf(CONFIG.COLUMNS[k]); });
+  Object.keys(CONFIG.COLUMNS).forEach(function (k) {
+    var n = CONFIG.COLUMNS[k];
+    cols[k] = /^#[A-Z]$/.test(n) ? n.charCodeAt(1) - 65 : names.indexOf(n);
+  });
   if (cols.phone < 0) throw new Error('Column "' + CONFIG.COLUMNS.phone + '" not found');
   return { cols: cols, sync: sync + 1, width: Math.max(names.length, sync + 1) };
 }
 
+function cell_(r, h, k) { return h.cols[k] >= 0 ? r[h.cols[k]] : ''; }
+
+/** A Date cell, or text "dd/MM/yyyy HH:mm:ss" read as IST (new Date() would read it as US month/day). */
+function when_(t) {
+  if (t instanceof Date) return t;
+  var m = String(t || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  var p = function (x) { return ('0' + x).slice(-2); };
+  return new Date(m[3] + '-' + p(m[2]) + '-' + p(m[1]) + 'T' + p(m[4]) + ':' + m[5] + ':' + (m[6] || '00') + '+05:30');
+}
+
+/** The sheet's id if it has one, else Timestamp + Contact: stable when rows are sorted or inserted. */
+function rowId_(r, h) {
+  var id = String(cell_(r, h, 'external_id') || '').trim();
+  if (id) return id;
+  var t = when_(cell_(r, h, 'created_at'));
+  var digits = String(cell_(r, h, 'phone') || '').replace(/\D/g, '');
+  return t && digits ? 'sheet-' + Utilities.formatDate(t, 'Asia/Kolkata', 'yyyyMMddHHmmss') + '-' + digits : '';
+}
+
 function toLead_(r, h) {
-  var v = function (k) { return h.cols[k] >= 0 ? r[h.cols[k]] : ''; };
-  var t = v('created_at');
+  var v = function (k) { return String(cell_(r, h, k) || '').trim(); };
+  var t = when_(cell_(r, h, 'created_at'));
   return {
-    external_id: String(v('external_id') || ''), name: String(v('name') || ''), phone: String(v('phone') || ''),
-    email: String(v('email') || ''), campaign: String(v('campaign') || ''), source: String(v('source') || 'meta'),
-    created_at: t instanceof Date ? t.toISOString() : String(t || ''),
+    external_id: rowId_(r, h), name: v('name'), phone: v('phone'), email: v('email'),
+    campaign: v('campaign'), source: v('source') || 'meta', created_at: t ? t.toISOString() : '',
+    status: v('status'), rep: v('rep'), amount: v('amount'), guitar: v('guitar'),
   };
 }
 

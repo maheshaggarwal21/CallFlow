@@ -5,10 +5,11 @@ request (7 Nov 2026, "keep it simple") to two pages:
 
 - **Leads**: four tiles (total, new, follow-ups due today, converted), filters, a "due now" banner,
   and three lists: *Follow-up due now* (blinks 15 min before a callback), *Upcoming today*, *All leads*.
-- **Lead form** (pop-up): number with Copy, name, email from the sheet, WhatsApp link, Status (A–Z
+- **Lead form** (pop-up): number with Copy, name, email from the sheet, WhatsApp link, Status (A–O
   codes in a coloured dropdown), Guitar, next follow-up date/time, representative, amount, notes,
   a reminder banner, Save. A side handle opens the follow-up snapshot and the call log with recordings.
-- **CRM Settings** (owner): follow-up rules for no-contact statuses, and who may export leads.
+- **CRM Settings** (owner): **Statuses** (the sheet's codes A–O: name and role of each, follow-up wait,
+  drop limit) and who may export leads.
 
 Leads come from the Meta lead Google Sheet through `scripts/apps-script/LeadSync.gs`. Reps dial on
 the KoreCall landline; the recording reaches CallFlow over FTP as before and is linked to the saved
@@ -23,19 +24,19 @@ exits unless the database host is `localhost` / `127.0.0.1`. The seed and DB tes
 
 ## Statuses
 
-| Code | Label | What happens on Save |
-|---|---|---|
-| — | New | Not called yet |
-| A | Not reachable | No contact: follow-up time pre-filled from the rules (default 6 h), rep can change it |
-| B | No response | No contact: default 3 h |
-| C | Call cut | No contact: default next day 10:00 |
-| D | Call later | Follow-up date + time required, note ≥ 15 characters |
-| E | Will pay later | Same as D |
-| F | Converted | Note ≥ 15 characters; no follow-up; its recording is kept past the 90-day cleanup |
-| Z | Not interested | No follow-up; its recording is kept past the 90-day cleanup |
-| — | Dropped | After 6 no-contact saves in a row (setting); no more follow-ups |
+The codes are the lead sheet's letters **A–O**. The owner names each one in CRM Settings → Statuses
+and picks its **role**, which decides what Save does:
 
-Guitar is required once the rep has spoken to the student (D, E, F, Z).
+| Role | What happens on Save | Default codes |
+|---|---|---|
+| No contact · follows up by itself | Follow-up pre-filled after N hours or next day at HH:MM (per code), rep can change it; counts toward the drop limit | A Not reachable (6 h), B No response (3 h), C Call cut (next day 10:00) |
+| Talked · rep sets the follow-up | Follow-up date + time required, note ≥ 15 characters | D Call later, E Will pay later |
+| Converted (paid) | Note ≥ 15 characters; no follow-up; amount; recording kept past the 90-day cleanup | F Converted |
+| Closed · no more calls | No follow-up; recording kept past the 90-day cleanup | G Not interested |
+| Not used | Hidden from the form | H–O (placeholders until the client names them) |
+
+Plus **New** (not called yet) and **Dropped** (after 6 no-contact saves in a row, a setting). Guitar is
+required once the rep has spoken to the student. Changing a code's role moves the leads already on it.
 
 ## Run it locally (macOS)
 
@@ -125,5 +126,6 @@ it fails if any step fails. Playwright lives in `$CRM_VENV/pw` (`npm i playwrigh
 4. **Retention:** the `planDeletions()` refactor is safe before or after the migration (`keep_audio` is
    read through `to_jsonb`). Run one dry run (`node dist/retention.js`) and compare with the last log.
 5. **Never run `seedCrm.ts` in production** (it refuses a non-local host anyway).
-6. **Apps Script:** follow `scripts/apps-script/README.md`; set `LAST_SYNCED_ROW` before enabling.
-7. Confirm with the client: representatives list, follow-up rules, status labels.
+6. **Statuses first:** the owner sets the names and roles of A–O, because the sheet import uses them.
+7. **Apps Script:** follow `scripts/apps-script/README.md`. Old rows are imported with their status,
+   rep, guitar and (converted only) amount, with no follow-up time: they show in All leads only.

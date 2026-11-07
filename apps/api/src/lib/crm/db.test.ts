@@ -7,13 +7,13 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import pool from "../../db/pool";
 import { assertLocalDb } from "./localDb";
-import { claimLock, CrmError, ingestRows, reconcile, saveOutcome } from "../../services/crm.service";
-import { outcomeSchema } from "./rules";
+import { claimLock, CrmError, ingestRows, queue, reapplyCodeRoles, reconcile, saveOutcome } from "../../services/crm.service";
+import { DEFAULT_CODES, outcomeSchema } from "./rules";
 
 assertLocalDb(process.env.DATABASE_URL, "crm db.test");
 
 type U = { sub: string; role: "employee"; name: string };
-let neha: U, priya: U;
+let neha: U, priya: U, raman: U;
 
 async function cleanup() {
   await pool.query("DELETE FROM calls WHERE source_file_key LIKE 'crmtest/%'");
@@ -53,6 +53,7 @@ before(async () => {
   await cleanup();
   neha = await rep("Neha");
   priya = await rep("Priya");
+  raman = await rep("Ramandeep");
 });
 after(async () => {
   await cleanup();
@@ -130,7 +131,7 @@ test("ingest is idempotent; the same number re-enquires instead of duplicating",
   const again = await ingestRows(rows);
   assert.deepEqual(again.map((r) => r.result), ["duplicate", "invalid"]);
 
-  await pool.query("UPDATE leads SET status = 'dnc', current_code = 'Z' WHERE phone10 = '9000020010'");
+  await pool.query("UPDATE leads SET status = 'dnc', current_code = 'G' WHERE phone10 = '9000020010'");
   const re = await ingestRows([{ external_id: "t-3", name: "Asha", phone: "09000020010", source: "test" }]);
   assert.equal(re[0].result, "reenquired");
   assert.equal((await ingestRows([{ external_id: "t-3", phone: "09000020010", source: "test" }]))[0].result, "duplicate");
@@ -148,4 +149,37 @@ test("form save: representative and guitar are kept; a later save without them k
   assert.deepEqual(await row(), { assigned_to: priya.sub, has_guitar: true, version: 2 });
   await saveOutcome(l.id, neha, out({ version: 2, code: "B" }));
   assert.deepEqual(await row(), { assigned_to: priya.sub, has_guitar: true, version: 3 });
+});
+
+test("sheet import: status, rep, guitar and amount come across; no follow-up time, so not in the due lists", async () => {
+  const res = await ingestRows([
+    { external_id: "t-s1", name: "Old D", phone: "9000020030", source: "test", status: "d", rep: "NEHA", guitar: "Yes", amount: "299" },
+    { external_id: "t-s2", name: "Old F", phone: "9000020031", source: "test", status: "F", rep: "nobody", guitar: "No", amount: "299" },
+    { external_id: "t-s3", name: "Blank", phone: "9000020032", source: "test", status: "", rep: "", amount: "299" },
+    { external_id: "t-s4", name: "Short", phone: "9000020033", source: "test", status: "A", rep: "Raman" },
+  ]);
+  assert.deepEqual(res.map((r) => r.result), ["created", "created", "created", "created"]);
+  const { rows } = await pool.query(
+    "SELECT phone10, status, current_code, assigned_to, has_guitar, amount::float AS amount, next_followup_at FROM leads WHERE phone10 LIKE '900002003%' ORDER BY phone10");
+  assert.deepEqual(rows.map((r) => [r.status, r.current_code, r.assigned_to, r.has_guitar, r.amount]), [
+    ["callback", "D", neha.sub, true, null],   // 299 on the sheet is the price, not a payment
+    ["converted", "F", null, false, 299],
+    ["new", null, null, null, null],
+    ["retry", "A", raman.sub, null, null],     // "Raman" on the sheet = the only first name starting with it
+  ]);
+  assert.equal(rows[0].next_followup_at, null);
+  const history = await pool.query("SELECT kind, code FROM lead_interactions i JOIN leads l ON l.id = i.lead_id WHERE l.phone10 = '9000020030'");
+  assert.deepEqual(history.rows, [{ kind: "system", code: "D" }]);
+  const q = await queue(neha, { q: "Old D" });
+  assert.equal(Object.values(q.sections).flat().length, 0);
+});
+
+test("changing a code's role in settings moves its leads to the new status", async () => {
+  const l = await lead("9000020040");
+  await saveOutcome(l.id, neha, out({ version: 1, code: "B" }));
+  const codes = { ...DEFAULT_CODES, B: { label: "No response", role: "closed" as const } };
+  const client = await pool.connect();
+  try { await reapplyCodeRoles(client, codes); } finally { client.release(); }
+  const { rows: [r] } = await pool.query("SELECT status, next_followup_at, version FROM leads WHERE id = $1", [l.id]);
+  assert.deepEqual(r, { status: "dnc", next_followup_at: null, version: 3 });
 });

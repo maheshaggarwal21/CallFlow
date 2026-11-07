@@ -125,13 +125,13 @@ const REASONS = {
   E: ["Will pay after salary", "Buying a guitar first", "Will discuss with parents"],
   F: ["Paid on call (UPI)", "Paid via payment link"],
   // Weighted so "Too expensive" leads the Z breakdown
-  Z: ["Too expensive", "Too expensive", "Too expensive", "Not interested any more", "Joined somewhere else", "Wants offline classes", "Did not enquire / wrong number", "Too expensive"],
+  G: ["Too expensive", "Too expensive", "Too expensive", "Not interested any more", "Joined somewhere else", "Wants offline classes", "Did not enquire / wrong number", "Too expensive"],
 } as const;
 const NOTES: Record<string, string[]> = {
   D: ["Asked to call back in the evening, mother decides.", "Driving right now, said call back later today.", "Interested but busy at work, call after 6."],
   E: ["Interested in the trial, will pay after salary on 10th.", "Wants to buy a guitar first, then start the trial.", "Liked the offer, checking timings with school."],
   F: ["Paid ₹299 trial on UPI during the call. Schedule first class.", "Paid ₹299 trial through the payment link. Send class link."],
-  Z: ["Not interested, asked us not to call again.", "Said the fee is too high for now, do not call."],
+  G: ["Not interested, asked us not to call again.", "Said the fee is too high for now, do not call."],
 };
 const failDur = (code: string) => (code === "C" ? between(6, 14) : between(18, 32));
 const failCheck = (code: string, reason?: string) =>
@@ -144,7 +144,7 @@ function failSteps(n: number, start: number, end: number): Step[] {
     return { rep: between(0, 6), at: ago(start - ((start - end) * i) / Math.max(1, n - 1)), code, reason, dur: failDur(code), check: failCheck(code, reason) };
   }).sort((a, b) => a.at.getTime() - b.at.getTime());
 }
-const talk = (rep: number, at: Date, code: "D" | "E" | "F" | "Z", followup?: Date): Step => ({
+const talk = (rep: number, at: Date, code: "D" | "E" | "F" | "G", followup?: Date): Step => ({
   rep, at, code, reason: pick(REASONS[code]), note: pick(NOTES[code]), dur: between(60, 360), check: "possible_conversation", followup,
 });
 
@@ -202,8 +202,8 @@ function stories(): Story[] {
   // 8. Not interested (Z)
   for (let i = 0; i < 22; i++) {
     const rep = between(0, 6), at = i < 7 ? today() : daysAgo(between(1, 6));
-    S.push({ name: person(), campaign: camp(), created: new Date(at.getTime() - 3 * DAY), status: "dnc", code: "Z",
-      steps: [...failSteps(between(0, 3), 3 * DAY, 2 * DAY), talk(rep, at, "Z")] });
+    S.push({ name: person(), campaign: camp(), created: new Date(at.getTime() - 3 * DAY), status: "dnc", code: "G",
+      steps: [...failSteps(between(0, 3), 3 * DAY, 2 * DAY), talk(rep, at, "G")] });
   }
   // 9. Dropped after 6 failed attempts, plus one invalid number
   for (let i = 0; i < 5; i++) {
@@ -213,10 +213,10 @@ function stories(): Story[] {
   S.push({ name: person(), campaign: camp(), created: daysAgo(4), status: "dropped", code: "A", attempts: 1,
     steps: [{ rep: 3, at: daysAgo(3), code: "A", reason: "Invalid number", dur: 9, check: "invalid_number" }] });
   // 10. Re-enquired: Z four months ago (audio long expired), new ad lead today
-  S.push({ name: "Rohan Kulkarni", campaign: CAMPAIGNS[2], created: ago(30 * MIN), status: "new", code: "Z", tags: ["re-enquired"], reenquiry: ago(30 * MIN),
+  S.push({ name: "Rohan Kulkarni", campaign: CAMPAIGNS[2], created: ago(30 * MIN), status: "new", code: "G", tags: ["re-enquired"], reenquiry: ago(30 * MIN),
     steps: [
       { rep: 2, at: ago(124 * DAY), code: "B", reason: "Rang, no answer", dur: 24, check: "no_answer", expired: true },
-      { rep: 5, at: ago(123 * DAY), code: "Z", reason: "Too expensive", note: "Said the fee is too high for now, do not call.", dur: 140, check: "possible_conversation", expired: true },
+      { rep: 5, at: ago(123 * DAY), code: "G", reason: "Too expensive", note: "Said the fee is too high for now, do not call.", dur: 140, check: "possible_conversation", expired: true },
     ] });
   // 11. Deliberate mismatches, all today
   for (let i = 0; i < 3; i++) // forms without a recording
@@ -278,7 +278,7 @@ async function main() {
                               employee_id, is_misc, audio_storage_key, keep_audio)
            VALUES ('korecall', $1, $2, 'outbound', $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
           [`crmdemo/${lead.id}/${stepNo}.wav`, rep.line, `0${callPhone}`, calledAt, st.dur, rep.id, st.dur < 10, audio,
-           st.form !== false && st.link !== false && (st.code === "F" || st.code === "Z")]
+           st.form !== false && st.link !== false && (st.code === "F" || st.code === "G")]
         );
         callId = c.id;
         calls++;

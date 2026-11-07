@@ -5,8 +5,8 @@ import { IST_TODAY_START } from "../lib/dateRange";
 import { isFullPhone10, phone10 } from "../lib/crm/phone";
 import { bucketOf, compareQueue, type QueueBucket } from "../lib/crm/queue";
 import {
-  DEFAULT_RETRY, KEEP_AUDIO_CODES, PERMISSIONS, nextState, validateOutcome,
-  type OutcomeInput, type Permission, type RetryRules,
+  CODES, DEFAULT_CODES, DEFAULT_RETRY, PERMISSIONS, STATUS_OF_ROLE, keepsAudio, nextState, validateOutcome,
+  type CodeSettings, type OutcomeInput, type Permission, type RetryRules,
 } from "../lib/crm/rules";
 import { audioUrlsFor } from "./audioUrls";
 
@@ -26,6 +26,21 @@ type User = { sub: string; role: "owner" | "employee"; name: string };
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {
   const { rows } = await pool.query("SELECT value FROM crm_settings WHERE key = $1", [key]);
   return rows[0] ? { ...fallback, ...rows[0].value } : fallback;
+}
+
+export const getCodes = () => getSetting<CodeSettings>("codes", DEFAULT_CODES);
+
+/** After the owner changes what a code means, move leads on that code to the matching status. */
+export async function reapplyCodeRoles(client: PoolClient, codes: CodeSettings) {
+  const pairs = CODES.map((c) => [c, STATUS_OF_ROLE[codes[c].role]]);
+  await client.query(
+    `UPDATE leads l SET status = v.status,
+       next_followup_at = CASE WHEN v.status IN ('retry','callback') THEN l.next_followup_at END,
+       version = l.version + 1, updated_at = NOW()
+     FROM unnest($1::text[], $2::text[]) AS v(code, status)
+     WHERE l.current_code = v.code AND l.status NOT IN ('new','dropped') AND l.status <> v.status`,
+    [pairs.map((p) => p[0]), pairs.map((p) => p[1])]
+  );
 }
 
 export async function permissionsOf(user: User): Promise<Permission[]> {
@@ -65,7 +80,7 @@ export async function releaseLock(leadId: string, userId: string) {
  * trigger (011_crm_2_calls.sql) does the reverse link. Never throws: a failed
  * link must not fail the save.
  */
-export async function linkNearestCall(client: PoolClient, interactionId: string, p10: string, employeeId: string, at: Date, code: string | null) {
+export async function linkNearestCall(client: PoolClient, interactionId: string, p10: string, employeeId: string, at: Date, keepAudio: boolean) {
   await client.query("SAVEPOINT link_call");
   try {
     const { rows } = await client.query(
@@ -85,7 +100,7 @@ export async function linkNearestCall(client: PoolClient, interactionId: string,
       await client.query(
         `UPDATE calls SET lead_id = (SELECT lead_id FROM lead_interactions WHERE id = $2),
                           keep_audio = keep_audio OR $3 WHERE id = $1`,
-        [callId, interactionId, !!code && (KEEP_AUDIO_CODES as readonly string[]).includes(code)]
+        [callId, interactionId, keepAudio]
       );
     }
     await client.query("RELEASE SAVEPOINT link_call");
@@ -98,9 +113,9 @@ export async function linkNearestCall(client: PoolClient, interactionId: string,
 }
 
 export async function saveOutcome(leadId: string, user: User, input: OutcomeInput, now = new Date()) {
-  const problem = validateOutcome(input, now);
+  const [rules, codes] = await Promise.all([getSetting<RetryRules>("retry_rules", DEFAULT_RETRY), getCodes()]);
+  const problem = validateOutcome(input, now, codes);
   if (problem) throw new CrmError(400, problem);
-  const rules = await getSetting<RetryRules>("retry_rules", DEFAULT_RETRY);
 
   const client = await pool.connect();
   try {
@@ -120,7 +135,7 @@ export async function saveOutcome(leadId: string, user: User, input: OutcomeInpu
       throw new CrmError(423, `${lead.locked_by_name} is on this lead`, { locked_by: lead.locked_by_name });
     }
 
-    const s = nextState(lead.attempts, input, rules, now);
+    const s = nextState(lead.attempts, input, rules, now, codes);
     const { rows: [ix] } = await client.query(
       `INSERT INTO lead_interactions (lead_id, employee_id, kind, code, reason, note, next_followup_at, meta)
        VALUES ($1, $2, 'call_outcome', $3, $4, $5, $6, $7) RETURNING id, created_at`,
@@ -138,7 +153,7 @@ export async function saveOutcome(leadId: string, user: User, input: OutcomeInpu
        WHERE id = $1 RETURNING version`,
       [leadId, s.status, s.current_code, s.next_followup_at, s.attempts, s.amount, user.sub, input.assigned_to ?? null, input.has_guitar ?? null]
     );
-    const callId = await linkNearestCall(client, ix.id, lead.phone10, user.sub, new Date(ix.created_at), input.code);
+    const callId = await linkNearestCall(client, ix.id, lead.phone10, user.sub, new Date(ix.created_at), keepsAudio(codes[input.code].role));
     await client.query("COMMIT");
     return { version: saved.version as number, interaction_id: ix.id as string, call_id: callId, status: s.status };
   } catch (e) {
@@ -273,7 +288,8 @@ const SECTION_CAP = 200;
 
 export async function queue(user: User, f: Filters, now = new Date()) {
   const values: unknown[] = [];
-  const where = ["l.status IN ('new','retry','callback')", ...leadFilters(f, values, user.sub)];
+  // Retries/callbacks with no time come from the sheet import: they live in All leads, not the due lists
+  const where = ["(l.status = 'new' OR (l.status IN ('retry','callback') AND l.next_followup_at IS NOT NULL))", ...leadFilters(f, values, user.sub)];
   const { rows } = await pool.query(
     `SELECT ${LEAD_LIST_COLS}
      FROM leads l ${LEAD_LIST_JOINS} WHERE ${where.join(" AND ")}`,
@@ -310,6 +326,11 @@ export const ingestRowSchema = z.object({
   source: z.string().trim().max(60).nullish(),
   campaign: z.string().trim().max(150).nullish(),
   created_at: z.string().trim().max(40).nullish(),
+  // The sheet's own columns, when it has them (old rows already worked by the reps)
+  status: z.coerce.string().trim().max(20).nullish(),
+  rep: z.coerce.string().trim().max(80).nullish(),
+  amount: z.coerce.string().trim().max(20).nullish(),
+  guitar: z.coerce.string().trim().max(10).nullish(),
   extra: z.record(z.unknown()).nullish(),
 });
 export const MAX_INGEST_ROWS = 500;
@@ -332,6 +353,10 @@ async function externalIdKnown(client: PoolClient, id: string): Promise<boolean>
  */
 export async function ingestRows(input: unknown[], now = new Date()): Promise<IngestResult[]> {
   const out: IngestResult[] = [];
+  const [codes, reps] = await Promise.all([
+    getCodes(),
+    pool.query("SELECT id, name FROM employees WHERE role = 'employee' AND status = 'active'").then((r) => r.rows as { id: string; name: string }[]),
+  ]);
   for (const [index, raw] of input.entries()) {
     const parsed = ingestRowSchema.safeParse(raw);
     const extId = parsed.success ? parsed.data.external_id ?? null : null;
@@ -340,6 +365,7 @@ export async function ingestRows(input: unknown[], now = new Date()): Promise<In
     const p10 = phone10(row.phone);
     if (!isFullPhone10(p10)) { out.push({ index, external_id: extId, result: "invalid", error: "Phone needs 10 digits" }); continue; }
 
+    const sheet = fromSheet(row, codes, reps);
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -356,15 +382,18 @@ export async function ingestRows(input: unknown[], now = new Date()): Promise<In
           [l.id, `Re-enquired via ${row.source || "intake"}${row.campaign ? ` · ${row.campaign}` : ""}`,
            JSON.stringify({ external_id: extId, name: row.name, source: row.source, campaign: row.campaign, row: raw })]
         );
-        // A paid student stays converted; everyone else goes back to the top of New
+        // A paid student stays converted; everyone else goes back to the top of New, or takes the
+        // status the sheet row already has
         await client.query(
           `UPDATE leads SET tags = CASE WHEN 're-enquired' = ANY(tags) THEN tags ELSE array_append(tags, 're-enquired') END,
-             status = CASE WHEN status = 'converted' THEN status ELSE 'new' END,
+             current_code = CASE WHEN status = 'converted' OR $3::text IS NULL THEN current_code ELSE $3 END,
+             status = CASE WHEN status = 'converted' THEN status ELSE COALESCE($2, 'new') END,
              next_followup_at = CASE WHEN status = 'converted' THEN next_followup_at END,
              attempts = CASE WHEN status = 'converted' THEN attempts ELSE 0 END,
+             assigned_to = COALESCE($4, assigned_to), has_guitar = COALESCE($5, has_guitar), amount = COALESCE($6, amount),
              version = version + 1, updated_by = NULL, updated_at = NOW()
            WHERE id = $1`,
-          [l.id]
+          [l.id, sheet.status, sheet.code, sheet.assigned_to, sheet.has_guitar, sheet.amount]
         );
         await client.query("COMMIT");
         out.push({ index, external_id: extId, result: "reenquired", lead_code: l.lead_code });
@@ -373,11 +402,18 @@ export async function ingestRows(input: unknown[], now = new Date()): Promise<In
       const created = row.created_at ? new Date(row.created_at) : null;
       const createdAt = created && !Number.isNaN(created.getTime()) && created <= now ? created : now;
       const { rows: [l] } = await client.query(
-        `INSERT INTO leads (name, email, phone_raw, phone10, source, campaign, external_id, raw, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, lead_code`,
+        `INSERT INTO leads (name, email, phone_raw, phone10, source, campaign, external_id, raw, created_at,
+                            status, current_code, assigned_to, has_guitar, amount)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, 'new'), $11, $12, $13, $14) RETURNING id, lead_code`,
         [row.name || "", row.email || null, row.phone, p10, row.source || null, row.campaign || null, extId,
-         JSON.stringify(raw), createdAt]
+         JSON.stringify(raw), createdAt, sheet.status, sheet.code, sheet.assigned_to, sheet.has_guitar, sheet.amount]
       );
+      if (sheet.code) {
+        await client.query(
+          "INSERT INTO lead_interactions (lead_id, kind, code, note) VALUES ($1, 'system', $2, $3)",
+          [l.id, sheet.code, `Status ${sheet.code} · ${codes[sheet.code as keyof CodeSettings].label} from the lead sheet`]
+        );
+      }
       await client.query("UPDATE calls SET lead_id = $1 WHERE phone10 = $2 AND lead_id IS NULL", [l.id, p10]);
       await client.query("COMMIT");
       out.push({ index, external_id: extId, result: "created", lead_code: l.lead_code });
@@ -389,6 +425,27 @@ export async function ingestRows(input: unknown[], now = new Date()): Promise<In
     }
   }
   return out;
+}
+
+/** Status, rep, guitar and amount a sheet row already has. Unknown values are left empty. */
+function fromSheet(row: z.infer<typeof ingestRowSchema>, codes: CodeSettings, reps: { id: string; name: string }[]) {
+  const letter = (row.status ?? "").toUpperCase();
+  const code = (CODES as readonly string[]).includes(letter) ? (letter as keyof CodeSettings) : null;
+  const role = code ? codes[code].role : null;
+  // Sheet → CallFlow rep: full name, else first name ("SHIVANI" → Shivani Jha), else the only first
+  // name starting with it ("Raman" → Ramandeep Kaur)
+  const who = (row.rep ?? "").toLowerCase();
+  const first = (r: { name: string }) => r.name.toLowerCase().split(/\s+/)[0];
+  const starts = who.length >= 3 ? reps.filter((r) => first(r).startsWith(who)) : [];
+  const rep = who ? reps.find((r) => r.name.toLowerCase() === who) ?? reps.find((r) => first(r) === who) ?? (starts.length === 1 ? starts[0] : undefined) : undefined;
+  const g = (row.guitar ?? "").toLowerCase();
+  const amount = Number(row.amount);
+  return {
+    code, status: role ? STATUS_OF_ROLE[role] : null, assigned_to: rep?.id ?? null,
+    has_guitar: g === "yes" || g === "y" ? true : g === "no" || g === "n" ? false : null,
+    // The sheet shows the trial price on every row; it only means money for a converted lead
+    amount: role === "paid" && amount > 0 ? amount : null,
+  };
 }
 
 /** The external_ids from one day's sheet that the server has never seen. */

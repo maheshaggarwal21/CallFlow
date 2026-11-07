@@ -2,17 +2,24 @@
 // The whole CRM UI is hidden unless NEXT_PUBLIC_CRM_ENABLED=true (inlined at build time).
 export const CRM_ENABLED = process.env.NEXT_PUBLIC_CRM_ENABLED === "true";
 
-export type Code = "A" | "B" | "C" | "D" | "E" | "F" | "Z";
-export const CODES: { code: Code; label: string; rule: string; kind: "retry" | "callback" | "paid" | "closed" }[] = [
-  { code: "A", label: "Not reachable", rule: "Switched off / not reachable · retried automatically", kind: "retry" },
-  { code: "B", label: "No response", rule: "Rang, not picked · retried automatically", kind: "retry" },
-  { code: "C", label: "Call cut", rule: "Picked up and cut · retried automatically", kind: "retry" },
-  { code: "D", label: "Call later", rule: "Talked, asked to call later", kind: "callback" },
-  { code: "E", label: "Will pay later", rule: "Interested, pays later", kind: "callback" },
-  { code: "F", label: "Converted", rule: "Paid the ₹299 trial", kind: "paid" },
-  { code: "Z", label: "Not interested", rule: "Never call again", kind: "closed" },
-];
-export const codeMeta = (c: string | null | undefined) => CODES.find((x) => x.code === c);
+// The sheet's status letters. Label and role of each are set by the owner in CRM Settings (/crm/config).
+export const CODE_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"] as const;
+export type Code = (typeof CODE_LETTERS)[number];
+export type Role = "retry" | "callback" | "paid" | "closed" | "unused";
+export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string };
+export type CodeMeta = CodeSetting & { code: Code; kind: Role; rule: string };
+export const ROLE_LABEL: Record<Role, string> = {
+  retry: "No contact · follows up by itself", callback: "Talked · rep sets the follow-up",
+  paid: "Converted (paid)", closed: "Closed · no more calls", unused: "Not used",
+};
+const ruleText = (s: CodeSetting) =>
+  s.role === "retry" ? `No contact · retried ${s.next_day_at ? `next day at ${s.next_day_at}` : `after ${s.hours ?? 3} h`}` : ROLE_LABEL[s.role];
+/** All 15 codes with their settings; a code missing from the settings counts as not used. */
+export const codeList = (codes?: Partial<Record<Code, CodeSetting>>): CodeMeta[] =>
+  CODE_LETTERS.map((code) => {
+    const s = codes?.[code] ?? { label: `Code ${code}`, role: "unused" as const };
+    return { ...s, code, kind: s.role, rule: ruleText(s) };
+  });
 export const MIN_NOTE = 15;
 /** Same window as the server: a follow-up is "due" 15 min either side of its time. */
 export const DUE_WINDOW_MS = 15 * 60_000;
@@ -25,8 +32,8 @@ export const STATUS_LABEL: Record<string, string> = {
   new: "New", retry: "Retry", callback: "Callback", converted: "Converted", dnc: "Do not call", dropped: "Dropped",
 };
 /** What the client calls the lead's state: "New", "Dropped", else the last outcome's label. */
-export const statusLabel = (l: { status: string; current_code: Code | null }) =>
-  l.status === "new" || l.status === "dropped" || !l.current_code ? STATUS_LABEL[l.status] ?? l.status : codeMeta(l.current_code)?.label ?? l.status;
+export const statusLabel = (l: { status: string; current_code: Code | null }, m?: CodeMeta) =>
+  l.status === "new" || l.status === "dropped" || !l.current_code ? STATUS_LABEL[l.status] ?? l.status : m?.label ?? `Code ${l.current_code}`;
 
 /** "9465658112" → "94656 58112", easy to read out while dialling. */
 export const groupPhone = (p: string) => (p?.length === 10 ? `${p.slice(0, 5)} ${p.slice(5)}` : p ?? "");
@@ -83,7 +90,7 @@ export type LeadDetail = {
 };
 export type CrmConfig = {
   reps: { id: string; name: string }[];
-  retry_rules: { A?: RetryRule; B?: RetryRule; C?: RetryRule; invalid?: { never?: boolean }; max_attempts?: number };
+  retry_rules: { invalid?: { never?: boolean }; max_attempts?: number };
+  codes: Record<Code, CodeSetting>;
 };
-export type RetryRule = { hours?: number; next_day_at?: string };
 export type CrmMe = { permissions: string[]; is_owner: boolean };

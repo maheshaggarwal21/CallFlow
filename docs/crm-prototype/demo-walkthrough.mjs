@@ -67,10 +67,10 @@ await f.getByRole("button", { name: /^Save$/ }).click();
 await neha.getByText(/saved as D · Call later/).waitFor();
 await shot(neha, "06-saved.png");
 
-// 7. Owner: CRM Settings (follow-up rules + who can export)
+// 7. Owner: CRM Settings (statuses A–O + who can export)
 const owner = await login("owner");
 await owner.goto(`${WEB}/dashboard/crm/settings`);
-await owner.waitForSelector("text=Follow-up rules");
+await owner.waitForSelector("text=Statuses");
 await shot(owner, "07-crm-settings.png", { fullPage: true });
 
 await browser.close();

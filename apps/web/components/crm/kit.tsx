@@ -4,7 +4,8 @@
 // as Reports / View report: espresso header band, cream cards, beige page, DM Sans.
 import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { R } from "@/components/report/kit";
-import { codeMeta, statusLabel, type Code } from "@/lib/crm";
+import { type Code } from "@/lib/crm";
+import { useCrmCodes } from "@/hooks/useCrmCodes";
 
 export const CRM_CSS = `
   .crm-row{transition:background .15s}
@@ -28,12 +29,14 @@ const CHIP: Record<string, [string, string]> = {
   callback: ["#f8ead2", "#8a5a12"],
   paid: ["#e5efe0", R.good],
   closed: ["#f8e3df", R.bad],
+  unused: ["#ece7df", "#8f8577"],
 };
 
 /** Outcome code letter, coloured by what it means: retry beige, callback gold, paid green, closed red. */
 export function CodeChip({ code, big = false, title }: { code: string | null | undefined; big?: boolean; title?: string }) {
+  const { meta } = useCrmCodes();
   if (!code) return <span style={{ color: "#c2b39c", fontSize: 12 }}>—</span>;
-  const m = codeMeta(code);
+  const m = meta(code);
   const [bg, fg] = CHIP[m?.kind ?? "retry"];
   return (
     <span title={title ?? (m ? `${code}: ${m.label}` : code)}
@@ -46,11 +49,13 @@ export function CodeChip({ code, big = false, title }: { code: string | null | u
 
 /** A lead's status as on the sheet: code chip + label in the code's colour; "New" has no code yet. */
 export function StatusBadge({ l }: { l: { status: string; current_code: Code | null } }) {
+  const { meta, label } = useCrmCodes();
   if (l.status === "new" || !l.current_code) return <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: "#e7f0fb", color: "#2563a8" }}>New</span>;
-  const [, fg] = CHIP[codeMeta(l.current_code)?.kind ?? "retry"];
+  const m = meta(l.current_code);
+  const [, fg] = CHIP[m?.kind ?? "retry"];
   return (
-    <span title={codeMeta(l.current_code)?.rule} style={{ display: "inline-flex", gap: 6, alignItems: "center", whiteSpace: "nowrap", fontSize: 12.5, fontWeight: 700, color: l.status === "dropped" ? R.mute : fg }}>
-      <CodeChip code={l.current_code} />{statusLabel(l)}
+    <span title={m?.rule} style={{ display: "inline-flex", gap: 6, alignItems: "center", whiteSpace: "nowrap", fontSize: 12.5, fontWeight: 700, color: l.status === "dropped" ? R.mute : fg }}>
+      <CodeChip code={l.current_code} />{label(l)}
     </span>
   );
 }

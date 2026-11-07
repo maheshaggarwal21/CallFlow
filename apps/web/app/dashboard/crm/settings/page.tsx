@@ -1,12 +1,11 @@
 "use client";
 
-// CRM Settings, kept to two things (client, 7 Nov): when a "no contact" lead comes back for a
-// follow-up, and which reps may export leads. Owner only.
+// CRM Settings (owner only): the status codes A–O and what each does, and which reps may export leads.
 import { useEffect, useState } from "react";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import { Avatar, Panel, R } from "@/components/report/kit";
 import { api, fetcher } from "@/lib/api";
-import { CODES, PERMISSION_LABELS } from "@/lib/crm";
+import { PERMISSION_LABELS, ROLE_LABEL, codeList, type Code, type CodeSetting, type Role } from "@/lib/crm";
 import { useCrmMe } from "@/hooks/useCrmMe";
 import { Btn, CRM_CSS, HeaderBand, inputStyle, tdStyle, thStyle } from "@/components/crm/kit";
 
@@ -24,11 +23,11 @@ export default function CrmSettingsPage() {
   return (
     <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gap: 14 }}>
       <style>{CRM_CSS}</style>
-      <HeaderBand eyebrow="CRM" title="CRM Settings" sub="Follow-up rules and who can export leads" />
+      <HeaderBand eyebrow="CRM" title="CRM Settings" sub="Statuses and who can export leads" />
       {error ? <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p> : !data || !me ? <p style={{ color: R.mute }}>Loading…</p>
         : !me.is_owner ? <Panel title="Owner only"><p style={{ margin: 0, color: R.mute, fontSize: 13 }}>Only the owner can change CRM settings.</p></Panel>
         : <>
-          <RetryRules value={data.values.retry_rules} onSaved={() => mutate()} />
+          <Statuses codes={data.values.codes} retry={data.values.retry_rules} onSaved={() => mutate()} />
           <TeamPermissions team={data.team ?? []} all={SHOWN_PERMISSIONS} onSaved={() => mutate()} />
         </>}
     </div>
@@ -45,51 +44,68 @@ function SaveRow({ onSave, saved, err }: { onSave: () => void; saved: boolean; e
   );
 }
 
-function useSave(key: string, onSaved: () => void) {
+/** The sheet's codes A–O: the owner names each one and picks what saving it does. */
+function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>; retry: any; onSaved: () => void }) {
+  const [v, setV] = useState(() => codeList(codes));
+  const [maxAttempts, setMaxAttempts] = useState<number>(retry?.max_attempts ?? 6);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(false), 2500); return () => clearTimeout(t); }, [saved]);
-  const save = async (value: unknown) => {
+  const set = (i: number, patch: Partial<CodeSetting>) => setV(v.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  const save = async () => {
     setErr("");
-    try { await api.patch(`/crm/settings/values/${key}`, value); setSaved(true); onSaved(); } catch (e) { setErr((e as Error).message); }
+    try {
+      const body = Object.fromEntries(v.map((c) => [c.code, {
+        label: c.label.trim() || `Code ${c.code}`, role: c.role,
+        ...(c.role === "retry" ? (c.next_day_at ? { next_day_at: c.next_day_at } : { hours: c.hours ?? 3 }) : {}),
+      }]));
+      await api.patch("/crm/settings/values/codes", body);
+      await api.patch("/crm/settings/values/retry_rules", { invalid: { never: retry?.invalid?.never !== false }, max_attempts: maxAttempts });
+      setSaved(true);
+      onSaved();
+      globalMutate("/crm/config");
+    } catch (e) {
+      setErr((e as Error).message);
+    }
   };
-  return { save, saved, err };
-}
-
-function RetryRules({ value, onSaved }: { value: any; onSaved: () => void }) {
-  const [v, setV] = useState(value);
-  const { save, saved, err } = useSave("retry_rules", onSaved);
-  const rule = (c: "A" | "B" | "C") => v[c] ?? {};
-  const setRule = (c: "A" | "B" | "C", r: object) => setV({ ...v, [c]: r });
   return (
     <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px" }}>
-      <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Follow-up rules</h3>
-      <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>When a lead comes back for a follow-up after a call with no contact. The rep can still change the time in the form.</p>
-      <table style={{ borderCollapse: "collapse", fontSize: 13.5, minWidth: 480 }}>
-        <thead><tr><th style={thStyle}>Status</th><th style={thStyle}>Follow up</th></tr></thead>
-        <tbody>
-          {(["B", "C", "A"] as const).map((c) => {
-            const r = rule(c), nextDay = !!r.next_day_at;
-            return (
-              <tr key={c}>
-                <td style={tdStyle}>{CODES.find((x) => x.code === c)?.label}</td>
+      <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Statuses</h3>
+      <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>
+        The codes from the lead sheet. Name each one and choose what it does. "Not used" codes are hidden from the lead form.
+        Changing what a code does also moves the leads already on it.</p>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 13.5, minWidth: 720 }}>
+          <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>What it does</th><th style={thStyle}>Next follow-up</th></tr></thead>
+          <tbody>
+            {v.map((c, i) => (
+              <tr key={c.code}>
+                <td style={{ ...tdStyle, fontWeight: 800, fontSize: 15 }}>{c.code}</td>
+                <td style={tdStyle}><input aria-label={`Name of code ${c.code}`} value={c.label} maxLength={40} onChange={(e) => set(i, { label: e.target.value })} style={{ ...inputStyle, width: 190 }} /></td>
                 <td style={tdStyle}>
-                  <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                    <select value={nextDay ? "next" : "hours"} onChange={(e) => setRule(c, e.target.value === "next" ? { next_day_at: "10:00" } : { hours: 3 })} style={{ ...inputStyle, width: 150 }}>
-                      <option value="hours">After hours</option><option value="next">Next day at</option>
-                    </select>
-                    {nextDay ? <input type="time" value={r.next_day_at} onChange={(e) => setRule(c, { next_day_at: e.target.value })} style={{ ...inputStyle, width: 120 }} />
-                      : <><input type="number" min={0.25} step={0.25} value={r.hours ?? 3} onChange={(e) => setRule(c, { hours: Number(e.target.value) })} style={{ ...inputStyle, width: 80 }} /> h</>}
-                  </span>
+                  <select aria-label={`What code ${c.code} does`} value={c.role} onChange={(e) => set(i, { role: e.target.value as Role })} style={{ ...inputStyle, width: 250 }}>
+                    {(Object.keys(ROLE_LABEL) as Role[]).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                  </select>
+                </td>
+                <td style={tdStyle}>
+                  {c.role === "retry" ? (
+                    <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+                      <select aria-label={`Code ${c.code} follow-up`} value={c.next_day_at ? "next" : "hours"} onChange={(e) => set(i, e.target.value === "next" ? { next_day_at: "10:00", hours: undefined } : { hours: 3, next_day_at: undefined })} style={{ ...inputStyle, width: 130 }}>
+                        <option value="hours">After hours</option><option value="next">Next day at</option>
+                      </select>
+                      {c.next_day_at ? <input type="time" aria-label={`Code ${c.code} next day time`} value={c.next_day_at} onChange={(e) => set(i, { next_day_at: e.target.value })} style={{ ...inputStyle, width: 110 }} />
+                        : <><input type="number" aria-label={`Code ${c.code} hours`} min={0.25} max={168} step={0.25} value={c.hours ?? 3} onChange={(e) => set(i, { hours: Number(e.target.value) })} style={{ ...inputStyle, width: 74 }} /> h</>}
+                    </span>
+                  ) : <span style={{ color: R.mute, fontSize: 12.5 }}>{c.role === "callback" ? "Rep picks date and time" : "—"}</span>}
                 </td>
               </tr>
-            );
-          })}
-          <tr><td style={tdStyle}>Drop after</td><td style={tdStyle}>
-            <input type="number" min={1} max={50} value={v.max_attempts ?? 6} onChange={(e) => setV({ ...v, max_attempts: Number(e.target.value) })} style={{ ...inputStyle, width: 80 }} /> calls with no contact in a row</td></tr>
-        </tbody>
-      </table>
-      <SaveRow onSave={() => save({ A: rule("A"), B: rule("B"), C: rule("C"), invalid: { never: v.invalid?.never !== false }, max_attempts: v.max_attempts ?? 6 })} saved={saved} err={err} />
+            ))}
+            <tr><td style={tdStyle} colSpan={2}><b>Drop a lead after</b></td><td style={tdStyle} colSpan={2}>
+              <input type="number" aria-label="Drop after" min={1} max={50} value={maxAttempts} onChange={(e) => setMaxAttempts(Number(e.target.value))} style={{ ...inputStyle, width: 74 }} /> "no contact" calls in a row</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <SaveRow onSave={save} saved={saved} err={err} />
     </section>
   );
 }

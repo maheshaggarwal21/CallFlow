@@ -7,12 +7,13 @@ import type { Call } from "@callflow/shared-types";
 import { R } from "@/components/report/kit";
 import { audioUrlFor, effectiveFormat } from "@/lib/audioPlayback";
 import { api } from "@/lib/api";
-import { codeMeta, fmtWhen, type CallInfo, type LeadDetail, type TimelineEntry } from "@/lib/crm";
+import { useCrmCodes } from "@/hooks/useCrmCodes";
+import { fmtWhen, type CallInfo, type LeadDetail, type TimelineEntry } from "@/lib/crm";
 import { CodeChip, StatusBadge, Tag } from "./kit";
 import { Icon } from "./icons";
 
 const asCall = (c: CallInfo) => ({ ...c, audio_presigned_url: null }) as unknown as Call;
-const KIND_COLOR = { retry: "#9a8770", callback: "#b07a1c", paid: R.good, closed: R.bad } as const;
+const KIND_COLOR = { retry: "#9a8770", callback: "#b07a1c", paid: R.good, closed: R.bad, unused: "#8f8577" } as const;
 const IST = "Asia/Kolkata";
 const longDate = (d: string | Date) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric" });
 const timeOf = (d: string | Date) => new Date(d).toLocaleTimeString("en-US", { timeZone: IST, hour: "2-digit", minute: "2-digit", hour12: true });
@@ -100,6 +101,7 @@ function Star({ call, isOwner, onChanged }: { call: CallInfo; isOwner: boolean; 
 }
 
 function Entry({ e, first, isOwner, onChanged }: { e: TimelineEntry; first: boolean; isOwner: boolean; onChanged: () => void }) {
+  const { meta } = useCrmCodes();
   // Contacted entries (a form or a recording) glow; the latest one pulses strongest
   const contacted = e.type === "call" || (e.kind === "call_outcome");
   const dot = (color: string) => (
@@ -137,7 +139,7 @@ function Entry({ e, first, isOwner, onChanged }: { e: TimelineEntry; first: bool
       </li>
     );
   }
-  const m = codeMeta(e.code);
+  const m = meta(e.code);
   const color = m ? KIND_COLOR[m.kind] : R.mute;
   return (
     <li style={box}>{dot(color)}

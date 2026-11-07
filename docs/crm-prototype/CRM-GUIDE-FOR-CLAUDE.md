@@ -42,11 +42,11 @@ What the client approved (after asking to "keep it simple"):
   contact, representative, status (code chip + label), amount, guitar, last contacted, follow-up
   date, time, alert (Due in N min / Overdue / Retry due), actions (WhatsApp, open form).
 - **Lead form** — a compact pop-up: name, the **number in bold with Copy** at the top, **email** from
-  the sheet, a WhatsApp button, **Status** (coloured A–Z dropdown), **Guitar**, **next follow-up
+  the sheet, a WhatsApp button, **Status** (coloured dropdown of the codes in use), **Guitar**, **next follow-up
   date/time**, **Representative**, **Amount**, **Notes**, the **reminder banner** (siren) and **Save**.
   A vertical **History** handle on the right opens the follow-up snapshot and the call log with every
   recording of that number.
-- **CRM Settings** (owner) — follow-up rules for no-contact statuses; who may export leads.
+- **CRM Settings** (owner) — Statuses: the sheet's codes A–O, each with a name and a role; who may export leads.
 
 Removed on the client's request: CRM Reports, bulk assign / My leads, WhatsApp templates (WATI),
 reasons and note chips, extra questions, the daily paid-trials email, short-call auto-checks, lead
@@ -58,7 +58,7 @@ source and lead ID on screen.
 |---|---|
 | **Lead** | One person who enquired, identified by their phone number. One row in `leads`. |
 | **phone10** | Last 10 digits of a number. Matches `+91 94656 58112`, `09465658112` and `9465658112` as the same person. |
-| **Status / code** | The outcome letter saved by the rep: A Not reachable, B No response, C Call cut, D Call later, E Will pay later, F Converted, Z Not interested. Plus "New" (never called) and "Dropped". |
+| **Status / code** | The outcome letter saved by the rep, A–O as on the lead sheet. Each has an owner-set name and **role** (`crm_settings.codes`): retry (no contact), callback (talked), paid, closed, unused. Defaults: A Not reachable, B No response, C Call cut, D Call later, E Will pay later, F Converted, G Not interested, H–O not used. Plus "New" (never called) and "Dropped". |
 | **Follow-up** | When to call next (`next_followup_at`). Rep-chosen for D/E; pre-filled from Settings for A/B/C. |
 | **Due now / Overdue** | A D/E follow-up is *due* from 15 min before to 15 min after its time (row blinks), then *overdue*. |
 | **Retry due** | An A/B/C lead whose wait is over. |
@@ -144,14 +144,15 @@ The CRM:
    "This lead was updated by X, reload" instead of overwriting.
 
 ### 5.4 Filling the form and Save
-1. **Status** (required). A/B/C pre-fill the follow-up from Settings; F/Z grey it out; D/E need a date and time.
-2. **Guitar** is required for D/E/F/Z. **Notes** need 15+ characters for D/E/F.
+1. **Status** (required; codes marked Not used are hidden). Retry codes pre-fill the follow-up from their
+   setting; paid/closed grey it out; callback codes need a date and time.
+2. **Guitar** is required for callback/paid/closed. **Notes** need 15+ characters for callback/paid.
 3. **Representative** defaults to the assigned rep, else whoever last worked the lead, else the user.
 4. The **reminder banner** previews "[rep] will be reminded on [date at time]" as the date/time are picked.
 5. **Save** (`POST /crm/leads/:id/outcome`), in one database transaction:
    - checks the lock and version, then the rules (`lib/crm/rules.ts`);
-   - computes the new state: A/B/C → Retry (attempt count +1; 6th → Dropped), D/E → Callback,
-     F → Converted, Z → Not interested;
+   - computes the new state from the code's role: retry → Retry (attempt count +1; 6th → Dropped),
+     callback → Callback, paid → Converted, closed → Do not call;
    - writes a history row in `lead_interactions` and updates the lead (status, code, follow-up,
      representative, guitar, amount, version +1, lock released);
    - tries to link the recording straight away (5.5).
@@ -165,7 +166,7 @@ Rule: **same phone10, same rep (`calls.employee_id` from the KoreCall line), cal
   so a late upload still matches.
 - **Clock fixes:** `fixClockDrift.ts` corrects `called_at` later; the trigger also runs on that update.
 - **Never blocks a recording:** trigger errors go to `crm_match_errors`; the recording saves normally.
-- F and Z links set `keep_audio = true`: the nightly 90-day cleanup skips those recordings.
+- Links to a paid or closed code set `keep_audio = true`: the nightly 90-day cleanup skips those recordings.
 
 ### 5.6 History (the side panel)
 - **Follow-up snapshot:** status, next date, time, assigned rep.
@@ -174,7 +175,9 @@ Rule: **same phone10, same rep (`calls.employee_id` from the KoreCall line), cal
   show "No recording found". The owner can star a recording to keep it past 90 days.
 
 ### 5.7 Settings
-- **Follow-up rules** (owner): wait for A/B/C (hours, or "next day at"), and drop after N no-contact saves.
+- **Statuses** (owner): name and role of each code A–O, the wait for retry codes (hours, or "next day at"),
+  and drop after N no-contact saves. Saving a new role moves leads on that code to the matching status
+  (`reapplyCodeRoles`).
 - **Who can export leads** (owner ticks reps). Checked against the database on every request.
 
 ## 6. Database
@@ -186,7 +189,7 @@ Migrations `apps/api/src/db/migrations/011_crm_1_core.sql` and `011_crm_2_calls.
 | `leads` | One per person: name, email, phone_raw, **phone10 (unique)**, source/campaign (stored, not shown), sheet id, status, code, next_followup_at, attempts, last_contacted_at, amount, **has_guitar**, **assigned_to**, callback_set_by, tags, lock (`locked_by`, `locked_until`), **version**, `updated_by`. Codes look like `LMS-105901`. |
 | `lead_interactions` | History: one row per save (`call_outcome`), re-enquiry or system note; `call_id` = linked recording (unique). |
 | `employee_permissions` | Only `export_leads`. |
-| `crm_settings` | `retry_rules` (follow-up rules). |
+| `crm_settings` | `codes` (A–O: label, role, wait) and `retry_rules` (drop limit). |
 | `crm_match_errors` | Errors caught inside the matching trigger. |
 | `calls.phone10` | Generated from `caller_phone`. **Adding it rewrites and locks `calls`** — run after hours. |
 | `calls.lead_id`, `calls.keep_audio` | Set by matching; `keep_audio` protects from cleanup. |
@@ -199,7 +202,7 @@ Migrations `apps/api/src/db/migrations/011_crm_1_core.sql` and `011_crm_2_calls.
 | `POST /leads/ingest` | Sheet script (secret) | Up to 500 rows; idempotent on the sheet id. |
 | `POST /leads/reconcile` | Sheet script (secret) | Which ids are missing. |
 | `GET /me` | Logged in | Permissions, owner or not. |
-| `GET /config` | Logged in | Representatives and follow-up rules for the form. |
+| `GET /config` | Logged in | Codes, representatives and drop limit for the form. |
 | `GET /queue` | Logged in | Due now / overdue / retry / later lists + tile counts. |
 | `GET /leads` | Logged in | All leads, filtered, sorted, paged. |
 | `GET /leads/export.csv` | Owner or `export_leads` | CSV of the filtered list. |
@@ -208,7 +211,7 @@ Migrations `apps/api/src/db/migrations/011_crm_1_core.sql` and `011_crm_2_calls.
 | `POST /leads/:id/outcome` | Logged in | Save the form. |
 | `GET /calls/:id/audio` | Logged in | Playback URLs for a lead's recording. |
 | `POST /calls/:id/keep` | Owner | Star / unstar a recording. |
-| `GET /settings`, `PATCH /settings/values/retry_rules`, `PUT /settings/team/:id` | Owner (read: logged in) | Settings. |
+| `GET /settings`, `PATCH /settings/values/codes`, `PATCH /settings/values/retry_rules`, `PUT /settings/team/:id` | Owner (read: logged in) | Settings. |
 | `POST /dev/simulate-lead` | Dev only | Fake lead for demos; 404 in production. |
 
 ## 8. File map
@@ -253,8 +256,9 @@ browser and fails if any step fails.
    rewrites and locks `calls` while it runs).
 2. API env: `CRM_ENABLED=true`, `CRM_INGEST_SECRET` (32+ chars). Web build: `NEXT_PUBLIC_CRM_ENABLED=true`.
 3. Retention dry run; compare with the previous night.
-4. Install `LeadSync.gs` in the real sheet (`scripts/apps-script/README.md`), `LAST_SYNCED_ROW` first.
-5. Client confirms representatives, follow-up rules, status labels.
+4. Owner sets Statuses A–O, then install `LeadSync.gs` in the real sheet (`scripts/apps-script/README.md`):
+   it imports every old row with its status, rep, guitar and amount, then new rows each minute.
+5. Client decides: do reps work in the CRM or keep using the sheet (later sheet edits are not synced).
 
 ## 11. Good questions to ask
 

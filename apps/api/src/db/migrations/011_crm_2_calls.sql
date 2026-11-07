@@ -7,7 +7,7 @@
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS phone10 VARCHAR(10)
   GENERATED ALWAYS AS (NULLIF(right(regexp_replace(coalesce(caller_phone, ''), '\D', '', 'g'), 10), '')) STORED;
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS lead_id UUID REFERENCES leads(id) ON DELETE SET NULL;
--- Retention never deletes audio for these (matched to an F or Z form, or starred by the owner)
+-- Retention never deletes audio for these (matched to a converted / closed form, or starred by the owner)
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS keep_audio BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_calls_phone10_called ON calls (phone10, called_at DESC);
@@ -44,11 +44,12 @@ BEGIN
       END IF;
     END IF;
 
-    -- Paid / never-call-again forms keep their recording past retention
+    -- Forms whose code is converted / closed (CRM Settings → codes) keep their recording past retention
     UPDATE calls c
     SET lead_id = v_lead,
         keep_audio = c.keep_audio OR EXISTS (
-          SELECT 1 FROM lead_interactions i WHERE i.call_id = c.id AND i.code IN ('F','Z'))
+          SELECT 1 FROM lead_interactions i JOIN crm_settings s ON s.key = 'codes'
+          WHERE i.call_id = c.id AND s.value -> i.code ->> 'role' IN ('paid','closed'))
     WHERE c.id = NEW.id;
   EXCEPTION WHEN OTHERS THEN
     BEGIN
