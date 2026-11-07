@@ -353,7 +353,8 @@ function toLead_(r, h) {
   var v = function (k) { return String(cell_(r, h, k) || '').trim(); };
   var t = when_(cell_(r, h, 'created_at'));
   return {
-    external_id: rowId_(r, h), name: v('name'), phone: v('phone'), email: v('email'),
+    // No Timestamp → no ID: leave it out (the server rejects an empty one before checking the phone)
+    external_id: rowId_(r, h) || undefined, name: v('name'), phone: v('phone'), email: v('email'),
     campaign: v('campaign'), source: v('source') || 'meta', created_at: t ? t.toISOString() : '',
     status: v('status'), rep: v('rep'), amount: v('amount'), guitar: v('guitar'),
   };

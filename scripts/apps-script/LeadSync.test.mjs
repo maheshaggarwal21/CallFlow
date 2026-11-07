@@ -41,6 +41,8 @@ function world(rows = [], props = {}) {
 
   function ingest(rows) {
     return rows.map((row, index) => {
+      // Like the real server's schema: an ID that is present must not be empty
+      if (row.external_id === "") return { index, external_id: "", result: "invalid", error: "String must contain at least 1 character(s)" };
       const p = String(row.phone).replace(/\D/g, "");
       if (p.length !== 10) return { index, external_id: row.external_id, result: "invalid", error: "Phone needs 10 digits" };
       const left = server.errorPhones.get(p);
@@ -129,6 +131,13 @@ test("D12/B7: duplicate, re-enquiry and invalid labels; invalid rows are marked 
   assert.equal(w.sync(4), "re-enquiry (LMS-101)");
   assert.equal(w.sync(5), "invalid: Phone needs 10 digits");
   assert.deepEqual(w.retry(), []);
+});
+
+test("A row without a Timestamp has no ID: sent without one, so a short phone says why and a good phone still syncs", () => {
+  const w = world([["", "", "91000", "", "", "", "", "", ""], ["", "No Time", "9100000555", "", "Meta", "", "", "", ""]]);
+  w.run("syncLeads");
+  assert.equal(w.sync(2), "invalid: Phone needs 10 digits");
+  assert.match(w.sync(3), /^synced .*\(LMS-\d+\)$/);
 });
 
 test("B6: a row error goes to the retry list by ID; retried next run; found again after the row moves", () => {
