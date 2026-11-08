@@ -370,8 +370,11 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
   const star = (on: boolean) => (on ? <span style={{ color: R.bad }}> *</span> : null);
   const lbl = (text: string, required: boolean) => <span style={labelStyle}>{text}{star(required)}</span>;
   const box = { ...inputStyle, background: "#f7f2ea", display: "flex", gap: 8, alignItems: "center" } as const;
+  // Natural height even when the call log beside it is taller (no stretched cards), and pinned while the
+  // pop-up scrolls through a long history, so Status and Save stay in view
   return (
-    <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, display: "grid", gap: 12, minWidth: 0 }}>
+    <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, display: "grid", gap: 12, minWidth: 0,
+      alignContent: "start", alignSelf: "start", position: "sticky", top: 0 }}>
       {/* Client, 8 Nov: segments, everything important in one area of the screen */}
       <Card icon="user" title="Basic details">
         <div style={{ display: "grid", gap: 10 }}>
