@@ -36,7 +36,7 @@ const form = (page) => page.getByRole("dialog", { name: "Lead" });
 const neha = await login("neha");
 await shot(neha, "01-leads-page.png");
 
-// 2. Open the due lead from the Actions column: compact pop-up, number + copy, email, reminder above Save
+// 2. Open the due lead from the Actions column: WhatsApp top right, Basic details (contact + copy), Call & follow-up
 await neha.locator('button[title="Open lead form"]').first().click();
 await form(neha).waitFor();
 await shot(neha, "02-lead-form.png");

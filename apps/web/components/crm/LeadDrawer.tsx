@@ -113,10 +113,12 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner, expanded, onExpand }: {
             <Icon name="calendar" size={14} style={{ color: R.out }} /><b style={{ color: R.ink }} title="Lead received">{received(d.lead.created_at)}</b>
           </div>
         </div>
-        <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
-          <NumberBox phone10={d.lead.phone10} />
-          <Btn kind="ghost" onClick={onClose}>Close ✕</Btn>
-        </span>
+        {/* Client, 8 Nov: WhatsApp top right; the number lives in Basic details; no Close button
+            (a click on the empty area around the pop-up, or Esc, closes it) */}
+        <a href={`https://wa.me/91${d.lead.phone10}`} target="_blank" rel="noopener noreferrer" className="crm-btn" title="Chat on WhatsApp"
+          style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center", background: "#25D366", color: "#fff", borderRadius: 12,
+            padding: "10px 18px", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 8px 18px -10px rgba(37,211,102,.9)" }}>
+          <WhatsAppIcon size={18} />WhatsApp</a>
       </header>
       {readOnly && (
         <div role="status" style={{ display: "flex", gap: 10, alignItems: "center", background: "#fff1d6", border: `1px solid ${R.gold}`, borderRadius: 12, padding: "10px 14px", fontSize: 13.5, fontWeight: 600 }}>
@@ -147,31 +149,22 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner, expanded, onExpand }: {
   );
 }
 
-/** The number in big type for dialling on KoreCall, with a copy button. */
-function NumberBox({ phone10 }: { phone10: string }) {
+/** Contact field: the number in bold for dialling on KoreCall, with a copy button. */
+function ContactField({ phone10 }: { phone10: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try { await navigator.clipboard.writeText(phone10); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
   };
   return (
-    <div style={{ display: "flex", gap: 10, alignItems: "center", background: R.card, border: `1px solid ${R.line}`, borderRadius: 12, padding: "6px 6px 6px 14px" }}>
-      <Icon name="phone" size={16} style={{ color: R.out }} />
-      <b style={{ fontSize: 20, letterSpacing: ".04em", fontVariantNumeric: "tabular-nums" }} aria-label={`Phone ${phone10.split("").join(" ")}`}>{groupPhone(phone10)}</b>
+    <div style={{ ...inputStyle, background: "#f7f2ea", display: "flex", gap: 8, alignItems: "center", padding: "4px 4px 4px 12px", minHeight: 42 }}>
+      <Icon name="phone" size={15} style={{ color: R.out }} />
+      <b style={{ fontSize: 15.5, letterSpacing: ".03em", fontVariantNumeric: "tabular-nums", flex: 1 }} aria-label={`Phone ${phone10.split("").join(" ")}`}>{groupPhone(phone10)}</b>
       <button type="button" className="crm-btn" onClick={copy} title="Copy number" aria-label="Copy number"
         style={{ display: "inline-flex", gap: 5, alignItems: "center", border: `1px solid ${copied ? R.good : R.line}`, background: copied ? "#e5efe0" : "#fff",
-          color: copied ? R.good : R.ink, borderRadius: 9, padding: "6px 10px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+          color: copied ? R.good : R.ink, borderRadius: 8, padding: "5px 9px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
         <Icon name={copied ? "check" : "copy"} size={14} />{copied ? "Copied" : "Copy"}
       </button>
       <span role="status" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>{copied ? "Number copied" : ""}</span>
-    </div>
-  );
-}
-
-function SectionLabel({ icon, children }: { icon: Parameters<typeof Icon>[0]["name"]; children: ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "2px 0 10px" }}>
-      <Icon name={icon} size={16} style={{ color: R.out }} />
-      <span style={{ fontSize: 14, fontWeight: 800, color: R.ink }}>{children}</span>
     </div>
   );
 }
@@ -351,62 +344,58 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
   const lbl = (text: string, required: boolean) => <span style={labelStyle}>{text}{star(required)}</span>;
   const box = { ...inputStyle, background: "#f7f2ea", display: "flex", gap: 8, alignItems: "center" } as const;
   return (
-    <Card icon="user" title="Student & lead details">
-      <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, display: "grid", gap: 16, minWidth: 0 }}>
-        <div className="lf-2" style={{ alignItems: "end" }}>
-          <div>{lbl("Name", false)}<div style={box}><Icon name="user" size={15} style={{ color: R.mute }} />{l.name || "—"}</div></div>
-          <div>
-            {lbl("Email", false)}
-            {/* From the lead sheet's email column; the number is already in the box at the top */}
-            <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ ...box, flex: 1, minWidth: 0 }} title={l.email ?? undefined}>
+    <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, display: "grid", gap: 12, minWidth: 0 }}>
+      {/* Client, 8 Nov: segments, everything important in one area of the screen */}
+      <Card icon="user" title="Basic details">
+        <div style={{ display: "grid", gap: 10 }}>
+          <div className="lf-2">
+            <div>{lbl("Name", false)}<div style={box}><Icon name="user" size={15} style={{ color: R.mute }} />{l.name || "—"}</div></div>
+            <div>{lbl("Contact", false)}<ContactField phone10={l.phone10} /></div>
+          </div>
+          <div className="lf-2">
+            <div>{lbl("Email", false)}
+              <div style={box} title={l.email ?? undefined}>
                 <Icon name="mail" size={15} style={{ color: R.mute }} />
                 {l.email ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.email}</span>
                   : <span style={{ color: "#a8977f" }}>Not in the sheet</span>}
               </div>
-              <a href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer" className="crm-btn" title="Chat on WhatsApp"
-                style={{ display: "inline-flex", gap: 6, alignItems: "center", background: "#25D366", color: "#fff", borderRadius: 10, padding: "0 14px", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
-                <WhatsAppIcon size={16} />WhatsApp</a>
             </div>
-          </div>
-        </div>
-
-        <div>
-          <SectionLabel icon="phone">Call & follow-up information</SectionLabel>
-          <div style={{ display: "grid", gap: 12 }}>
             <div className="lf-2">
-              <div>{lbl("Status", true)}<StatusPicker value={code} onChange={pickStatus} /></div>
               <label>{lbl("Guitar", talked)}
                 <select value={guitar} onChange={(e) => setGuitar(e.target.value)} style={{ ...inputStyle, minHeight: 42 }} aria-label="Guitar">
                   <option value="">—</option><option>Yes</option><option>No</option>
                 </select></label>
-            </div>
-            <div className="lf-2">
-              <label>{lbl("Next follow-up date", kind === "callback")}
-                <input type="date" value={date} min={istToday()} disabled={dateOff} onChange={(e) => setDate(e.target.value)} aria-label="Next follow-up date"
-                  style={{ ...inputStyle, opacity: dateOff ? 0.5 : 1 }} /></label>
-              <label>{lbl("Next follow-up time", kind === "callback")}
-                <input type="time" value={time} disabled={dateOff} onChange={(e) => setTime(e.target.value)} aria-label="Next follow-up time"
-                  style={{ ...inputStyle, opacity: dateOff ? 0.5 : 1 }} /></label>
-            </div>
-            {kind === "retry" && !drops && <div style={{ fontSize: 12, color: R.mute, marginTop: -6 }}>Filled automatically from the follow-up rules in CRM Settings. Change it if needed.</div>}
-            <div className="lf-2">
-              <label>{lbl("Representative (assigned to)", true)}
-                <select value={repId} onChange={(e) => setRepId(e.target.value)} style={inputStyle} aria-label="Representative">
-                  <option value="">Choose…</option>
-                  {cfg.reps.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select></label>
               <label>{lbl("Amount (₹)", false)}
-                <input type="number" min={0} placeholder="e.g. 299" value={amount} onChange={(e) => setAmount(e.target.value)} style={inputStyle} /></label>
+                <input type="number" min={0} placeholder="e.g. 299" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ ...inputStyle, minHeight: 42 }} /></label>
             </div>
-            <label>
-              <span style={{ ...labelStyle, display: "flex" }}>Notes / conversation summary{star(needsNote)}
-                <span style={{ marginLeft: "auto", textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>{note.length} / {NOTE_MAX}</span></span>
-              <textarea value={note} maxLength={NOTE_MAX} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="What did the student say?" style={{ ...inputStyle, resize: "vertical" }} />
-            </label>
           </div>
         </div>
+      </Card>
 
+      <Card icon="phone" title="Call & follow-up">
+        <div style={{ display: "grid", gap: 10 }}>
+          <div className="lf-2">
+            <div>{lbl("Status", true)}<StatusPicker value={code} onChange={pickStatus} /></div>
+            <label>{lbl("Representative (assigned to)", true)}
+              <select value={repId} onChange={(e) => setRepId(e.target.value)} style={{ ...inputStyle, minHeight: 42 }} aria-label="Representative">
+                <option value="">Choose…</option>
+                {cfg.reps.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select></label>
+          </div>
+          <div className="lf-2">
+            <label>{lbl("Next follow-up date", kind === "callback")}
+              <input type="date" value={date} min={istToday()} disabled={dateOff} onChange={(e) => setDate(e.target.value)} aria-label="Next follow-up date"
+                style={{ ...inputStyle, opacity: dateOff ? 0.5 : 1 }} /></label>
+            <label>{lbl("Next follow-up time", kind === "callback")}
+              <input type="time" value={time} disabled={dateOff} onChange={(e) => setTime(e.target.value)} aria-label="Next follow-up time"
+                style={{ ...inputStyle, opacity: dateOff ? 0.5 : 1 }} /></label>
+          </div>
+          {kind === "retry" && !drops && <div style={{ fontSize: 12, color: R.mute, marginTop: -4 }}>Filled automatically from the follow-up rules in CRM Settings. Change it if needed.</div>}
+          <label>
+            <span style={{ ...labelStyle, display: "flex" }}>Notes / conversation summary{star(needsNote)}
+              <span style={{ marginLeft: "auto", textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>{note.length} / {NOTE_MAX}</span></span>
+            <textarea value={note} maxLength={NOTE_MAX} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="What did the student say?" style={{ ...inputStyle, resize: "vertical" }} />
+          </label>
         <Reminder at={reminder.at} repName={repName} note={reminder.note} live={reminder.live} />
         {err && (
           <div role="alert" style={{ color: R.bad, fontSize: 13, fontWeight: 600, display: "flex", gap: 10, alignItems: "center" }}>
@@ -417,7 +406,8 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
           style={{ padding: "13px 22px", fontSize: 15, background: `linear-gradient(135deg,${R.out},#c4622d)`, boxShadow: "0 10px 22px -12px rgba(196,98,45,.9)", width: "100%" }}>
           <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><Icon name="save" size={18} />{saving ? "Saving…" : "Save"}</span>
         </Btn>
-      </fieldset>
-    </Card>
+        </div>
+      </Card>
+    </fieldset>
   );
 }

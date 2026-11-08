@@ -5,9 +5,10 @@ request (7 Nov 2026, "keep it simple") to two pages:
 
 - **Leads**: four tiles (total, new, follow-ups due today, converted), filters, a "due now" banner,
   and three lists: *Follow-up due now* (blinks 15 min before a callback), *Upcoming today*, *All leads*.
-- **Lead form** (pop-up): number with Copy, name, email from the sheet, WhatsApp link, Status (the client's
-  codes in a coloured dropdown), Guitar, next follow-up date/time, representative, amount, notes,
-  a reminder banner, Save. A side handle opens the follow-up snapshot and the call log with recordings.
+- **Lead form** (pop-up, client layout of 8 Nov): WhatsApp button top right; **Basic details**
+  (Name, Contact with Copy, Email, Guitar, Amount); **Call & follow-up** (Status in a coloured dropdown,
+  Representative, next follow-up date/time, notes, reminder banner, Save). No Close button: a click on the
+  empty area around it, or Esc, closes it. A side handle opens the follow-up snapshot and the call log.
 - **CRM Settings** (owner): **Statuses** (the sheet's letter codes: name and role of each, + Add status, follow-up wait,
   drop limit) and **who can use the CRM**: per employee, Leads tab / CRM Settings tab / Export leads,
   also set in Team → Edit. The owner has everything; only the owner hands out access.
