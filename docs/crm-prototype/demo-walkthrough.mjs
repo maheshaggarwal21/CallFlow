@@ -25,7 +25,7 @@ async function login(who) {
   await page.click('button[type="submit"]');
   await page.waitForURL(/dashboard/);
   await page.goto(`${WEB}/dashboard/crm`);
-  await page.waitForSelector("text=Follow-up due now");
+  await page.waitForSelector("text=Follow-ups today");
   await page.waitForTimeout(1200);
   return page;
 }

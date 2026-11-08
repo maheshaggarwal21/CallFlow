@@ -3,8 +3,13 @@
 Branch `feature/crm-prototype`. A lead follow-up CRM inside CallFlow, cut down on the client's
 request (7 Nov 2026, "keep it simple") to two pages:
 
-- **Leads**: four tiles (total, new, follow-ups due today, converted), filters, a "due now" banner,
-  and three lists: *Follow-up due now* (blinks 15 min before a callback), *Upcoming today*, *All leads*.
+- **Leads** (client layout of 8 Nov): a slim band with Total / New / Due today / Converted; filters with
+  **Search · Clear · Download** after them (Download = CSV of exactly what the filters show); one
+  **Follow-ups today** list (due now, overdue, retries, then the rest of today); **All leads** numbered from
+  the newest down. Status shows only the coloured letter. **Assigned to, Status, Guitar and Next follow-up
+  can be changed right in the row** (`PATCH /crm/leads/:id`, same version/lock checks as a save, with a history
+  line); a status that needs a note, a date or Guitar opens the form with it already chosen. Last contacted
+  stays automatic. Leads that arrive while the page is open are tagged "new".
 - **Lead form** (pop-up, client layout of 8 Nov): WhatsApp button top right; **Basic details**
   (Name, Contact with Copy, Email, Guitar, Amount); **Call & follow-up** (Status in a coloured dropdown,
   Representative, next follow-up date/time, notes, reminder banner, Save). No Close button: a click on the

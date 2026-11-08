@@ -285,7 +285,7 @@ export function leadFilters(f: Filters, values: unknown[], meId?: string): strin
 }
 
 export const LEAD_LIST_COLS = `
-  l.id, l.lead_code, l.name, l.phone10, l.source, l.campaign, l.status, l.current_code, l.attempts,
+  l.id, l.lead_code, l.version, l.name, l.phone10, l.source, l.campaign, l.status, l.current_code, l.attempts,
   l.last_contacted_at, l.next_followup_at, l.created_at, l.amount, l.tags, l.has_guitar,
   CASE WHEN l.locked_until > NOW() THEN k.name END AS locked_by_name,
   CASE WHEN l.locked_until > NOW() THEN l.locked_by END AS locked_by,
@@ -334,6 +334,81 @@ export async function queue(user: User, f: Filters, now = new Date()) {
     if (sections[b].length < SECTION_CAP) sections[b].push({ ...l, bucket: b });
   }
   return { server_now: now, counts, sections, kpis: { due_now: counts.due_now, overdue: counts.overdue, ...k } };
+}
+
+// ── Edit in the table (client, 8 Nov) ──────────────────────────────────────
+
+export const leadPatchSchema = z.object({
+  version: z.number().int().positive(),
+  assigned_to: z.string().uuid().nullable().optional(),
+  has_guitar: z.boolean().nullable().optional(),
+  next_followup_at: z.string().datetime({ offset: true }).optional(),
+}).refine((p) => p.assigned_to !== undefined || p.has_guitar !== undefined || p.next_followup_at !== undefined, "Nothing to change");
+export type LeadPatch = z.infer<typeof leadPatchSchema>;
+
+/**
+ * Change Assigned to / Guitar / next follow-up from the Leads table without a call outcome.
+ * Same guards as a save: version (409), someone else's lock (423). Leaves a line in the history.
+ */
+export async function updateLeadFields(leadId: string, user: User, p: LeadPatch, now = new Date()) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: [lead] } = await client.query(
+      `SELECT l.status, l.version, l.locked_by, l.locked_until, u.name AS updated_by_name, k.name AS locked_by_name
+       FROM leads l LEFT JOIN employees u ON u.id = l.updated_by LEFT JOIN employees k ON k.id = l.locked_by
+       WHERE l.id = $1 FOR UPDATE OF l`,
+      [leadId]
+    );
+    if (!lead) throw new CrmError(404, "Lead not found");
+    if (lead.version !== p.version) {
+      const who = lead.updated_by_name ?? "someone else";
+      throw new CrmError(409, `This lead was updated by ${who}, reload`, { updated_by: who, version: lead.version });
+    }
+    if (lead.locked_by && lead.locked_by !== user.sub && new Date(lead.locked_until) > now) {
+      throw new CrmError(423, `${lead.locked_by_name} is on this lead`, { locked_by: lead.locked_by_name });
+    }
+    const notes: string[] = [];
+    const sets: string[] = [];
+    const values: unknown[] = [leadId];
+    const set = (col: string, v: unknown) => { values.push(v); sets.push(`${col} = $${values.length}`); };
+    if (p.assigned_to !== undefined) {
+      const { rows: [e] } = p.assigned_to
+        ? await client.query("SELECT name FROM employees WHERE id = $1 AND status = 'active'", [p.assigned_to])
+        : { rows: [{ name: "nobody" }] };
+      if (!e) throw new CrmError(400, "That representative is not active");
+      set("assigned_to", p.assigned_to);
+      notes.push(`Assigned to ${e.name}`);
+    }
+    if (p.has_guitar !== undefined) {
+      set("has_guitar", p.has_guitar);
+      notes.push(`Guitar: ${p.has_guitar == null ? "not set" : p.has_guitar ? "Yes" : "No"}`);
+    }
+    if (p.next_followup_at !== undefined) {
+      if (!["retry", "callback"].includes(lead.status)) throw new CrmError(400, "Set a status with a follow-up first");
+      const at = new Date(p.next_followup_at);
+      if (at.getTime() < now.getTime() - 60_000) throw new CrmError(400, "The follow-up time is in the past");
+      if (at.getTime() > now.getTime() + 90 * 86_400_000) throw new CrmError(400, "The follow-up is more than 90 days away");
+      set("next_followup_at", at);
+      notes.push(`Next follow-up ${at.toLocaleString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true })}`);
+    }
+    const { rows: [saved] } = await client.query(
+      `UPDATE leads SET ${sets.join(", ")}, version = version + 1, updated_by = $${values.length + 1}, updated_at = NOW()
+       WHERE id = $1 RETURNING version`,
+      [...values, user.sub]
+    );
+    await client.query(
+      "INSERT INTO lead_interactions (lead_id, employee_id, kind, note) VALUES ($1, $2, 'system', $3)",
+      [leadId, user.sub, `Changed in the table: ${notes.join(" · ")}`]
+    );
+    await client.query("COMMIT");
+    return { version: saved.version };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 // ── Lead intake ────────────────────────────────────────────────────────────

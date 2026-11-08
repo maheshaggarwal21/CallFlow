@@ -8,7 +8,7 @@ import { requirePermission } from "../middleware/requirePermission";
 import { CODE_RE, PERMISSIONS, ROLES, outcomeSchema } from "../lib/crm/rules";
 import {
   CrmError, LEAD_LIST_COLS, LEAD_LIST_JOINS, MAX_INGEST_ROWS, claimLock, getCodes, getSetting, ingestRows, leadDetail, leadFilters,
-  permissionsOf, queue, queueFilterSchema, reapplyCodeRoles, reconcile, releaseLock, saveOutcome,
+  leadPatchSchema, permissionsOf, queue, queueFilterSchema, reapplyCodeRoles, reconcile, releaseLock, saveOutcome, updateLeadFields,
 } from "../services/crm.service";
 import { audioUrlsFor } from "../services/audioUrls";
 
@@ -163,6 +163,10 @@ router.post("/leads/:id/lock", leadsAccess, async (req, res) => {
 router.delete("/leads/:id/lock", leadsAccess, async (req, res) => {
   await releaseLock(parse(uuid, req.params.id), user(req).sub);
   return res.status(204).end();
+});
+
+router.patch("/leads/:id", leadsAccess, async (req, res) => {
+  return res.json(await updateLeadFields(parse(uuid, req.params.id), user(req), parse(leadPatchSchema, req.body)));
 });
 
 router.post("/leads/:id/outcome", leadsAccess, async (req, res) => {

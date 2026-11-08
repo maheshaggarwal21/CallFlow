@@ -66,7 +66,7 @@ export type LeadRow = {
   status: string; current_code: Code | null; attempts: number; last_contacted_at: string | null; next_followup_at: string | null;
   created_at: string; amount: string | null; tags: string[];
   locked_by: string | null; locked_by_name: string | null; callback_set_by_name: string | null;
-  assigned_to?: string | null; assigned_to_name?: string | null; has_guitar: boolean | null;
+  assigned_to?: string | null; assigned_to_name?: string | null; has_guitar: boolean | null; version: number;
   last_call: LastCall; bucket?: "due_now" | "overdue" | "new" | "retry" | "later";
 };
 export type QueueResponse = {

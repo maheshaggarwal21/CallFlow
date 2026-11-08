@@ -57,17 +57,19 @@ const timeOf = (d: string) => new Date(d).toLocaleTimeString("en-US", { timeZone
 const istParts = (iso: string) => { const [d, t] = new Date(iso).toLocaleString("sv-SE", { timeZone: IST }).split(" "); return { date: d, time: t.slice(0, 5) }; };
 const istToday = () => new Date().toLocaleDateString("en-CA", { timeZone: IST });
 
-export default function LeadDrawer({ leadId, onClose, onSaved, isOwner }: { leadId: string | null; onClose: () => void; onSaved: (msg: string) => void; isOwner: boolean }) {
+export default function LeadDrawer({ leadId, presetCode, onClose, onSaved, isOwner }: {
+  leadId: string | null; presetCode?: string | null; onClose: () => void; onSaved: (msg: string) => void; isOwner: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   return (
     <Modal open={!!leadId} onClose={onClose} label="Lead" width={expanded ? 1340 : 820}>
-      {leadId && <DrawerBody key={leadId} leadId={leadId} onClose={onClose} onSaved={onSaved} isOwner={isOwner} expanded={expanded} onExpand={setExpanded} />}
+      {leadId && <DrawerBody key={leadId} leadId={leadId} presetCode={presetCode ?? null} onClose={onClose} onSaved={onSaved} isOwner={isOwner} expanded={expanded} onExpand={setExpanded} />}
     </Modal>
   );
 }
 
-function DrawerBody({ leadId, onClose, onSaved, isOwner, expanded, onExpand }: {
-  leadId: string; onClose: () => void; onSaved: (msg: string) => void; isOwner: boolean; expanded: boolean; onExpand: (v: boolean) => void;
+function DrawerBody({ leadId, presetCode, onClose, onSaved, isOwner, expanded, onExpand }: {
+  leadId: string; presetCode: string | null; onClose: () => void; onSaved: (msg: string) => void; isOwner: boolean; expanded: boolean; onExpand: (v: boolean) => void;
 }) {
   const { data: d, error, mutate } = useSWR<LeadDetail>(`/crm/leads/${leadId}`, fetcher, { refreshInterval: 30_000 });
   const { data: cfg } = useSWR<CrmConfig>("/crm/config", fetcher);
@@ -127,7 +129,7 @@ function DrawerBody({ leadId, onClose, onSaved, isOwner, expanded, onExpand }: {
         </div>
       )}
       <div className={`lf-grid${expanded ? " open" : ""}`}>
-        <LeadForm d={d} cfg={cfg} readOnly={readOnly} onSaved={(m) => { mutate(); onSaved(m); onClose(); }} onReload={() => mutate()} />
+        <LeadForm d={d} cfg={cfg} presetCode={presetCode} readOnly={readOnly} onSaved={(m) => { mutate(); onSaved(m); onClose(); }} onReload={() => mutate()} />
         {/* The handle the client asked for: opens the snapshot and call log beside the form */}
         <button type="button" className="lf-handle" onClick={() => onExpand(!expanded)} aria-expanded={expanded} aria-controls="lf-side"
           title={expanded ? "Hide the follow-up snapshot and call log" : "Show the follow-up snapshot and call log"}
@@ -288,7 +290,9 @@ function Reminder({ at, repName, note, live }: { at: string | null; repName: str
   );
 }
 
-function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg: CrmConfig; readOnly: boolean; onSaved: (m: string) => void; onReload: () => void }) {
+function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
+  d: LeadDetail; cfg: CrmConfig; presetCode: string | null; readOnly: boolean; onSaved: (m: string) => void; onReload: () => void;
+}) {
   const l = d.lead;
   const { id: meId } = useAuth();
   // Representative: whoever the lead is assigned to, else the rep who last worked it, else me
@@ -323,6 +327,8 @@ function LeadForm({ d, cfg, readOnly, onSaved, onReload }: { d: LeadDetail; cfg:
     const auto = k === "retry" && !(date && time) ? autoRetry(meta(c), l.attempts, cfg.retry_rules) : null;
     if (auto) { const p = istParts(auto); setDate(p.date); setTime(p.time); }
   };
+  // A status picked in the table that needs more (note, date, guitar) arrives here already chosen
+  useEffect(() => { if (presetCode) pickStatus(presetCode); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
     if (!code) return setErr("Choose a status");

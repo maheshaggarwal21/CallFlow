@@ -7,7 +7,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import pool from "../../db/pool";
 import { assertLocalDb } from "./localDb";
-import { claimLock, CrmError, getCodes, ingestRows, queue, reapplyCodeRoles, reconcile, saveOutcome } from "../../services/crm.service";
+import { claimLock, CrmError, getCodes, ingestRows, queue, updateLeadFields, reapplyCodeRoles, reconcile, saveOutcome } from "../../services/crm.service";
 import { DEFAULT_CODES, outcomeSchema } from "./rules";
 
 assertLocalDb(process.env.DATABASE_URL, "crm db.test");
@@ -219,4 +219,24 @@ test("queue loads only what the page shows: due, overdue, retry due and later to
     [["QTest due"], ["QTest overdue"], ["QTest retry"], ["QTest tonight"], []]);
   assert.equal(typeof q.kpis.new_leads, "number");
   assert.equal(q.counts.new, q.kpis.new_leads, "New is a count only");
+});
+
+test("edit in the table: rep, guitar and follow-up change with a history line; version, lock and status rules hold", async () => {
+  const l = await lead("9000020070");
+  const row = async () => (await pool.query("SELECT assigned_to, has_guitar, next_followup_at, version FROM leads WHERE id = $1", [l.id])).rows[0];
+  assert.deepEqual(await updateLeadFields(l.id, neha, { version: 1, assigned_to: priya.sub, has_guitar: true }), { version: 2 });
+  assert.deepEqual(await row(), { assigned_to: priya.sub, has_guitar: true, next_followup_at: null, version: 2 });
+  // A New lead has no follow-up to move
+  await assert.rejects(updateLeadFields(l.id, neha, { version: 2, next_followup_at: min(60).toISOString() }), /status with a follow-up/);
+  await saveOutcome(l.id, neha, out({ version: 2, code: "B" }));   // retry → it now has one
+  const at = min(120);
+  assert.deepEqual(await updateLeadFields(l.id, neha, { version: 3, next_followup_at: at.toISOString() }), { version: 4 });
+  assert.equal((await row()).next_followup_at.getTime(), at.getTime());
+  // Stale copy → 409 naming who changed it; someone else's lock → 423
+  await assert.rejects(updateLeadFields(l.id, priya, { version: 3, has_guitar: false }), (e: unknown) => e instanceof CrmError && e.status === 409);
+  await claimLock(l.id, priya.sub);
+  await assert.rejects(updateLeadFields(l.id, neha, { version: 4, has_guitar: false }), (e: unknown) => e instanceof CrmError && e.status === 423);
+  const { rows } = await pool.query("SELECT note FROM lead_interactions WHERE lead_id = $1 AND kind = 'system' ORDER BY created_at", [l.id]);
+  assert.match(rows[0].note, /Changed in the table: Assigned to Priya · Guitar: Yes/);
+  assert.match(rows[1].note, /Next follow-up/);
 });
