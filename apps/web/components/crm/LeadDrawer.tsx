@@ -2,7 +2,7 @@
 
 // The lead form ("Lead follow-up") as a compact pop-up, kept simple on the client's request:
 // the form alone by default; the side handle opens the follow-up snapshot and call log beside it.
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import useSWR from "swr";
 import { R } from "@/components/report/kit";
 import { API_BASE, api, fetcher } from "@/lib/api";
@@ -183,16 +183,37 @@ function autoRetry(rule: CodeMeta | undefined, attempts: number, rules: CrmConfi
 /** Status dropdown with the code chips and their colours (a native select can't show them). */
 function StatusPicker({ value, onChange }: { value: Code | ""; onChange: (c: Code) => void }) {
   const [open, setOpen] = useState(false);
+  // The list is fixed to the screen (the form's cards clip anything that sticks out of them): below the
+  // field, or above it when there is more room there, as tall as the room allows, scrolling beyond that
+  const [place, setPlace] = useState<CSSProperties>({});
   const wrap = useRef<HTMLDivElement>(null);
   const { inUse, meta } = useCrmCodes();
+  const toggle = () => {
+    if (!open && wrap.current) {
+      const f = wrap.current.getBoundingClientRect();
+      const below = window.innerHeight - f.bottom - 12, above = f.top - 12;
+      const up = below < 280 && above > below;
+      setPlace({ left: f.left, width: f.width, maxHeight: Math.max(160, up ? above : below),
+        ...(up ? { bottom: window.innerHeight - f.top + 6 } : { top: f.bottom + 6 }) });
+    }
+    setOpen((o) => !o);
+  };
   const cur = meta(value);
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
     document.addEventListener("mousedown", away);
+    // A fixed list can't follow the form when it scrolls: close it instead (scrolling the list itself is fine)
+    const moved = (e: Event) => { if (!wrap.current?.querySelector('[role="listbox"]')?.contains(e.target as Node)) setOpen(false); };
+    window.addEventListener("scroll", moved, true);
+    window.addEventListener("resize", moved);
     // Focus the chosen option (or the first) so arrow keys work straight away
     (wrap.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]') ?? wrap.current?.querySelector<HTMLButtonElement>('[role="option"]'))?.focus();
-    return () => document.removeEventListener("mousedown", away);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      window.removeEventListener("scroll", moved, true);
+      window.removeEventListener("resize", moved);
+    };
   }, [open]);
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape" && open) { e.stopPropagation(); setOpen(false); return; } // don't close the whole pop-up
@@ -205,22 +226,22 @@ function StatusPicker({ value, onChange }: { value: Code | ""; onChange: (c: Cod
   const k = cur ? KIND[cur.kind] : null;
   return (
     <div ref={wrap} onKeyDown={onKey} style={{ position: "relative" }}>
-      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label="Status" onClick={() => setOpen((o) => !o)}
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label="Status" onClick={toggle}
         style={{ ...inputStyle, display: "flex", gap: 9, alignItems: "center", cursor: "pointer", textAlign: "left", fontFamily: "inherit", minHeight: 42,
           background: k ? k.tint : inputStyle.background, borderColor: k ? k.ring : undefined }}>
         {cur ? <><CodeChip code={cur.code} /><b style={{ color: k!.text }}>{cur.label}</b></> : <span style={{ color: R.mute }}>Choose a status…</span>}
         <span aria-hidden style={{ marginLeft: "auto", color: R.mute, fontSize: 11 }}>▼</span>
       </button>
       {open && (
-        <div role="listbox" aria-label="Status" style={{ position: "absolute", zIndex: 5, top: "calc(100% + 6px)", left: 0, right: 0, background: R.card,
-          border: `1px solid ${R.line}`, borderRadius: 12, boxShadow: "0 18px 40px -18px rgba(43,33,24,.45)", padding: 6, display: "grid", gap: 2 }}>
+        <div role="listbox" aria-label="Status" style={{ position: "fixed", zIndex: 60, ...place, overflowY: "auto", overscrollBehavior: "contain", background: R.card,
+          border: `1px solid ${R.line}`, borderRadius: 12, boxShadow: "0 18px 40px -18px rgba(43,33,24,.45)", padding: 6, display: "grid", gap: 2, alignContent: "start" }}>
           {inUse.map((c) => {
             const kk = KIND[c.kind], on = c.code === value;
             return (
               <button key={c.code} type="button" role="option" aria-selected={on} className="lf-opt" onClick={() => { onChange(c.code); setOpen(false); }}
                 style={{ ["--tint" as string]: kk.tint, display: "flex", gap: 10, alignItems: "center", textAlign: "left", width: "100%", fontFamily: "inherit",
-                  border: 0, borderLeft: `4px solid ${kk.ring}`, borderRadius: 8, padding: "7px 10px", cursor: "pointer", color: R.ink, background: on ? kk.tint : "transparent" }}>
-                <CodeChip code={c.code} big />
+                  border: 0, borderLeft: `4px solid ${kk.ring}`, borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: R.ink, background: on ? kk.tint : "transparent" }}>
+                <CodeChip code={c.code} />
                 <span style={{ minWidth: 0 }}>
                   <b style={{ fontSize: 13.5, color: kk.text }}>{c.label}</b>
                   <div style={{ fontSize: 11.5, color: R.mute }}>{c.rule}</div>
