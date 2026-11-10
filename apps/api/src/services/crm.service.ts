@@ -343,11 +343,13 @@ export const leadPatchSchema = z.object({
   assigned_to: z.string().uuid().nullable().optional(),
   has_guitar: z.boolean().nullable().optional(),
   next_followup_at: z.string().datetime({ offset: true }).optional(),
-}).refine((p) => p.assigned_to !== undefined || p.has_guitar !== undefined || p.next_followup_at !== undefined, "Nothing to change");
+  amount: z.number().positive().max(100000).nullable().optional(),
+  last_contacted_at: z.string().datetime({ offset: true }).optional(),
+}).refine((p) => Object.keys(p).some((k) => k !== "version" && p[k as keyof typeof p] !== undefined), "Nothing to change");
 export type LeadPatch = z.infer<typeof leadPatchSchema>;
 
 /**
- * Change Assigned to / Guitar / next follow-up from the Leads table without a call outcome.
+ * Change Assigned to / Guitar / Amount / Last contacted / next follow-up from the Leads table without a call outcome.
  * Same guards as a save: version (409), someone else's lock (423). Leaves a line in the history.
  */
 export async function updateLeadFields(leadId: string, user: User, p: LeadPatch, now = new Date()) {
@@ -391,6 +393,16 @@ export async function updateLeadFields(leadId: string, user: User, p: LeadPatch,
       if (at.getTime() > now.getTime() + 90 * 86_400_000) throw new CrmError(400, "The follow-up is more than 90 days away");
       set("next_followup_at", at);
       notes.push(`Next follow-up ${at.toLocaleString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true })}`);
+    }
+    if (p.amount !== undefined) {
+      set("amount", p.amount);
+      notes.push(`Amount: ${p.amount == null ? "not set" : `₹${p.amount}`}`);
+    }
+    if (p.last_contacted_at !== undefined) {
+      const at = new Date(p.last_contacted_at);
+      if (at.getTime() > now.getTime() + 60_000) throw new CrmError(400, "Last contacted can't be in the future");
+      set("last_contacted_at", at);
+      notes.push(`Last contacted ${at.toLocaleString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true })}`);
     }
     const { rows: [saved] } = await client.query(
       `UPDATE leads SET ${sets.join(", ")}, version = version + 1, updated_by = $${values.length + 1}, updated_at = NOW()

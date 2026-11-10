@@ -240,3 +240,18 @@ test("edit in the table: rep, guitar and follow-up change with a history line; v
   assert.match(rows[0].note, /Changed in the table: Assigned to Priya · Guitar: Yes/);
   assert.match(rows[1].note, /Next follow-up/);
 });
+
+test("edit in the table: amount and last contacted change (and clear); a future last contacted is refused", async () => {
+  const l = await lead("9000020071");
+  const row = async () => (await pool.query("SELECT amount, last_contacted_at, version FROM leads WHERE id = $1", [l.id])).rows[0];
+  const at = min(-90);
+  assert.deepEqual(await updateLeadFields(l.id, neha, { version: 1, amount: 499, last_contacted_at: at.toISOString() }), { version: 2 });
+  const r = await row();
+  assert.equal(Number(r.amount), 499);
+  assert.equal(r.last_contacted_at.getTime(), at.getTime());
+  assert.deepEqual(await updateLeadFields(l.id, neha, { version: 2, amount: null }), { version: 3 });
+  assert.equal((await row()).amount, null);
+  await assert.rejects(updateLeadFields(l.id, neha, { version: 3, last_contacted_at: min(30).toISOString() }), /future/);
+  const { rows } = await pool.query("SELECT note FROM lead_interactions WHERE lead_id = $1 AND kind = 'system' ORDER BY created_at", [l.id]);
+  assert.match(rows[0].note, /Amount: ₹499 · Last contacted/);
+});

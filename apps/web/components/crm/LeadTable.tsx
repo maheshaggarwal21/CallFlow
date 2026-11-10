@@ -1,7 +1,7 @@
 "use client";
 
 // Lead rows for the Leads page: the client's columns, one row per lead, click to open the form.
-// With `edit`, Assigned to / Status / Guitar / Next follow-up change right in the row (client, 8 Nov).
+// With `edit`, Assigned to / Status / Amount / Guitar / Last contacted / Next follow-up change right in the row (client, 8 Nov, 10 Nov).
 import type { CSSProperties, MouseEvent } from "react";
 import { R } from "@/components/report/kit";
 import { DUE_WINDOW_MS, groupPhone, type CodeMeta, type LeadRow } from "@/lib/crm";
@@ -27,8 +27,9 @@ const STICKY_CSS = `
   .crm-due .crm-sticky{background:#fff4dc}
   .crm-edit{position:relative;cursor:pointer}
   .crm-edit:hover{box-shadow:inset 0 0 0 1.5px ${R.gold};border-radius:8px}
-  .crm-edit:focus-within{box-shadow:inset 0 0 0 2px ${R.gold};border-radius:8px}`;
-// An invisible native control over the cell: the cell keeps its look, a click opens the picker
+  .crm-edit:focus-within{box-shadow:inset 0 0 0 2px ${R.gold};border-radius:8px}
+  .crm-edit input.crm-typed:focus{opacity:1!important;background:${R.card};border-radius:8px;padding:0 11px;font:inherit;outline:none}`;
+// An invisible native control over the cell: the cell keeps its look, a click opens the picker (a typed field shows itself while focused)
 const OVERLAY: CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer", border: 0, padding: 0 };
 const stop = (e: MouseEvent) => e.stopPropagation();
 /** "YYYY-MM-DDTHH:mm" in IST, for a datetime-local picker (its value is read back as IST too). */
@@ -37,7 +38,7 @@ const istLocal = (d: string) => new Date(d).toLocaleString("sv-SE", { timeZone: 
 export type TableEdit = {
   reps: { id: string; name: string }[];
   codes: CodeMeta[];
-  patch: (l: LeadRow, p: { assigned_to?: string | null; has_guitar?: boolean | null; next_followup_at?: string }) => void;
+  patch: (l: LeadRow, p: { assigned_to?: string | null; has_guitar?: boolean | null; next_followup_at?: string; amount?: number | null; last_contacted_at?: string }) => void;
   status: (l: LeadRow, code: string) => void;
 };
 const NAME_CLAMP: CSSProperties = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere", wordBreak: "break-word" };
@@ -122,15 +123,28 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                     {edit.codes.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.label}</option>)}
                   </select>}
                 </td>
-                <td style={td({ fontSize: 12.5 })}>{l.amount ? `₹${Number(l.amount)}` : "—"}</td>
+                <td className={edit ? "crm-edit" : undefined} style={td({ fontSize: 12.5 })} onClick={edit && stop}>
+                  {l.amount ? `₹${Number(l.amount)}` : "—"}
+                  {edit && <input key={l.version} type="number" min={0} inputMode="decimal" placeholder="e.g. 299" className="crm-typed" aria-label={`Amount for ${l.name}`}
+                    defaultValue={l.amount ? Number(l.amount) : ""} style={OVERLAY}
+                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { e.currentTarget.value = l.amount ? String(Number(l.amount)) : ""; e.currentTarget.blur(); } }}
+                    onBlur={(e) => { const v = Number(e.target.value) || null; if (v !== (l.amount ? Number(l.amount) : null)) edit.patch(l, { amount: v }); }} />}
+                </td>
                 <td className={edit ? "crm-edit" : undefined} style={td({ fontSize: 12.5, fontWeight: 600, color: l.has_guitar ? R.good : l.has_guitar === false ? R.bad : "#c2b39c" })} onClick={edit && stop}>
                   {l.has_guitar == null ? "—" : l.has_guitar ? "Yes" : "No"}
                   {edit && <select aria-label={`Guitar for ${l.name}`} value={l.has_guitar == null ? "" : l.has_guitar ? "yes" : "no"} style={OVERLAY}
                     onChange={(e) => edit.patch(l, { has_guitar: e.target.value === "" ? null : e.target.value === "yes" })}>
                     <option value="">—</option><option value="yes">Yes</option><option value="no">No</option>
                   </select>}</td>
-                <td style={td({ fontSize: 12.5, whiteSpace: "nowrap" })}>{l.last_contacted_at ? <>{day(l.last_contacted_at)}<div style={{ color: R.mute, fontSize: 11.5 }}>{time(l.last_contacted_at)}</div></> : "—"}</td>
-                {/* Editable only when the status has a follow-up (retry / callback); Last contacted stays automatic */}
+                {/* Set automatically when a status is saved; can be corrected here (not into the future) */}
+                <td className={edit ? "crm-edit" : undefined} style={td({ fontSize: 12.5, whiteSpace: "nowrap" })} onClick={edit && stop}>
+                  {l.last_contacted_at ? <>{day(l.last_contacted_at)}<div style={{ color: R.mute, fontSize: 11.5 }}>{time(l.last_contacted_at)}</div></> : "—"}
+                  {edit && <input key={l.version} type="datetime-local" aria-label={`Last contacted for ${l.name}`} max={istLocal(new Date(now).toISOString())}
+                    defaultValue={l.last_contacted_at ? istLocal(l.last_contacted_at) : ""} style={OVERLAY}
+                    onClick={(e) => { try { e.currentTarget.showPicker(); } catch { /* older browsers open it on focus */ } }}
+                    onBlur={(e) => { const v = e.target.value; if (v && v !== (l.last_contacted_at ? istLocal(l.last_contacted_at) : "")) edit.patch(l, { last_contacted_at: `${v}:00+05:30` }); }} />}
+                </td>
+                {/* Editable only when the status has a follow-up (retry / callback) */}
                 <td className={edit && f ? "crm-edit" : undefined} style={td({ fontSize: 12.5, whiteSpace: "nowrap" })} onClick={edit && f ? stop : undefined}
                   title={edit && !f ? "Choose a status with a follow-up first" : undefined}>
                   {f ? <><b>{day(f)}</b><div style={{ fontWeight: 700, fontSize: 12 }}>{time(f)}</div></> : "—"}
