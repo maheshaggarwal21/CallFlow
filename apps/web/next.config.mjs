@@ -11,6 +11,12 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // pages removed in the Nov 2026 revamp: old bookmarks land on the person's home instead of a 404
+  async redirects() {
+    return ["overview", "team", "employees", "employees/:id", "misc", "settings"].map((p) => ({
+      source: `/dashboard/${p}`, destination: "/dashboard", permanent: false,
+    }));
+  },
 };
 
 export default nextConfig;

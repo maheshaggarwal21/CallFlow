@@ -53,6 +53,8 @@ async function page(callFlowId: string, startDate: string, endDate: string, n: n
     console.error(`[payments] ${res.status} for ${callFlowId}: ${text.slice(0, 300).split(process.env.PAYMENTS_API_KEY!).join("<key>")}`);
     throw new PaymentsError(res.status === 401 || res.status === 403
       ? "The school's payments service refused our key"
+      // their answer for a rep they haven't linked: "No user found for this callFlowId"
+      : res.status === 404 ? "This person isn't linked on the school site yet (the school site needs their CallFlow ID)"
       : `The school's payments service answered ${res.status}`);
   }
   let json: unknown;

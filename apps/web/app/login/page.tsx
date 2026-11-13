@@ -5,31 +5,13 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { LoginResponse } from "@callflow/shared-types";
 
-type Role = "owner" | "employee";
-
-const ROLE_TABS: { key: Role; label: string; icon: string }[] = [
-  { key: "owner",    label: "Admin",    icon: "◎" },
-  { key: "employee", label: "Employee", icon: "◉" },
-];
-
-const DEMO: Record<Role, { email: string; password: string }> = {
-  owner:    { email: "admin@maxmusic.in",    password: "Admin@1234" },
-  employee: { email: "employee@maxmusic.in", password: "Employee@1234" },
-};
-
 export default function LoginPage() {
   const router = useRouter();
-  const [role,     setRole]     = useState<Role>("owner");
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [showPwd,  setShowPwd]  = useState(false);
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
-
-  function selectRole(r: Role) {
-    setRole(r);
-    setError("");
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,14 +21,12 @@ export default function LoginPage() {
       const res = await api.post<LoginResponse>("/auth/login", { email, password });
       // everyone else lands on /dashboard, which sends them to their own dashboard or first ticked tab
       router.push(res.user.role === "owner" ? "/dashboard/recordings" : "/dashboard");
-    } catch (err: any) {
-      setError(err.message ?? "Invalid email or password.");
+    } catch (err) {
+      setError((err as Error).message || "Invalid email or password.");
     } finally {
       setLoading(false);
     }
   }
-
-  const demo = DEMO[role];
 
   return (
     <div style={{
@@ -105,61 +85,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Role tabs */}
-        <div style={{
-          display: "flex", gap: 6,
-          background: "#f5f0eb",
-          borderRadius: 14, padding: 4,
-          marginBottom: 24,
-        }}>
-          {ROLE_TABS.map((t) => {
-            const active = role === t.key;
-            return (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => selectRole(t.key)}
-                style={{
-                  flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-                  padding: "10px 0",
-                  borderRadius: 10, border: "none",
-                  background: active ? "#fff" : "transparent",
-                  color: active ? "#e8761a" : "#9a8470",
-                  fontWeight: active ? 700 : 500,
-                  fontSize: 14, cursor: "pointer",
-                  boxShadow: active ? "0 2px 8px rgba(0,0,0,0.10)" : "none",
-                  transition: "all 0.16s",
-                }}
-              >
-                <span style={{ fontSize: 13 }}>{t.icon}</span>
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Demo credentials hint */}
-        <div style={{
-          background: "#fff9f3",
-          border: "1px solid #f0dcc8",
-          borderRadius: 10, padding: "10px 14px",
-          marginBottom: 22,
-          display: "flex", alignItems: "flex-start", gap: 8,
-        }}>
-          <span style={{ fontSize: 13, marginTop: 1 }}>💡</span>
-          <div>
-            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#b86214", textTransform: "uppercase", letterSpacing: 0.6 }}>
-              Demo credentials
-            </p>
-            <p style={{ margin: "3px 0 0", fontSize: 12, color: "#7a5a3a", fontFamily: "monospace" }}>
-              {demo.email}
-            </p>
-            <p style={{ margin: "1px 0 0", fontSize: 12, color: "#7a5a3a", fontFamily: "monospace" }}>
-              {demo.password}
-            </p>
-          </div>
-        </div>
-
+        {/* One sign-in for everyone: the rank set on the Users tab decides what each person sees */}
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
           {/* Email */}
@@ -171,7 +97,7 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder={demo.email}
+              placeholder="you@maxmusicschool.com"
               required
               autoComplete="email"
               style={{
@@ -210,6 +136,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPwd(v => !v)}
+                aria-label={showPwd ? "Hide password" : "Show password"}
                 style={{
                   position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
                   background: "none", border: "none", cursor: "pointer",

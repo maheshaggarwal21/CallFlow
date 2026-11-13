@@ -129,7 +129,10 @@ async function loadReport(q: Record<string, unknown>): Promise<PdfInput | null |
   if (who !== "all" && !z.string().uuid().safeParse(who).success) return "bad-id";
   const { start, end, label, type } = reportPeriod(q);
   const ids = who === "all"
-    ? (await pool.query("SELECT id FROM employees WHERE status = 'active' ORDER BY name")).rows.map((r) => r.id)
+    // a Super Admin is in the report only while holding a line (e.g. "WATI LINE"), not as a manager with no calls
+    ? (await pool.query(
+        `SELECT id FROM employees e WHERE status = 'active'
+           AND (role <> 'owner' OR EXISTS (SELECT 1 FROM lines l WHERE l.employee_id = e.id)) ORDER BY name`)).rows.map((r) => r.id)
     : [who];
   const people = (await employeesStats(ids, start, end)).map(pdfPerson);
   if (who !== "all" && !people.length) return null;

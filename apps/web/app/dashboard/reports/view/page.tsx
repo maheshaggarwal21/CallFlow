@@ -283,7 +283,7 @@ function TeamPage({ data, open }: { data: ReportData; open: (s: string) => void 
       <Panel title="Call length heatmap" sub="Calls in each length band · darker = more calls · hover a cell">
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 3, fontSize: 12.5 }}>
-            <thead><tr><th />{BUCKETS.map((b) => <th key={b} style={{ fontSize: 10.5, color: R.mute, fontWeight: 600, textTransform: "uppercase", padding: 4 }}>{b}</th>)}</tr></thead>
+            <thead><tr><th style={{ textAlign: "left" }} />{BUCKETS.map((b) => <th key={b} style={{ fontSize: 10.5, color: R.mute, fontWeight: 600, textTransform: "uppercase", padding: 4 }}>{b}</th>)}</tr></thead>
             {groups.filter((g) => g.people.length).map((g) => (
               <tbody key={g.key}>
                 {split && <tr><td colSpan={BUCKETS.length + 1} style={{ ...groupHead, padding: "10px 0 2px" }}>{g.title}</td></tr>}

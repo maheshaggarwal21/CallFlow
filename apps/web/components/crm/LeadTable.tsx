@@ -15,11 +15,12 @@ export type SortState = { sort: string; dir: "asc" | "desc" };
 
 const IST = "Asia/Kolkata";
 const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric" });
-const actBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: `1px solid ${R.line}`, background: R.card, color: R.ink,
+const actBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: `1px solid ${R.line}`, background: R.card, color: R.ink,
   display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, textDecoration: "none" };
 // #, Received, Name, Contact, Assigned to (representative), Status, Amount, Guitar, Last contacted, Next follow-up, Follow-up alert, Actions
 // (sums to the table's width on a 1440 px screen; wider screens share out the extra)
-const COL_PX = [40, 94, 134, 112, 120, 66, 70, 64, 94, 112, 116, 118];
+// 1106px in all = fits a 1440px screen beside the sidebar; Actions holds WhatsApp, WATI and Open (28px each)
+const COL_PX = [40, 94, 128, 112, 112, 66, 70, 64, 90, 106, 110, 114];
 // Actions stays visible while the table scrolls sideways; its cell needs the row's own background
 const STICKY_CSS = `
   .crm-sticky{position:sticky;right:0;z-index:1;box-shadow:-8px 0 10px -8px rgba(43,33,24,.18)}
@@ -161,7 +162,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                 </td>
                 <td style={td()}>{alert ? <Tag tone={alert.tone}>{alert.tone === "gold" ? "🔔 " : ""}{alert.text}</Tag> : <span style={{ color: "#c2b39c" }}>—</span>}</td>
                 <td className="crm-sticky" style={td({ whiteSpace: "nowrap" })} onClick={(e) => e.stopPropagation()}>
-                  <span style={{ display: "inline-flex", gap: 5 }}>
+                  <span style={{ display: "inline-flex", gap: 4 }}>
                     <a className="crm-btn" style={{ ...actBtn, color: "#1fa855" }} href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer"
                       title="Chat on WhatsApp" aria-label={`WhatsApp ${l.name}`}><WhatsAppIcon size={15} /></a>
                     {watiOn && <button className="crm-btn" style={actBtn} title="Open this chat in WATI" aria-label={`Open ${l.name} in WATI`}

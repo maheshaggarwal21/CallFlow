@@ -14,7 +14,9 @@ import { Icon } from "@/components/crm/icons";
 import ExtraCommissions, { extraProblem } from "@/components/users/ExtraCommissions";
 import type { Employee, Intercom, Line, TeamsResponse, UserRole } from "@callflow/shared-types";
 
-const COLS = "minmax(200px,1.5fr) 1fr minmax(180px,1.5fr) 0.7fr 1fr 0.9fr 80px 70px";
+// Fits a 1280px laptop without sideways scrolling, Edit included; email gets the most room
+// (kritgunsingh1907@gmail.com fits) and every gap is 16px so no column touches the next.
+const COLS = "minmax(150px,1.2fr) 110px minmax(205px,1.8fr) 64px minmax(100px,1fr) 104px 60px 36px";
 const TICKS = [...TABS.map((t) => ({ key: t.key, label: t.label })), ...EXTRA_PERMISSIONS];
 
 /** The green on/off switch from the client's design. */
@@ -57,22 +59,22 @@ export default function UsersPage() {
 
       {isLoading ? <p style={{ color: C.muted, fontSize: 14 }}>Loading…</p> : (
         <div style={{ ...S.card, overflowX: "auto" }}>
-          <div style={{ minWidth: 980 }}>
-            <div style={{ display: "grid", gridTemplateColumns: COLS, alignItems: "center", gap: 12, padding: "0 24px", minHeight: 44,
+          <div style={{ minWidth: 940 }}>
+            <div style={{ display: "grid", gridTemplateColumns: COLS, alignItems: "center", gap: 16, padding: "0 20px", minHeight: 44,
               borderBottom: `2px solid ${C.border}`, background: C.bgDeep }}>
               {["Name", "Contact", "Email Id", "Reg No.", "Designation Name", "Access", "Status", "Edit"].map((h) => <span key={h} style={S.th}>{h}</span>)}
             </div>
             {(users ?? []).map((u, i) => (
-              <div key={u.id} style={{ display: "grid", gridTemplateColumns: COLS, alignItems: "center", gap: 12, padding: "14px 24px",
+              <div key={u.id} style={{ display: "grid", gridTemplateColumns: COLS, alignItems: "center", gap: 16, padding: "14px 20px",
                 borderBottom: i === users!.length - 1 ? "none" : `1px solid ${C.borderLight}`, opacity: u.status === "active" ? 1 : 0.6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                   <Avatar name={u.name} colorIndex={u.color_index} />
-                  <span style={{ fontSize: 15, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</span>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: C.text, minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.3 }}>{u.name}</span>
                 </div>
-                <span style={{ fontSize: 14, color: C.textSub }}>{u.phone || "—"}</span>
+                <span style={{ fontSize: 14, color: C.textSub, whiteSpace: "nowrap" }}>{u.phone || "—"}</span>
                 <span style={{ fontSize: 14, color: C.textSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={u.email}>{u.email}</span>
                 <span style={{ fontSize: 14, color: C.textSub }}>{u.employee_code}</span>
-                <span style={{ fontSize: 14, color: C.textSub }}>{u.designation || "—"}</span>
+                <span style={{ fontSize: 14, color: C.textSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={u.designation ?? undefined}>{u.designation || "—"}</span>
                 <span><Tag label={rankLabel(u.role)} color={u.role === "owner" ? C.orange : u.role === "admin" ? C.blue : C.textSub}
                   bg={u.role === "owner" ? C.orangeLight : u.role === "admin" ? C.blueLight : C.bgDeep} /></span>
                 <Switch on={u.status === "active"} onChange={(v) => setStatus(u, v)} label={`${u.name} is active`} disabled={u.id === myId} />

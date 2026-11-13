@@ -31,6 +31,12 @@ function bucket(fees: PaidFee[], rate: number, type: RateType): Bucket {
   };
 }
 
+/** One payment's commission to the paisa, for the fees table (totals are rounded once, in `bucket`). */
+export function feeCommission(plan: PayPlan, p: PaidFee): number {
+  const [rate, type] = isTrial(p) ? [plan.trial_commission, plan.trial_commission_type] : [plan.regular_commission, plan.regular_commission_type];
+  return type === "pct" ? Math.round((p.amountPaise * rate) / 100) / 100 : rate;
+}
+
 /** Trial and regular commission on a set of payments. */
 export function commissionOn(plan: PayPlan, payments: PaidFee[]) {
   const trial = bucket(payments.filter(isTrial), plan.trial_commission, plan.trial_commission_type);

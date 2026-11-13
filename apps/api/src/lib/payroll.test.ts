@@ -1,7 +1,7 @@
 // Run: npm run build && node --test dist/lib/payroll.test.js
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { commissionOn, monthBounds, monthPayout, type PayPlan } from "./payroll";
+import { commissionOn, feeCommission, monthBounds, monthPayout, type PayPlan } from "./payroll";
 
 const plan: PayPlan = {
   fix_salary: 20000, other_amount: 1000,
@@ -56,4 +56,11 @@ test("month bounds, leap years, bad input", () => {
   assert.equal(monthBounds("2026-13"), null);
   assert.equal(monthBounds("2026-1"), null);
   assert.equal(monthBounds("x"), null);
+});
+
+test("a single fee's commission keeps paise, so the fees table adds up to the total", () => {
+  assert.equal(feeCommission(plan, { amountPaise: 299_950, feeType: "Monthly" }), 299.95);
+  assert.equal(feeCommission(plan, { amountPaise: 50_000, feeType: "Trial" }), 100);
+  const rows = fees.map((p) => feeCommission(plan, p)).reduce((t, x) => t + x, 0);
+  assert.equal(Math.round(rows), commissionOn(plan, fees).commission);
 });

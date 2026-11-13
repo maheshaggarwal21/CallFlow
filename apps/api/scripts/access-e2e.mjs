@@ -120,6 +120,8 @@ if (!ps?.payments?.connected) {
   ok(ps.payments.list.length === 105, "all pages of payments read (105 across 2 pages)", `got ${ps.payments.list.length}`);
   ok(ps.income.trial === 100 && ps.income.trial_count === 1, "trial commission = 20 % of ₹500", JSON.stringify(ps.income));
   ok(ps.income.regular === 52000 && ps.income.regular_count === 104, "regular commission = 104 × ₹500", JSON.stringify(ps.income));
+  // the dashboard's pay is the tracker's number: 12000 + 1500 + 52100 + 200 − 1700
+  ok(ps.pay?.month === "2026-11" && ps.pay.total === 64100, "dashboard month pay = tracker payout (extras added, deductions taken off)", JSON.stringify(ps.pay));
   ok(ps.payments.list.find((x) => x.id === "p2")?.receipt_url === null, "a javascript: receipt link is dropped");
   ok(ps.payments.list.find((x) => x.id === "p3")?.receipt_url?.startsWith("https://"), "an https receipt link is kept");
   ok(!JSON.stringify(ps.payments).includes("9000000000"), "student phone numbers are not passed to the browser");

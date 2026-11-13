@@ -24,7 +24,8 @@ type Row = {
 };
 type Payroll = { month: string; connected: boolean; people: Row[] };
 
-const COLS = "minmax(220px,1.7fr) 1fr 1fr 0.9fr 0.9fr 1fr 1fr 96px";
+// fits a 1280px laptop without sideways scrolling
+const COLS = "minmax(190px,1.6fr) 1fr 1fr 0.9fr 0.9fr 1fr 1fr 84px";
 
 /** This month and the 11 before it, newest first, as YYYY-MM. */
 function lastMonths(): string[] {
@@ -87,7 +88,7 @@ function Tracker() {
           </div>
 
           <div style={{ ...S.card, overflowX: "auto" }}>
-            <div style={{ minWidth: 1020 }}>
+            <div style={{ minWidth: 940 }}>
               <div style={{ display: "grid", gridTemplateColumns: COLS, alignItems: "center", gap: 12, padding: "0 24px", minHeight: 44, borderBottom: `2px solid ${C.border}`, background: C.bgDeep }}>
                 {["Employee", "Trial", "Regular", "Extras", "Deductions", "Salary", "Total payout", ""].map((h, i) => <span key={i} style={S.th}>{h}</span>)}
               </div>

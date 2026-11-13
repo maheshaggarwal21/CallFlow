@@ -37,7 +37,7 @@ The sample ledger (`lib/salarySample.ts`, invented students) was **deleted** on 
   **regular** rate. So a rep earns again on each later monthly fee they enter (recurring commission),
   credited to the rep the school site files it under (`callFlowId`).
 - `pct` = % of the amount paid; `fix` = ₹ per payment.
-- Monthly payout (Employee Tracker) = fix salary + other amount + commission + extra commissions
+- Monthly payout (Employee Tracker, and "Pay · <month>" on My Dashboard, same function `monthPayout`) = fix salary + other amount + commission + extra commissions
   whose dates overlap the month − deductions whose dates overlap the month (a % deduction is a % of
   the fix salary), never below ₹0. Each extra or deduction counts **once per month** it overlaps.
 - My Dashboard's Earnings card shows the commission for the picked period, plus the monthly salary
@@ -77,7 +77,7 @@ type ExtraDeduction  = ExtraCommission & { type: "fix" | "pct" };               
 ## 4a. The school's payments API (built by the school site's developer)
 
 `GET {PAYMENTS_API_URL}/api/v1/partner/payments?callFlowId=<employees.id>&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&page=1&limit=100`,
-header `x-api-key`. Client: `apps/api/src/services/payments.service.ts`.
+header `x-api-key`. Production `PAYMENTS_API_URL=https://maxmusicschool.in` (found 14 Nov in the school site's own JS; answers 401 without a key, 404 "No user found for this callFlowId" for a rep the school site hasn't linked). Each rep must have their CallFlow `employees.id` saved on the school site. Client: `apps/api/src/services/payments.service.ts`.
 - Reads every page (limit 100, at most 20 pages = 2,000 payments per rep per period, else an error).
 - Checks every answer with zod; keeps only id, student name, amountPaise, paidDate, paymentMode,
   feeType, linkedTo, receiptUrl (**https only**; anything else becomes null). Student email and phone
@@ -158,7 +158,7 @@ Amount) and Call Setting, Target → **Extra Commission** → **Extra Deduction*
 2. No `studentId` from the school site yet, so we can't tell a student's first regular fee
    (admission) from later renewals, or credit renewals to the rep who converted the student.
 3. The payments API takes one rep per request; the tracker makes one request per rep (4 at a time).
-4. Production needs `PAYMENTS_API_URL` (base URL not received yet) and a fresh `PAYMENTS_API_KEY`.
+4. Production: `deploy-crm/enable-payments.sh` (outside the repo) writes `PAYMENTS_API_URL` + `PAYMENTS_API_KEY` to the droplet. Until the school site saves each rep's CallFlow ID, every rep shows "isn't linked on the school site yet".
 
 ## 7. How to run and check (local)
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { C, eClr, init } from "@/lib/colors";
+import { C } from "@/lib/colors";
 import { fetcher } from "@/lib/api";
 import AssignLineModal from "@/components/modals/AssignLineModal";
 import type { Line } from "@callflow/shared-types";
@@ -64,10 +64,9 @@ export default function LinesPage() {
           </div>
 
           {(lines ?? []).map((line, i) => {
-            const empClr  = line.employee_color_index !== null ? eClr(line.employee_color_index) : null;
             const barPct  = line.call_count_today / maxCalls;
             const isLast  = i === (lines ?? []).length - 1;
-            const lineNum = String(i + 1).padStart(2, "0");
+            const lineNum = line.line_number;
 
             return (
               <div
@@ -99,18 +98,10 @@ export default function LinesPage() {
 
                 {/* Agent */}
                 <div>
-                  {empClr && line.employee_name ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{
-                        width: 32, height: 32, borderRadius: 9,
-                        background: empClr.bg, border: `1px solid ${empClr.br}`,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 12, fontWeight: 700, color: empClr.t, flexShrink: 0,
-                      }}>{init(line.employee_name)}</div>
-                      <div>
-                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>{line.employee_name}</p>
-                        {line.employee_code != null && <p style={{ margin: 0, fontSize: 12, color: C.muted }}>Reg No. {line.employee_code}</p>}
-                      </div>
+                  {line.employee_name ? (
+                    <div>
+                      <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>{line.employee_name}</p>
+                      {line.employee_code != null && <p style={{ margin: 0, fontSize: 12, color: C.muted }}>Reg No. {line.employee_code}</p>}
                     </div>
                   ) : (
                     <span style={{ fontSize: 14, color: C.dim, fontStyle: "italic" }}>Unassigned</span>

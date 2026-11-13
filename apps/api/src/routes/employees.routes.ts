@@ -6,7 +6,7 @@ import { requireAuth } from "../middleware/auth";
 import { requirePermission } from "../middleware/requirePermission";
 import { requireOwner } from "../middleware/requireOwner";
 import { resolveRange, IST_TODAY_START, istDateKey } from "../lib/dateRange";
-import { commissionOn, isTrial, monthBounds, monthPayout, type PayPlan } from "../lib/payroll";
+import { commissionOn, feeCommission, isTrial, monthBounds, monthPayout, type PayPlan } from "../lib/payroll";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "../services/payments.service";
 
 // The Users tab (client, 12 Nov 2026): one account per person with rank, tabs, salary rule, line and targets.
@@ -109,7 +109,7 @@ const PLAN_COLS = `e.fix_salary, e.other_amount, e.trial_commission::float, e.tr
 /** One payment as the dashboard shows it, with the commission it earned. */
 const paymentRow = (plan: PayPlan) => (p: Payment) => ({
   id: p.id, name: p.name, paid_date: p.paidDate, mode: p.paymentMode, fee_type: p.feeType, linked_to: p.linkedTo,
-  amount: p.amountPaise / 100, commission: commissionOn(plan, [p]).commission, trial: isTrial(p), receipt_url: p.receiptUrl,
+  amount: p.amountPaise / 100, commission: feeCommission(plan, p), trial: isTrial(p), receipt_url: p.receiptUrl,
 });
 
 // /me/summary = My Dashboard; /:id/summary = the Super Admin's eye on one user's dashboard (Employee Tracker)
@@ -138,12 +138,16 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
 
   // Joinings and commission come from the school's payments; if that service is down the rest of the page still loads
   const today = istDateKey(new Date());
-  let list: Payment[] = [], todays: Payment[] = [], error: string | null = null;
+  const lastDay = istDateKey(new Date(end.getTime() - 1));
+  // the pay shown is for the month the picked period ends in, worked out exactly as the Employee Tracker does
+  const pay = monthBounds(lastDay.slice(0, 7))!;
+  let list: Payment[] = [], todays: Payment[] = [], monthList: Payment[] = [], error: string | null = null;
   if (paymentsConfigured()) {
     try {
-      [list, todays] = await Promise.all([
-        paymentsFor(id, istDateKey(start), istDateKey(new Date(end.getTime() - 1))),
+      [list, todays, monthList] = await Promise.all([
+        paymentsFor(id, istDateKey(start), lastDay),
         paymentsFor(id, today, today),
+        paymentsFor(id, pay.from, pay.to),
       ]);
     } catch (e) {
       if (!(e instanceof PaymentsError)) throw e;
@@ -158,17 +162,18 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
     income: { joinings: c.trial.count + c.regular.count, trial: c.trial.commission, regular: c.regular.commission, total: c.commission,
       trial_count: c.trial.count, regular_count: c.regular.count, fees: c.trial.fees + c.regular.fees },
     payments: { connected: paymentsConfigured() && !error, error, list: list.map(paymentRow(u)) },
+    pay: { month: lastDay.slice(0, 7), ...monthPayout(u, monthList, pay.from, pay.to) },
   });
 });
 
-// Employee Tracker: every active User's pay for one month, from the school's payments (Super Admin only)
+// Employee Tracker: every active User's and Admin's pay for one month, from the school's payments (Super Admin only)
 router.get("/payroll", requireOwner, async (req, res) => {
   const month = typeof req.query.month === "string" ? req.query.month : istDateKey(new Date()).slice(0, 7);
   const b = monthBounds(month);
   if (!b) return bad(res, 400, "month must be YYYY-MM");
   const { rows } = await pool.query(
     `SELECT e.id, e.name, e.employee_code, e.color_index, ${PLAN_COLS}
-     FROM employees e WHERE e.role = 'employee' AND e.status = 'active' ORDER BY e.name`);
+     FROM employees e WHERE e.role <> 'owner' AND e.status = 'active' ORDER BY e.name`);
   const connected = paymentsConfigured();
   // a few reps at a time, so a large team doesn't flood the school's server
   const out: unknown[] = [];

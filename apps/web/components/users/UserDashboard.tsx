@@ -29,6 +29,12 @@ type Summary = {
   today: { call_secs: number; trial: number; regular: number };
   income: { joinings: number; trial: number; regular: number; total: number; trial_count: number; regular_count: number; fees: number };
   payments: { connected: boolean; error: string | null; list: PaymentRow[] };
+  /** The month's pay, as the Employee Tracker works it out (month of the picked period's end). */
+  pay: {
+    month: string; base: number; other: number; total: number;
+    trial: { count: number; commission: number }; regular: { count: number; commission: number };
+    extras: { name: string; amount: number }[]; deductions: { name: string; amount: number }[];
+  };
 };
 
 const CSS = `
@@ -70,6 +76,7 @@ function Progress({ label, done, goal }: { label: string; done: number; goal: nu
   );
 }
 
+const monthName = (ym: string) => new Date(`${ym}-01T00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 const fmtDay = (d: string) => new Date(`${d}T00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
 /** The payments table; long lists open 25 at a time. */
@@ -217,20 +224,22 @@ export default function UserDashboard({ id }: { id?: string }) {
             <section aria-label={my("Earnings")} style={{ background: `linear-gradient(160deg, #4a3527, ${R.espresso})`, color: "#fff", borderRadius: 14, padding: "18px 20px",
               display: "grid", alignContent: "space-between", gap: 14, boxShadow: "0 14px 30px -18px rgba(43,33,24,.7)" }}>
               <div>
-                <div style={{ ...capLabel, color: "#e3b778" }}>{my("Earnings")}</div>
-                <div style={{ fontSize: 13, color: "#d9c8b4", marginTop: 2 }}>For the period picked above</div>
+                <div style={{ ...capLabel, color: "#e3b778" }}>{my("Pay")} · {monthName(s.pay.month)}</div>
+                <div style={{ fontSize: 13, color: "#d9c8b4", marginTop: 2 }}>Salary + commission + extras − deductions</div>
               </div>
-              <div>
-                <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1 }}>{inr(s.income.total)}</div>
-                <div style={{ fontSize: 13, color: "#d9c8b4", marginTop: 6 }}>commission on {s.income.joinings} fee{s.income.joinings === 1 ? "" : "s"} collected · {inr(s.income.fees)}</div>
-              </div>
+              <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1 }}>{inr(s.pay.total)}</div>
               <div style={{ display: "grid", gap: 8, fontSize: 13.5, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,.14)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#e9dccb" }}><span>Trial commission · {s.income.trial_count}</span><b style={{ color: "#fff" }}>{inr(s.income.trial)}</b></div>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#e9dccb" }}><span>Regular commission · {s.income.regular_count}</span><b style={{ color: "#fff" }}>{inr(s.income.regular)}</b></div>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#e9dccb" }}><span>Fix salary{s.other_amount ? " + other" : ""} / month</span><b style={{ color: "#e3b778" }}>{inr(s.fix_salary + s.other_amount)}</b></div>
-                {bonuses.map((x, i) => <div key={`b${i}`} style={{ display: "flex", justifyContent: "space-between", color: "#e9dccb" }}><span>+ {x.name}</span><b style={{ color: "#9fd18b" }}>+{inr(x.amount)}</b></div>)}
-                {cuts.map((x, i) => <div key={`d${i}`} style={{ display: "flex", justifyContent: "space-between", color: "#e9dccb" }}><span>− {x.name}</span><b style={{ color: "#f2a69c" }}>−{inr(x.value)}</b></div>)}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Fix salary</span><b style={{ color: "#fff" }}>{inr(s.pay.base)}</b></div>
+                {s.pay.other > 0 && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Other amount</span><b style={{ color: "#fff" }}>{inr(s.pay.other)}</b></div>}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Trial commission · {s.pay.trial.count}</span><b style={{ color: "#fff" }}>{inr(s.pay.trial.commission)}</b></div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Regular commission · {s.pay.regular.count}</span><b style={{ color: "#fff" }}>{inr(s.pay.regular.commission)}</b></div>
+                {s.pay.extras.map((x, i) => <div key={`b${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>+ {x.name}</span><b style={{ color: "#9fd18b" }}>+{inr(x.amount)}</b></div>)}
+                {s.pay.deductions.map((x, i) => <div key={`d${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>− {x.name}</span><b style={{ color: "#f2a69c" }}>−{inr(x.amount)}</b></div>)}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,.14)", fontWeight: 800 }}>
+                  <span>Total pay</span><span style={{ color: "#e3b778" }}>{inr(s.pay.total)}</span></div>
               </div>
+              <div style={{ fontSize: 12.5, color: "#d9c8b4" }}>
+                In the period picked above: {inr(s.income.total)} commission on {s.income.joinings} fee{s.income.joinings === 1 ? "" : "s"} ({inr(s.income.fees)})</div>
             </section>
           </div>
 
