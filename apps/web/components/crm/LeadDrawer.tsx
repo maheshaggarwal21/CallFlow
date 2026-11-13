@@ -6,10 +6,10 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import useSWR from "swr";
 import { R } from "@/components/report/kit";
 import { API_BASE, api, fetcher } from "@/lib/api";
-import { MIN_NOTE, groupPhone, type Code, type CodeMeta, type CrmConfig, type LeadDetail } from "@/lib/crm";
+import { MIN_NOTE, fillTemplate, groupPhone, openWati, type Code, type CodeMeta, type CrmConfig, type LeadDetail, type WatiTemplates } from "@/lib/crm";
 import { useCrmCodes } from "@/hooks/useCrmCodes";
 import { useAuth } from "@/hooks/useAuth";
-import { WhatsAppIcon } from "@/components/ui/WABtn";
+import { WatiIcon, WhatsAppIcon } from "@/components/ui/WABtn";
 import { Btn, CodeChip, Modal, inputStyle, labelStyle } from "./kit";
 import { Card, History, Snapshot } from "./History";
 import { Icon } from "./icons";
@@ -37,6 +37,9 @@ const SHEET_CSS = `
   @keyframes lf-ring{0%{box-shadow:0 0 0 0 rgba(232,100,27,.45)}70%{box-shadow:0 0 0 10px rgba(232,100,27,0)}100%{box-shadow:0 0 0 0 rgba(232,100,27,0)}}
   @media (max-width:900px){.lf-grid.open{grid-template-columns:minmax(0,1fr) 30px}.lf-grid.open>.lf-side{grid-column:1/-1}}
   @media (max-width:640px){.lf-2{grid-template-columns:1fr}}
+  .wt-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+  .wt-grid.on{grid-template-columns:minmax(0,1.35fr) minmax(260px,1fr)}
+  @media (max-width:760px){.wt-grid.on{grid-template-columns:minmax(0,1fr)}}
   @media (prefers-reduced-motion: reduce){.lf-siren-dome,.lf-siren-rays,.lf-banner{animation:none}}
 `;
 
@@ -74,6 +77,7 @@ function DrawerBody({ leadId, presetCode, onClose, onSaved, isOwner, expanded, o
   const { data: d, error, mutate } = useSWR<LeadDetail>(`/crm/leads/${leadId}`, fetcher, { refreshInterval: 30_000 });
   const { data: cfg } = useSWR<CrmConfig>("/crm/config", fetcher);
   const [lock, setLock] = useState<Lock>(null);
+  const [watiErr, setWatiErr] = useState("");
   const lastActive = useRef(Date.now());
 
   // Claim on open, extend every minute while the rep is active, release on close
@@ -117,11 +121,18 @@ function DrawerBody({ leadId, presetCode, onClose, onSaved, isOwner, expanded, o
         </div>
         {/* Client, 8 Nov: WhatsApp top right; the number lives in Basic details; no Close button
             (a click on the empty area around the pop-up, or Esc, closes it) */}
+        {/* Client, 12 Nov: WATI beside WhatsApp, opening this number's chat in WATI */}
+        <button type="button" className="crm-btn" title="Open this chat in WATI" onClick={() => { setWatiErr(""); openWati(d.lead.id).catch((e) => setWatiErr((e as Error).message)); }}
+          style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center", background: "#fff", color: "#1d1d1b", border: `1px solid ${R.line}`, borderRadius: 12,
+            padding: "9px 18px", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
+          <WatiIcon size={22} />wati</button>
         <a href={`https://wa.me/91${d.lead.phone10}`} target="_blank" rel="noopener noreferrer" className="crm-btn" title="Chat on WhatsApp"
-          style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center", background: "#25D366", color: "#fff", borderRadius: 12,
+          style={{ display: "inline-flex", gap: 8, alignItems: "center", background: "#25D366", color: "#fff", borderRadius: 12,
             padding: "10px 18px", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 8px 18px -10px rgba(37,211,102,.9)" }}>
           <WhatsAppIcon size={18} />WhatsApp</a>
       </header>
+      {watiErr && <p role="alert" style={{ margin: 0, color: R.bad, fontSize: 13 }}>WATI: {watiErr}</p>}
+      <WatiSend lead={d.lead} readOnly={readOnly} onSent={() => mutate()} />
       {readOnly && (
         <div role="status" style={{ display: "flex", gap: 10, alignItems: "center", background: "#fff1d6", border: `1px solid ${R.gold}`, borderRadius: 12, padding: "10px 14px", fontSize: 13.5, fontWeight: 600 }}>
           <Icon name="lock" size={18} style={{ color: "#8a5a12" }} />
@@ -148,6 +159,113 @@ function DrawerBody({ leadId, presetCode, onClose, onSaved, isOwner, expanded, o
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Send an approved WATI template to the lead: pick it from the dropdown, read the preview with the
+ * lead's details filled in, then Send. Nothing is sent until a template is chosen and Send is pressed.
+ */
+function WatiSend({ lead, readOnly, onSent }: { lead: LeadDetail["lead"]; readOnly: boolean; onSent: () => void }) {
+  const { data, error } = useSWR<WatiTemplates>("/crm/wati/templates", fetcher, { revalidateOnFocus: false });
+  const [name, setName] = useState("");
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [state, setState] = useState<{ busy?: boolean; ok?: string; err?: string }>({});
+  // On by default so the message is seen before it is sent; the Preview button hides or shows it
+  const [preview, setPreview] = useState(true);
+  if (data && !data.configured) return null;
+  const t = data?.templates.find((x) => x.name === name);
+  const pick = (n: string) => {
+    setName(n);
+    setState({});
+    const next = data?.templates.find((x) => x.name === n);
+    // the first variable is the person's name in the school's templates; the rest start from WATI's sample text
+    setValues(Object.fromEntries((next?.params ?? []).map((p, i) => [p.name, i === 0 || /name/i.test(p.name) ? lead.name || p.sample : p.sample])));
+  };
+  const send = async () => {
+    if (!t) return;
+    setState({ busy: true });
+    try {
+      const r = await api.post<{ mode: "sent" | "dry-run" }>(`/crm/leads/${lead.id}/whatsapp`, { template: t.name, values });
+      setState({ ok: r.mode === "sent" ? `Sent “${t.name}” to ${groupPhone(lead.phone10)}.` : `Test mode: “${t.name}” was NOT sent (this is the local copy). It will send on the live site.` });
+      setName("");
+      onSent();
+    } catch (e) {
+      setState({ err: (e as Error).message });
+    }
+  };
+  const vars = t?.params ?? [];
+  const now = new Date().toLocaleTimeString("en-US", { timeZone: IST, hour: "2-digit", minute: "2-digit", hour12: true });
+  return (
+    <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 12, padding: "12px 14px" }}>
+      <div className={`wt-grid${t && preview ? " on" : ""}`}>
+        <div style={{ display: "grid", gap: 10, alignContent: "start", minWidth: 0 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ display: "inline-flex", gap: 8, alignItems: "center", fontWeight: 800, fontSize: 15, color: R.ink }}><WatiIcon size={24} />Send WATI Template (WhatsApp)</span>
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: R.good, background: "#e5efe0", borderRadius: 999, padding: "3px 10px" }}>
+              {data?.dry_run ? "Test mode: nothing is sent from this local copy" : "Send registered templates directly from WATI"}</span>
+          </div>
+          <div>
+            <span style={labelStyle}>Template <span style={{ color: R.bad }}>*</span></span>
+            <div style={{ display: "flex", gap: 10 }}>
+              <select aria-label="WhatsApp template" value={name} disabled={readOnly || !data} onChange={(e) => pick(e.target.value)} style={{ ...inputStyle, flex: 1, minWidth: 0 }}>
+                <option value="">{error ? "Templates could not be loaded" : !data ? "Loading templates…" : "Select template"}</option>
+                {data?.templates.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+              </select>
+              {/* Toggles the preview beside the form */}
+              <button type="button" className="crm-btn" onClick={() => setPreview(!preview)} disabled={!t} aria-pressed={preview}
+                style={{ display: "inline-flex", gap: 7, alignItems: "center", border: `1px solid ${preview && t ? R.out : R.line}`, background: preview && t ? "#fdf1e7" : "#fff",
+                  color: preview && t ? R.out : R.ink, borderRadius: 9, padding: "0 14px", fontWeight: 700, fontSize: 13.5, fontFamily: "inherit", cursor: t ? "pointer" : "default", opacity: t ? 1 : 0.5 }}>
+                <Icon name="eye" size={17} />Preview</button>
+            </div>
+          </div>
+          {error && <p role="alert" style={{ margin: 0, color: R.bad, fontSize: 13 }}>{(error as Error).message}</p>}
+          {t && (
+            <div style={{ display: "flex", gap: 12, alignItems: "stretch", flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 240px", background: R.soft, borderRadius: 10, padding: "10px 12px", display: "grid", gap: 8, alignContent: "start" }}>
+                <span style={{ ...labelStyle, marginBottom: 0 }}>Template variables (auto-filled)</span>
+                {vars.length === 0 ? <span style={{ fontSize: 13, color: R.mute }}>This template has no blanks.</span>
+                  : vars.map((p) => (
+                    <label key={p.name} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ flex: "none", fontSize: 12, fontWeight: 700, color: R.bad, background: "#f8e3df", borderRadius: 6, padding: "4px 7px" }}>{`{{${p.name}}}`}</span>
+                      <input aria-label={`Value for ${p.name}`} value={values[p.name] ?? ""} maxLength={500} onChange={(e) => setValues({ ...values, [p.name]: e.target.value })}
+                        style={{ ...inputStyle, padding: "6px 9px" }} />
+                    </label>
+                  ))}
+              </div>
+              <div style={{ flex: "0 1 220px", display: "grid", gap: 8, alignContent: "center" }}>
+                <button type="button" className="crm-btn" onClick={send} disabled={readOnly || state.busy}
+                  style={{ display: "inline-flex", gap: 9, alignItems: "center", justifyContent: "center", background: R.out, color: "#fff", border: 0, borderRadius: 10,
+                    padding: "13px 18px", fontWeight: 800, fontSize: 15, fontFamily: "inherit", cursor: "pointer", opacity: readOnly || state.busy ? 0.6 : 1 }}>
+                  <WhatsAppIcon size={18} />{state.busy ? "Sending…" : "Send Template"}</button>
+                <span style={{ fontSize: 12, color: R.mute, textAlign: "center" }}>to {groupPhone(lead.phone10)} · <button type="button" onClick={() => pick("")}
+                  style={{ border: 0, background: "none", padding: 0, color: R.mute, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>cancel</button></span>
+              </div>
+            </div>
+          )}
+          {state.ok && <p role="status" style={{ margin: 0, color: R.good, fontSize: 13, fontWeight: 600 }}>{state.ok}</p>}
+          {state.err && <p role="alert" style={{ margin: 0, color: R.bad, fontSize: 13 }}>{state.err}</p>}
+        </div>
+
+        {t && preview && (
+          // WhatsApp-style: green chat background, one white message bubble with the filled-in template
+          <aside aria-label="Message preview" style={{ background: "#dcf0d2", borderRadius: 12, padding: "10px 12px", display: "grid", gap: 8, alignContent: "start", minWidth: 0 }}>
+            <span style={{ display: "inline-flex", gap: 7, alignItems: "center", fontWeight: 800, fontSize: 13.5, color: R.ink }}>
+              <span style={{ color: "#25D366", display: "inline-flex" }}><WhatsAppIcon size={18} /></span>Template Preview</span>
+            <div style={{ background: "#fff", borderRadius: "4px 12px 12px 12px", padding: "9px 11px 6px", boxShadow: "0 1px 1px rgba(0,0,0,.08)", fontSize: 13.5, lineHeight: 1.45,
+              whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 300, overflowY: "auto" }}>
+              {t.header && <b style={{ display: "block", marginBottom: 4 }}>{t.header}</b>}
+              {fillTemplate(t.body, values)}
+              {t.footer && <span style={{ display: "block", marginTop: 6, fontSize: 12.5, color: R.mute }}>{t.footer}</span>}
+              <span style={{ display: "block", textAlign: "right", fontSize: 11, color: R.mute, marginTop: 2 }}>{now}</span>
+            </div>
+            {t.buttons.map((b) => (
+              <span key={b} style={{ background: "#fff", borderRadius: 10, padding: "7px 10px", textAlign: "center", fontSize: 13.5, fontWeight: 600, color: "#1f8fd6" }}>{b}</span>
+            ))}
+          </aside>
+        )}
+      </div>
+    </section>
   );
 }
 

@@ -4,7 +4,6 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { errorHandler } from "./lib/asyncErrors";
 import rateLimit from "express-rate-limit";
-import path from "path";
 import authRoutes from "./routes/auth.routes";
 import callsRoutes from "./routes/calls.routes";
 import analyticsRoutes from "./routes/analytics.routes";
@@ -15,6 +14,7 @@ import systemRoutes from "./routes/system.routes";
 import audioRoutes from "./routes/audio.routes";
 import studentsRoutes from "./routes/students.routes";
 import reportsRoutes from "./routes/reports.routes";
+import teamsRoutes from "./routes/teams.routes";
 import devRoutes from "./routes/dev.routes";
 import crmRoutes from "./routes/crm.routes";
 import { DEV_UPLOADS_DIR } from "./services/storage.service";
@@ -83,6 +83,7 @@ app.use("/api/v1/lines", linesRoutes);
 app.use("/api/v1/system", systemRoutes);
 app.use("/api/v1/students", studentsRoutes);
 app.use("/api/v1/reports", reportsRoutes);
+app.use("/api/v1/teams", teamsRoutes);
 
 // CRM (lead follow-up) is off unless switched on per environment, so merging the
 // code exposes nothing until its migrations have run.

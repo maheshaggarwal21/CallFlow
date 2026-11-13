@@ -1,9 +1,7 @@
 import { Router } from "express";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
-import { requireOwner } from "../middleware/requireOwner";
 import {
-  IST_TODAY_START,
   bucketKeyExpr,
   enumerateBuckets,
   pickBucket,
@@ -88,189 +86,13 @@ async function buildActivitySeries(
   });
 }
 
-function pctDelta(current: number, previous: number): number | null {
-  if (previous <= 0) return null;
-  return Math.round(((current - previous) / previous) * 100);
-}
-
-router.get("/misc-count", async (_req, res) => {
-  const result = await pool.query(
-    "SELECT " +
-      "COUNT(*) AS count, " +
-      "COALESCE(ROUND(AVG(duration_secs)), 0) AS avg_duration_secs, " +
-      "COUNT(*) FILTER (WHERE misc_reason ILIKE '%disconnect%') AS disconnected_count, " +
-      "COUNT(*) FILTER (WHERE misc_reason ILIKE '%no answer%' OR misc_reason ILIKE '%no response%') AS no_response_count " +
-    "FROM calls WHERE is_misc = TRUE"
-  );
-
-  const row = result.rows[0];
-  return res.json({
-    count: Number(row.count || 0),
-    avg_duration_secs: Number(row.avg_duration_secs || 0),
-    disconnected_count: Number(row.disconnected_count || 0),
-    no_response_count: Number(row.no_response_count || 0),
-  });
-});
-
-router.get("/overview", requireOwner, async (req, res) => {
-  const dateFromParam = typeof req.query.date_from === "string" ? req.query.date_from : null;
-  const dateToParam   = typeof req.query.date_to   === "string" ? req.query.date_to   : null;
-
-  const { start, end } = resolveRange(dateFromParam, dateToParam);
-
-  // Compare against the equal-length window immediately before the selection so
-  // the delta stays meaningful for every preset, not just whole months.
-  const spanMs = Math.max(end.getTime() - start.getTime(), 1);
-  const prevEnd = start;
-  const prevStart = new Date(start.getTime() - spanMs);
-
-  const TOTALS_SQL =
-    "SELECT " +
-      "COUNT(*) AS total, " +
-      "COUNT(*) FILTER (WHERE call_direction='inbound') AS inbound, " +
-      "COUNT(*) FILTER (WHERE call_direction='outbound') AS outbound, " +
-      "COALESCE(ROUND(AVG(duration_secs)), 0) AS avg_duration_secs " +
-    "FROM calls WHERE is_misc = FALSE AND called_at >= $1 AND called_at < $2";
-
-  const [totalsRes, prevRes] = await Promise.all([
-    pool.query(TOTALS_SQL, [start.toISOString(), end.toISOString()]),
-    pool.query(TOTALS_SQL, [prevStart.toISOString(), prevEnd.toISOString()]),
-  ]);
-
-  const totals = totalsRes.rows[0];
-  const prev = prevRes.rows[0];
-
-  const totalCalls  = Number(totals.total || 0);
-  const inbound     = Number(totals.inbound || 0);
-  const outbound    = Number(totals.outbound || 0);
-  const avgDuration = Number(totals.avg_duration_secs || 0);
-
-  const prevTotal    = Number(prev.total || 0);
-  const prevInbound  = Number(prev.inbound || 0);
-  const prevOutbound = Number(prev.outbound || 0);
-  const prevAvg      = Number(prev.avg_duration_secs || 0);
-
-  const momDelta = {
-    total_pct: pctDelta(totalCalls, prevTotal),
-    inbound_pct: pctDelta(inbound, prevInbound),
-    outbound_pct: pctDelta(outbound, prevOutbound),
-    avg_duration_secs: Math.round(avgDuration - prevAvg),
-  };
-
-  const directionSplit = {
-    inbound_pct: totalCalls > 0 ? Math.round((inbound / totalCalls) * 100) : 0,
-    outbound_pct: totalCalls > 0 ? Math.round((outbound / totalCalls) * 100) : 0,
-  };
-
-  // Percentages are taken against every non-misc call in range (not just the
-  // attributed ones) so the agent bars and the donut centre agree.
-  const teamRes = await pool.query(
-    "SELECT c.employee_id, e.name, e.color_index, COUNT(*) AS count " +
-    "FROM calls c " +
-    "JOIN employees e ON e.id = c.employee_id " +
-    "WHERE c.is_misc = FALSE AND c.called_at >= $1 AND c.called_at < $2 " +
-    "GROUP BY c.employee_id, e.name, e.color_index " +
-    "ORDER BY count DESC",
-    [start.toISOString(), end.toISOString()]
-  );
-
-  const teamSplit = teamRes.rows.map((r) => {
-    const count = Number(r.count || 0);
-    return {
-      employee_id: r.employee_id,
-      name: r.name,
-      count,
-      pct: totalCalls > 0 ? Math.round((count / totalCalls) * 100) : 0,
-      color_index: Number(r.color_index || 0),
-    };
-  });
-
-  const attributed = teamSplit.reduce((sum, t) => sum + t.count, 0);
-  const unassignedCount = Math.max(totalCalls - attributed, 0);
-
-  const weeklyActivity = await buildActivitySeries(start, end);
-
-  const resRes = await pool.query(
-    "SELECT " +
-      "COUNT(*) FILTER (WHERE resolution_status = 'resolved') AS resolved_count, " +
-      "COUNT(*) FILTER (WHERE resolution_status = 'escalated') AS escalated_count, " +
-      "COUNT(*) FILTER (WHERE resolution_status = 'no_response') AS no_response_count " +
-    "FROM calls WHERE is_misc = FALSE AND called_at >= $1 AND called_at < $2",
-    [start.toISOString(), end.toISOString()]
-  );
-
-  const topLineRes = await pool.query(
-    "SELECT line_number, COUNT(*) AS call_count " +
-    "FROM calls " +
-    "WHERE is_misc = FALSE AND line_number IS NOT NULL AND called_at >= $1 AND called_at < $2 " +
-    "GROUP BY line_number ORDER BY call_count DESC LIMIT 1",
-    [start.toISOString(), end.toISOString()]
-  );
-
-  const lineStatusRes = await pool.query(
-    "SELECT l.line_number AS line, e.name AS employee_name, COALESCE(c.cnt, 0) AS call_count_today " +
-    "FROM lines l " +
-    "LEFT JOIN employees e ON e.id = l.employee_id " +
-    "LEFT JOIN ( " +
-      "SELECT line_number, COUNT(*) AS cnt " +
-      "FROM calls " +
-      "WHERE line_number IS NOT NULL " +
-        `AND called_at >= ${IST_TODAY_START} ` +
-        `AND called_at < ${IST_TODAY_START} + INTERVAL '1 day' ` +
-      "GROUP BY line_number " +
-    ") c ON c.line_number = l.line_number " +
-    "ORDER BY l.line_number ASC"
-  );
-
-  const recentRes = await pool.query(
-    "SELECT c.id, c.source, c.device_id, c.line_number, c.intercom_code, " +
-      "c.call_direction, c.caller_phone, c.student_name, c.called_at, c.duration_secs, " +
-      "c.employee_id, c.is_misc, c.misc_reason, c.resolution_status, c.created_at, c.updated_at, " +
-      "i.phone_number AS intercom_phone_number, " +
-      "'KoreCall' AS source_label, " +
-      "e.color_index AS color_index, e.name AS employee_name " +
-    "FROM calls c " +
-    "LEFT JOIN intercoms i ON i.intercom_code = c.intercom_code " +
-    "LEFT JOIN employees e ON e.id = c.employee_id " +
-    "WHERE c.is_misc = FALSE AND c.called_at >= $1 AND c.called_at < $2 " +
-    "ORDER BY c.called_at DESC LIMIT 5",
-    [start.toISOString(), end.toISOString()]
-  );
-
-  return res.json({
-    total_calls: totalCalls,
-    inbound,
-    outbound,
-    avg_duration_secs: avgDuration,
-    mom_delta: momDelta,
-    direction_split: directionSplit,
-    team_split: teamSplit,
-    unassigned_count: unassignedCount,
-    unassigned_pct: totalCalls > 0 ? Math.round((unassignedCount / totalCalls) * 100) : 0,
-    weekly_activity: weeklyActivity,
-    resolved_count: Number(resRes.rows[0]?.resolved_count || 0),
-    escalated_count: Number(resRes.rows[0]?.escalated_count || 0),
-    no_response_count: Number(resRes.rows[0]?.no_response_count || 0),
-    top_line: topLineRes.rows[0]
-      ? { line_number: topLineRes.rows[0].line_number, call_count: Number(topLineRes.rows[0].call_count) }
-      : null,
-    line_status: lineStatusRes.rows.map((r) => ({
-      line: r.line,
-      employee_name: r.employee_name,
-      call_count_today: Number(r.call_count_today || 0),
-    })),
-    recent_calls: recentRes.rows,
-    range: { from: start.toISOString(), to: end.toISOString() },
-  });
-});
-
 router.get("/employee/:id", async (req, res) => {
   const id = req.params.id;
 
   if (!req.user) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  if (req.user.role !== "owner" && req.user.sub !== id) {
+  if (req.user.role === "employee" && req.user.sub !== id) {
     return res.status(403).json({ error: "Forbidden" });
   }
 

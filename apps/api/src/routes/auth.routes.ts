@@ -34,7 +34,7 @@ router.post("/login", loginLimiter, async (req, res) => {
   }
 
   const result = await pool.query(
-    "SELECT id, name, email, role, color_index, password_hash FROM employees WHERE email = $1 LIMIT 1",
+    "SELECT id, name, email, role, color_index, password_hash FROM employees WHERE email = $1 AND status = 'active' LIMIT 1",
     [email]
   );
 
@@ -98,13 +98,16 @@ router.get("/me", requireAuth, async (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
+  // permissions = the tabs ticked for this user (Users → Tabs); the Super Admin has all without rows
   const result = await pool.query(
-    "SELECT id, name, email, role, color_index FROM employees WHERE id = $1 LIMIT 1",
+    `SELECT e.id, e.name, e.email, e.role, e.color_index,
+            ARRAY(SELECT permission FROM employee_permissions p WHERE p.employee_id = e.id) AS permissions
+     FROM employees e WHERE e.id = $1 AND e.status = 'active' LIMIT 1`,
     [userId]
   );
 
   if (result.rows.length === 0) {
-    return res.status(404).json({ error: "User not found" });
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   return res.json(result.rows[0]);

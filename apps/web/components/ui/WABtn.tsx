@@ -13,6 +13,18 @@ export function WhatsAppIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+export const WATI_GREEN = "#0b7a75";
+/** WATI's own mark (client, 13 Nov): a black outlined bubble over a mint one. It keeps its own colours, so give it a light background. */
+export function WatiIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ flex: "none" }}>
+      <path d="M9 6.5h10a3 3 0 0 1 3 3V15a3 3 0 0 1-3 3v4.5L14.5 18H9a3 3 0 0 1-3-3V9.5a3 3 0 0 1 3-3z" fill="#6ee696" />
+      <path d="M5.5 2.5h10A3.5 3.5 0 0 1 19 6v5a3.5 3.5 0 0 1-3.5 3.5h-1V18l-3.5-3.5H5.5A3.5 3.5 0 0 1 2 11V6a3.5 3.5 0 0 1 3.5-3.5z"
+        fill="none" stroke="#1d1d1b" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function WABtn({ phone, size = "md" }: Props) {
   if (!phone || phone === "Unknown") return null;
 

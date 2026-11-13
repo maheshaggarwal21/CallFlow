@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
-import { requireOwner } from "../middleware/requireOwner";
+import { requirePermission } from "../middleware/requirePermission";
 import { IST_TODAY_START } from "../lib/dateRange";
 
 const router = Router();
@@ -39,7 +39,7 @@ router.get("/", async (_req, res) => {
   })));
 });
 
-router.patch("/:id", requireOwner, async (req, res) => {
+router.patch("/:id", requirePermission("lines"), async (req, res) => {
   const parsed = patchSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid request" });

@@ -113,10 +113,3 @@ export function periodPhrase(period: Period): string {
     default:           return "all time";
   }
 }
-
-/** Label for the activity chart, which buckets hourly for single-day ranges. */
-export function activityPhrase(period: Period): string {
-  return period === "today" || period === "yesterday"
-    ? `Hourly call volume ${periodPhrase(period)}`
-    : `Call volume ${periodPhrase(period)}`;
-}

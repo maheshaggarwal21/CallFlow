@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
+import { requirePermission } from "../middleware/requirePermission";
 import { audioUrlsFor } from "../services/audioUrls";
 import { rangeEnd, rangeStart } from "../lib/dateRange";
 
@@ -17,7 +18,8 @@ const resolutionSchema = z.object({
   resolution_status: z.enum(["resolved", "escalated"]).nullable(),
 });
 
-router.use(requireAuth);
+// Only the Recordings tab reads calls; a User still sees only their own (scoped in each query)
+router.use(requireAuth, requirePermission("recordings"));
 
 function parseLimit(value: any): number {
   const n = Number(value);
@@ -95,16 +97,15 @@ router.get("/", async (req, res) => {
   const limit = parseLimit(req.query.limit);
   const offset = parseOffset(req.query.offset);
 
-  const countRes = await pool.query(
-    `SELECT COUNT(*) AS total FROM calls c ${whereClause}`,
-    values
-  );
-
-  const listRes = await pool.query(
-    `SELECT ${CALL_COLS} FROM calls c ${CALL_JOINS} ${whereClause} ` +
-    `ORDER BY c.called_at DESC LIMIT ${limit} OFFSET ${offset}`,
-    values
-  );
+  // Independent queries: run them together, one trip to the database instead of two
+  const [countRes, listRes] = await Promise.all([
+    pool.query(`SELECT COUNT(*) AS total FROM calls c ${whereClause}`, values),
+    pool.query(
+      `SELECT ${CALL_COLS} FROM calls c ${CALL_JOINS} ${whereClause} ` +
+      `ORDER BY c.called_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      values
+    ),
+  ]);
 
   return res.json({
     data: listRes.rows,
@@ -167,16 +168,15 @@ router.post("/search", async (req, res) => {
 
   const whereClause = `WHERE ${filters.join(" AND ")}`;
 
-  const countRes = await pool.query(
-    `SELECT COUNT(*) AS total FROM calls c ${whereClause}`,
-    values
-  );
-
-  const listRes = await pool.query(
-    `SELECT ${CALL_COLS} FROM calls c ${CALL_JOINS} ${whereClause} ` +
-    `ORDER BY c.called_at DESC LIMIT ${limit} OFFSET ${offset}`,
-    values
-  );
+  // Independent queries: run them together, one trip to the database instead of two
+  const [countRes, listRes] = await Promise.all([
+    pool.query(`SELECT COUNT(*) AS total FROM calls c ${whereClause}`, values),
+    pool.query(
+      `SELECT ${CALL_COLS} FROM calls c ${CALL_JOINS} ${whereClause} ` +
+      `ORDER BY c.called_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      values
+    ),
+  ]);
 
   return res.json({
     calls: listRes.rows,

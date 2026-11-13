@@ -10,8 +10,6 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",
-    "basic-ftp": "^5.0.5",
-    "bull": "^4.12.3",
     "dotenv": "^16.4.5",
     "ftp-srv": "^4.6.3",
     "music-metadata": "^10.4.0",

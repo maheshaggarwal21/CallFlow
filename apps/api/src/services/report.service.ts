@@ -62,18 +62,19 @@ type EmployeeStats = { id: string; name: string; employee_code: number; lines: s
 
 /** Raw figures for one employee over [start, end). Null when the employee no longer exists. */
 export async function employeeStats(employeeId: string, start: Date, end: Date): Promise<EmployeeStats | null> {
-  const emp = await pool.query(
+  // The three queries are independent: run them together (each is a ~110 ms trip to the database)
+  const range = [employeeId, start.toISOString(), end.toISOString()];
+  const [emp, { rows: [r] }, byHour] = await Promise.all([pool.query(
     `SELECT e.name, e.employee_code,
             (SELECT string_agg(line_number, ', ' ORDER BY line_number) FROM lines WHERE employee_id = e.id) AS lines
      FROM employees e WHERE e.id = $1`,
     [employeeId]
-  );
-  if (!emp.rows[0]) return null;
+  ),
 
   // Every call counts, including <10 s ones (the client wants them in the totals
   // AND as their own line). Gap = end of one call → start of the next, within
   // one IST day, so overnight breaks and overlapping calls don't count.
-  const { rows: [r] } = await pool.query(
+  pool.query(
     `WITH c AS (
        SELECT duration_secs, call_direction AS dir,
               regexp_replace(COALESCE(caller_phone, ''), '\\D', '', 'g') AS d,
@@ -109,16 +110,23 @@ export async function employeeStats(employeeId: string, start: Date, end: Date):
             MIN(gap) FILTER (WHERE gap > 0)::float AS min_gap,
             MAX(gap) FILTER (WHERE gap > 0)::float AS max_gap
      FROM c`,
-    [employeeId, start.toISOString(), end.toISOString()]
-  );
-  const byHour = await pool.query(
+    range
+  ),
+  pool.query(
     `SELECT EXTRACT(HOUR FROM called_at AT TIME ZONE '${IST_TZ}')::int AS h, COUNT(*)::int AS n
      FROM calls WHERE employee_id = $1 AND called_at >= $2 AND called_at < $3 GROUP BY 1`,
-    [employeeId, start.toISOString(), end.toISOString()]
-  );
+    range
+  )]);
+  if (!emp.rows[0]) return null;
   const hours = Array<number>(24).fill(0);
   for (const row of byHour.rows) hours[row.h] = row.n;
   return { ...emp.rows[0], id: employeeId, r, hours };
+}
+
+/** Stats for several employees at once, in the given order; unknown ids are left out. */
+export async function employeesStats(ids: string[], start: Date, end: Date): Promise<EmployeeStats[]> {
+  const all = await Promise.all(ids.map((id) => employeeStats(id, start, end)));
+  return all.filter((st): st is EmployeeStats => st !== null);
 }
 
 function reportVars(s: EmployeeStats, reportType: string, periodLabel: string): Record<string, string> {
@@ -246,11 +254,7 @@ async function deliver(
   if (!runId) return { employee_id: runEmployeeId, status: "skipped" };
 
   try {
-    const stats: EmployeeStats[] = [];
-    for (const id of employeeIds) {
-      const st = await employeeStats(id, window.start, window.end);
-      if (st) stats.push(st);
-    }
+    const stats = await employeesStats(employeeIds, window.start, window.end);
     if (!stats.length) throw new Error("Employee no longer exists");
     const reports = stats.map((st) => reportVars(st, REPORT_TYPE[s.frequency], window.label));
     // Combined subject lists everyone in {{name}}; other variables come from the first report

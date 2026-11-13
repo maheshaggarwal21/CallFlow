@@ -8,8 +8,10 @@ import Link from "next/link";
 import useSWR from "swr";
 import { api, fetcher } from "@/lib/api";
 import { usePeriodRange } from "@/hooks/usePeriodRange";
+import { useAuth } from "@/hooks/useAuth";
+import { Icon } from "@/components/crm/icons";
 import PeriodSelect from "@/components/ui/PeriodSelect";
-import type { ReportData, ReportPerson } from "@callflow/shared-types";
+import type { ReportData, ReportPerson, TeamsResponse } from "@callflow/shared-types";
 import {
   Avatar, BUCKETS, Donut, Funnel, HourLine, LengthColumns, Legend, MIX, Panel, PeopleBars, Pill, R, Ring, dur, hr, pct,
 } from "@/components/report/kit";
@@ -19,6 +21,7 @@ const CSS = `
   .rv-rail{min-width:0}
   .rv-nav{display:flex;overflow-x:auto;gap:4px;align-items:center}
   .rv-nav button,.rv-nav .rv-idle{flex:none;white-space:nowrap}
+  .rv-nav option{color:${R.ink};background:#fff}
   .rv-hl{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;align-items:start}
   .rv-hl-list{columns:2;column-gap:28px}.rv-hl-list li{break-inside:avoid}
   .rv-g2{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:14px}
@@ -27,7 +30,7 @@ const CSS = `
   .rv-row:hover{background:${R.soft}}
   .rv-ins b{color:${R.gold}}
   @media (min-width:1700px){.rv{grid-template-columns:220px minmax(0,1fr);align-items:start}.rv-rail{position:sticky;top:16px}
-    .rv-nav{display:grid;gap:2px}.rv-nav button{width:100%}}
+    .rv-nav{display:grid;gap:2px}.rv-nav button,.rv-nav select{width:100%;max-width:none!important}}
   @media (max-width:1100px){.rv-hl-list{columns:1}}
   @media (max-width:900px){.rv-g2,.rv-gp,.rv-g4,.rv-hl{grid-template-columns:1fr 1fr}.rv-g2>*,.rv-hl>*{grid-column:span 2}}
   @media (max-width:600px){.rv-g2,.rv-gp,.rv-g4,.rv-hl{grid-template-columns:1fr}.rv-g2>*,.rv-hl>*{grid-column:auto}}
@@ -45,6 +48,8 @@ const ts: CSSProperties = { fontSize: 12, opacity: 0.85 };
 
 export default function ReportViewPage() {
   const { params, selectProps } = usePeriodRange();
+  // A User (the lowest rank) gets only their own report from the server, whatever is asked for
+  const { can } = useAuth();
   const { data, error, isLoading } = useSWR<ReportData>(`/reports/data?employee_id=all&${params}`, fetcher);
   const [section, setSection] = useState("overview");
   const [downloading, setDownloading] = useState(false);
@@ -77,12 +82,23 @@ export default function ReportViewPage() {
     <div style={{ padding: "8px 4px 40px", color: R.ink }}>
       <style>{CSS}</style>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        <Link href="/dashboard/reports" style={{ color: R.mute, fontSize: 13, textDecoration: "none" }}>← Reports</Link>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>{data?.title ?? "Call Report"}</h1>
           {data && <div style={{ fontSize: 13, color: R.mute, marginTop: 2 }}>{data.period}</div>}
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {/* The report opens first; the email schedules are one click away (client, 12 Nov) */}
+          {can("reports") && (
+            <Link href="/dashboard/reports" title="Set up reports that are emailed on a schedule"
+              style={{ display: "inline-flex", alignItems: "center", gap: 10, background: "#fff", border: `1px solid ${R.line}`, borderRadius: 12,
+                padding: "8px 14px 8px 10px", textDecoration: "none", color: R.ink, boxShadow: "0 1px 2px rgba(43,33,24,.06)" }}>
+              <span aria-hidden style={{ width: 30, height: 30, borderRadius: 9, background: "#fdf1e7", color: R.out, display: "inline-grid", placeItems: "center" }}><Icon name="mail" size={17} /></span>
+              <span style={{ display: "grid", lineHeight: 1.2 }}>
+                <b style={{ fontSize: 13.5 }}>Email schedules</b>
+                <span style={{ fontSize: 11.5, color: R.mute }}>Send this report by email</span>
+              </span>
+            </Link>
+          )}
           <PeriodSelect {...selectProps} />
           <button onClick={download} disabled={downloading || !data}
             style={{ background: R.out, color: "#fff", border: 0, borderRadius: 10, padding: "10px 16px", fontWeight: 700, fontSize: 13.5, cursor: "pointer", opacity: downloading || !data ? 0.6 : 1 }}>
@@ -100,15 +116,15 @@ export default function ReportViewPage() {
               <nav aria-label="Report sections" className="rv-nav">
                 <button style={sectionBtn(current === "overview")} onClick={() => setSection("overview")} aria-current={current === "overview"}>Overview</button>
                 {showTeam && <button style={sectionBtn(current === "team")} onClick={() => setSection("team")} aria-current={current === "team"}>Team</button>}
-                {people.length > 0 && <div className="rv-idle" style={{ fontSize: 10, letterSpacing: ".14em", textTransform: "uppercase", color: "#a8917a", padding: "0 8px 0 14px" }}>People</div>}
-                {people.map((p) => (
-                  <button key={p.code} style={sectionBtn(current === p.code)} onClick={() => setSection(p.code)} aria-current={current === p.code}>
-                    <span style={{ width: 8, height: 8, borderRadius: 4, flex: "none", background: p.status[1] === "bad" ? R.bad : p.status[1] === "ok" ? "#7fb069" : "#a8917a" }} aria-hidden />
-                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</span>
-                    <span style={{ fontSize: 11.5, color: "#a8917a" }}>{p.calls}</span>
-                  </button>
-                ))}
-                {data.idle.map((n) => <div key={n} className="rv-idle" style={{ padding: "6px 12px", fontSize: 12.5, color: "#8c7864" }}>{n} · no calls</div>)}
+                {/* One People dropdown instead of a button per agent (client, 13 Nov) */}
+                {(people.length > 0 || data.idle.length > 0) && (
+                  <select aria-label="Pick an agent" value={person ? person.code : ""} onChange={(e) => e.target.value && setSection(e.target.value)}
+                    style={{ ...sectionBtn(!!person), appearance: "auto", flex: "none", maxWidth: 260 }}>
+                    <option value="" disabled>People</option>
+                    {people.map((p) => <option key={p.code} value={p.code}>{p.name} · {p.calls} calls</option>)}
+                    {data.idle.map((n) => <option key={n} value="" disabled>{n} · no calls</option>)}
+                  </select>
+                )}
               </nav>
             </aside>
             <main style={{ minWidth: 0, display: "grid", gap: 14 }}>
@@ -193,44 +209,84 @@ function OverviewPage({ data, open }: { data: ReportData; open: (s: string) => v
   );
 }
 
+type Group = { key: string; title: string; people: ReportPerson[]; idle: string[] };
+
+/** The Team page split by the teams on the Teams tab (client, 13 Nov 2026); one "Staff" group when there are none. */
+function useGroups(data: ReportData): Group[] {
+  const { can } = useAuth();
+  const { data: t } = useSWR<TeamsResponse>(can("teams") ? "/teams" : null, fetcher);
+  if (!t?.teams.length) return [{ key: "all", title: "Staff", people: data.people, idle: data.idle }];
+  const inTeam = (members: TeamsResponse["unassigned"]) => ({
+    people: data.people.filter((p) => members.some((m) => m.id === p.id)),
+    idle: data.idle.filter((n) => members.some((m) => m.name === n)),
+  });
+  const placed = new Set(t.teams.flatMap((x) => x.members.map((m) => m.id)));
+  const placedNames = new Set(t.teams.flatMap((x) => x.members.map((m) => m.name)));
+  return [
+    ...t.teams.map((x) => ({ key: x.id, title: x.location ? `${x.name} · ${x.location}` : x.name, ...inTeam(x.members) })),
+    // no team, or not on the Teams tab at all (e.g. a Super Admin who takes calls)
+    { key: "none", title: "No team", people: data.people.filter((p) => !placed.has(p.id ?? "")), idle: data.idle.filter((n) => !placedNames.has(n)) },
+  ].filter((g) => g.people.length || g.idle.length);
+}
+
 function TeamPage({ data, open }: { data: ReportData; open: (s: string) => void }) {
+  const groups = useGroups(data);
+  const split = groups.length > 1 || groups[0]?.key !== "all";
   const maxCell = Math.max(1, ...data.people.flatMap((p) => p.b));
   const th: CSSProperties = { textAlign: "left", fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".06em", color: R.mute, background: R.soft, padding: "9px 10px", fontWeight: 600 };
   const td: CSSProperties = { padding: "10px", borderBottom: "1px solid #f1e8da" };
+  const groupHead: CSSProperties = { fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 700, color: R.out };
+  const sum = (g: Group) => {
+    const calls = g.people.reduce((n, p) => n + p.calls, 0), secs = g.people.reduce((n, p) => n + p.dur, 0);
+    return `${g.people.length + g.idle.length} staff · ${calls} calls · ${dur(secs)} talk time${calls ? ` · avg ${dur(Math.round(secs / calls))}` : ""}`;
+  };
   return (
     <>
       <Head eyebrow="Team" title="Team performance" />
-      <Panel title="Staff" sub={`Sorted by talk time · click a row to open the person${data.idle.length ? ` · No calls: ${data.idle.join(", ")}` : ""}`}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
-            <thead><tr>{["Staff", "Calls", "In / Out", "Talk time", "Avg", "< 30s", "Invalid", "Status"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
-            <tbody>{data.people.map((p) => (
-              <tr key={p.code} className="rv-row" onClick={() => open(p.code)} style={{ cursor: "pointer" }}>
-                <td style={td}><div style={{ display: "flex", gap: 10, alignItems: "center" }}><Avatar name={p.name} size={34} /><div><b>{p.name}</b><div style={{ fontSize: 11.5, color: R.mute }}>Line {p.line} · #{p.code}</div></div></div></td>
-                <td style={td}><b>{p.calls}</b></td><td style={td}>{p.inb} / {p.out}</td><td style={td}>{dur(p.dur)}</td><td style={td}>{dur(p.avg)}</td>
-                <td style={td}>{pct(p.short)}</td><td style={td}>{p.invalid}</td><td style={td}><Pill status={p.status} /></td>
-              </tr>))}</tbody>
-          </table>
-        </div>
-      </Panel>
+      {groups.map((g) => (
+        <Panel key={g.key} title={g.title} sub={`${split ? `${sum(g)} · ` : ""}Sorted by talk time · click a row to open the person${g.idle.length ? ` · No calls: ${g.idle.join(", ")}` : ""}`}>
+          {g.people.length === 0 ? <p style={{ margin: 0, color: R.mute, fontSize: 13.5 }}>No calls from this team in this period.</p> : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+              <thead><tr>{["Staff", "Calls", "In / Out", "Talk time", "Avg", "< 30s", "Invalid", "Status"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <tbody>{g.people.map((p) => (
+                <tr key={p.code} className="rv-row" onClick={() => open(p.code)} style={{ cursor: "pointer" }}>
+                  <td style={td}><div style={{ display: "flex", gap: 10, alignItems: "center" }}><Avatar name={p.name} size={34} /><div><b>{p.name}</b><div style={{ fontSize: 11.5, color: R.mute }}>Line {p.line} · #{p.code}</div></div></div></td>
+                  <td style={td}><b>{p.calls}</b></td><td style={td}>{p.inb} / {p.out}</td><td style={td}>{dur(p.dur)}</td><td style={td}>{dur(p.avg)}</td>
+                  <td style={td}>{pct(p.short)}</td><td style={td}>{p.invalid}</td><td style={td}><Pill status={p.status} /></td>
+                </tr>))}</tbody>
+            </table>
+          </div>)}
+        </Panel>
+      ))}
       <Panel title="Meaningful-call rate" sub="Share of each person's calls lasting 30 seconds or more">
-        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-around", gap: 14 }}>
-          {data.people.map((p) => (
-            <button key={p.code} onClick={() => open(p.code)} style={{ background: "none", border: 0, cursor: "pointer", textAlign: "center", fontFamily: "inherit", color: R.ink }}>
-              <Ring frac={p.meaningful} color={p.status[1] === "neu" ? "#b9a68e" : p.meaningful < 0.5 ? R.bad : "#c4622d"} label={pct(p.meaningful)} />
-              <b style={{ display: "block", fontSize: 13 }}>{p.name}</b><span style={{ fontSize: 11.5, color: R.mute }}>{p.calls} calls</span>
-            </button>))}
+        <div style={{ display: "grid", gap: 16 }}>
+          {groups.filter((g) => g.people.length).map((g) => (
+            <div key={g.key}>
+              {split && <div style={{ ...groupHead, marginBottom: 8 }}>{g.title}</div>}
+              <div style={{ display: "flex", flexWrap: "wrap", justifyContent: split ? "flex-start" : "space-around", gap: 14 }}>
+                {g.people.map((p) => (
+                  <button key={p.code} onClick={() => open(p.code)} style={{ background: "none", border: 0, cursor: "pointer", textAlign: "center", fontFamily: "inherit", color: R.ink }}>
+                    <Ring frac={p.meaningful} color={p.status[1] === "neu" ? "#b9a68e" : p.meaningful < 0.5 ? R.bad : "#c4622d"} label={pct(p.meaningful)} />
+                    <b style={{ display: "block", fontSize: 13 }}>{p.name}</b><span style={{ fontSize: 11.5, color: R.mute }}>{p.calls} calls</span>
+                  </button>))}
+              </div>
+            </div>))}
         </div>
       </Panel>
       <Panel title="Call length heatmap" sub="Calls in each length band · darker = more calls · hover a cell">
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 3, fontSize: 12.5 }}>
             <thead><tr><th />{BUCKETS.map((b) => <th key={b} style={{ fontSize: 10.5, color: R.mute, fontWeight: 600, textTransform: "uppercase", padding: 4 }}>{b}</th>)}</tr></thead>
-            <tbody>{data.people.map((p) => (
-              <tr key={p.code}><td style={{ fontWeight: 600, whiteSpace: "nowrap", paddingRight: 8 }}>{p.name}</td>
-                {p.b.map((v, i) => { const k = Math.min(7, Math.floor((v / maxCell) * 7.999)); return (
-                  <td key={i} title={`${p.name} · ${BUCKETS[i]}: ${v} calls`} style={{ textAlign: "center", padding: "9px 4px", borderRadius: 6, fontWeight: 700, background: v ? R.heat[k] : R.soft, color: v ? (k >= 3 ? "#fff" : R.ink) : "#cdbba1" }}>{v || "·"}</td>); })}
-              </tr>))}</tbody>
+            {groups.filter((g) => g.people.length).map((g) => (
+              <tbody key={g.key}>
+                {split && <tr><td colSpan={BUCKETS.length + 1} style={{ ...groupHead, padding: "10px 0 2px" }}>{g.title}</td></tr>}
+                {g.people.map((p) => (
+                  <tr key={p.code}><td style={{ fontWeight: 600, whiteSpace: "nowrap", paddingRight: 8 }}>{p.name}</td>
+                    {p.b.map((v, i) => { const k = Math.min(7, Math.floor((v / maxCell) * 7.999)); return (
+                      <td key={i} title={`${p.name} · ${BUCKETS[i]}: ${v} calls`} style={{ textAlign: "center", padding: "9px 4px", borderRadius: 6, fontWeight: 700, background: v ? R.heat[k] : R.soft, color: v ? (k >= 3 ? "#fff" : R.ink) : "#cdbba1" }}>{v || "·"}</td>); })}
+                  </tr>))}
+              </tbody>))}
           </table>
         </div>
       </Panel>
@@ -287,3 +343,4 @@ function PersonPage({ p, data, solo }: { p: ReportPerson; data: ReportData; solo
     </>
   );
 }
+

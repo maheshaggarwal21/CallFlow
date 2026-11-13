@@ -1,18 +1,19 @@
 "use client";
 
-// CRM Settings (owner only): the status codes (add, rename, what each does), and which reps may export leads.
+// CRM Settings: the status codes — name each one and pick its colour (client, 12 Nov 2026).
+// What a code does and the follow-up rules are no longer shown here; each code keeps the behaviour it has.
+// Who may open the CRM tabs is ticked on the Users tab.
 import { useEffect, useState } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
-import { Avatar, Panel, R } from "@/components/report/kit";
+import { R } from "@/components/report/kit";
 import { api, fetcher } from "@/lib/api";
-import { CODE_LETTERS, PERMISSIONS, PERMISSION_LABELS, ROLE_LABEL, codeList, type Code, type CodeMeta, type CodeSetting, type Role } from "@/lib/crm";
+import { CODE_LETTERS, codeList, type Code, type CodeMeta, type CodeSetting } from "@/lib/crm";
 import { useCrmMe } from "@/hooks/useCrmMe";
+import ColorPalette from "@/components/crm/ColorPalette";
 import { Btn, CRM_CSS, HeaderBand, NoAccess, inputStyle, tdStyle, thStyle } from "@/components/crm/kit";
 
-type Settings = {
-  values: Record<string, any>;
-  team: { id: string; name: string; email: string; employee_code: number; role: "owner" | "employee"; permissions: string[] }[] | null;
-};
+type Settings = { values: Record<string, any> };
+
 export default function CrmSettingsPage() {
   const { me, can } = useCrmMe();
   const allowed = !!me && can("crm_settings");
@@ -22,34 +23,21 @@ export default function CrmSettingsPage() {
   return (
     <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gap: 14 }}>
       <style>{CRM_CSS}</style>
-      <HeaderBand eyebrow="CRM" title="CRM Settings" sub="Statuses and who can use the CRM" />
+      <HeaderBand eyebrow="CRM" title="CRM Settings" sub="Status codes and their colours" />
       {error ? <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p> : !data || !me ? <p style={{ color: R.mute }}>Loading…</p>
-        : <>
-          <Statuses codes={data.values.codes} retry={data.values.retry_rules} onSaved={() => mutate()} />
-          {/* Only the owner hands out access, so nobody can grant themselves more */}
-          {me.is_owner && <TeamPermissions team={data.team ?? []} all={PERMISSIONS} onSaved={() => mutate()} />}
-        </>}
+        : <Statuses codes={data.values.codes} onSaved={() => mutate()} />}
     </div>
   );
 }
 
-function SaveRow({ onSave, saved, err }: { onSave: () => void; saved: boolean; err: string }) {
-  return (
-    <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}>
-      <Btn onClick={onSave}>Save</Btn>
-      {saved && <span role="status" style={{ color: R.good, fontSize: 13, fontWeight: 600 }}>Saved ✓</span>}
-      {err && <span role="alert" style={{ color: R.bad, fontSize: 13 }}>{err}</span>}
-    </div>
-  );
-}
-
-/** The sheet's codes: the owner names each one, picks what saving it does, and can add new ones. */
-function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>; retry: any; onSaved: () => void }) {
+/** The sheet's codes: the owner names each one, picks its colour, and can add new ones. */
+function Statuses({ codes, onSaved }: { codes: Record<Code, CodeSetting>; onSaved: () => void }) {
   const [v, setV] = useState(() => codeList(codes));
   const free = CODE_LETTERS.filter((c) => !v.some((x) => x.code === c));
-  const add = () => free[0] && setV([...v, { code: free[0], label: "", role: "callback", kind: "callback", rule: "" }]);
+  // shortcut: a new code is saved as "other" (no automatic follow-up, the rep may set one), since
+  // "what it does" is no longer asked; bring the choice back if new codes need other behaviour.
+  const add = () => free[0] && setV([...v, { code: free[0], label: "", role: "other", kind: "other", rule: "" }]);
   const isNew = (c: string) => !codes?.[c];
-  const [maxAttempts, setMaxAttempts] = useState<number>(retry?.max_attempts ?? 0);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(false), 2500); return () => clearTimeout(t); }, [saved]);
@@ -57,13 +45,12 @@ function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>;
   const save = async () => {
     setErr("");
     try {
-      const body = Object.fromEntries(v.map((c) => [c.code, {
-        label: c.label.trim() || `Code ${c.code}`, role: c.role,
-        ...(c.role === "retry" ? (c.next_day_at ? { next_day_at: c.next_day_at } : { hours: c.hours ?? 3 }) : {}),
-        ...(c.role === "other" ? { description: (c.description ?? "").trim() } : {}),
-      }]));
+      // each code keeps the behaviour it already has; only its name and colour change here
+      const body = Object.fromEntries(v.map(({ code, kind, rule, ...c }) => {
+        const label = c.label.trim() || `Code ${code}`;
+        return [code, { ...c, label, color: c.color || undefined, ...(c.role === "other" ? { description: c.description?.trim() || label } : {}) }];
+      }));
       await api.patch("/crm/settings/values/codes", body);
-      await api.patch("/crm/settings/values/retry_rules", { invalid: { never: retry?.invalid?.never !== false }, max_attempts: maxAttempts });
       setSaved(true);
       onSaved();
       globalMutate("/crm/config");
@@ -75,11 +62,10 @@ function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>;
     <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px" }}>
       <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Statuses</h3>
       <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>
-        The codes from the lead sheet. Name each one and choose what it does; add a new one with + Add status.
-        "Not used" hides a code from the lead form. Changing what a code does also moves the leads already on it.</p>
+        The codes from the lead sheet. Name each one and pick its colour from the Palette: the code is shown in that colour on the Leads tab. Add a new one with + Add status.</p>
       <div style={{ overflowX: "auto" }}>
-        <table style={{ borderCollapse: "collapse", fontSize: 13.5, minWidth: 720 }}>
-          <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>What it does</th><th style={thStyle}>Next follow-up</th></tr></thead>
+        <table style={{ borderCollapse: "collapse", fontSize: 13.5 }}>
+          <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>Colour</th></tr></thead>
           <tbody>
             {v.map((c, i) => (
               <tr key={c.code}>
@@ -90,79 +76,25 @@ function Statuses({ codes, retry, onSaved }: { codes: Record<Code, CodeSetting>;
                       </select>
                     : c.code}
                 </td>
-                <td style={tdStyle}><input aria-label={`Name of code ${c.code}`} value={c.label} maxLength={40} onChange={(e) => set(i, { label: e.target.value })} style={{ ...inputStyle, width: 190 }} /></td>
+                <td style={tdStyle}><input aria-label={`Name of code ${c.code}`} value={c.label} maxLength={40} onChange={(e) => set(i, { label: e.target.value })} style={{ ...inputStyle, width: 220 }} /></td>
                 <td style={tdStyle}>
-                  <select aria-label={`What code ${c.code} does`} value={c.role} onChange={(e) => set(i, { role: e.target.value as Role })} style={{ ...inputStyle, width: 250 }}>
-                    {(Object.keys(ROLE_LABEL) as Role[]).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                  </select>
-                </td>
-                <td style={tdStyle}>
-                  {c.role === "retry" ? (
-                    <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                      <select aria-label={`Code ${c.code} follow-up`} value={c.next_day_at ? "next" : "hours"} onChange={(e) => set(i, e.target.value === "next" ? { next_day_at: "10:00", hours: undefined } : { hours: 3, next_day_at: undefined })} style={{ ...inputStyle, width: 130 }}>
-                        <option value="hours">After hours</option><option value="next">Next day at</option>
-                      </select>
-                      {c.next_day_at ? <input type="time" aria-label={`Code ${c.code} next day time`} value={c.next_day_at} onChange={(e) => set(i, { next_day_at: e.target.value })} style={{ ...inputStyle, width: 110 }} />
-                        : <><input type="number" aria-label={`Code ${c.code} hours`} min={0.25} max={168} step={0.25} value={c.hours ?? 3} onChange={(e) => set(i, { hours: Number(e.target.value) })} style={{ ...inputStyle, width: 74 }} /> h</>}
-                    </span>
-                  ) : c.role === "other" ? (
-                    <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                      <input aria-label={`What code ${c.code} does, in your words`} placeholder="What it does, e.g. Demo class booked" maxLength={80}
-                        value={c.description ?? ""} onChange={(e) => set(i, { description: e.target.value })} style={{ ...inputStyle, width: 250 }} />
-                      <span style={{ color: R.mute, fontSize: 12 }}>Follow-up optional</span>
-                    </span>
-                  ) : <span style={{ color: R.mute, fontSize: 12.5 }}>{c.role === "callback" ? "Rep picks date and time" : "—"}</span>}
-                  {isNew(c.code) && <button type="button" aria-label={`Remove new status ${c.code}`} onClick={() => setV(v.filter((_, j) => j !== i))}
-                    style={{ marginLeft: 10, border: 0, background: "none", color: R.mute, cursor: "pointer", fontSize: 16 }}>×</button>}
+                  <span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                    <ColorPalette code={c.code} value={c.color} onSelect={(color) => set(i, { color })} />
+                    {isNew(c.code) && <button type="button" aria-label={`Remove new status ${c.code}`} onClick={() => setV(v.filter((_, j) => j !== i))}
+                      style={{ border: 0, background: "none", color: R.mute, cursor: "pointer", fontSize: 16 }}>×</button>}
+                  </span>
                 </td>
               </tr>
             ))}
-            {free.length > 0 && <tr><td style={tdStyle} colSpan={4}>
-              <Btn kind="ghost" onClick={add}>+ Add status</Btn></td></tr>}
-            <tr><td style={tdStyle} colSpan={2}><b>Stop calling a lead</b></td><td style={tdStyle} colSpan={2}>
-              <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                <select aria-label="Stop calling a lead" value={maxAttempts > 0 ? "after" : "never"} onChange={(e) => setMaxAttempts(e.target.value === "never" ? 0 : 6)} style={{ ...inputStyle, width: 190 }}>
-                  <option value="never">Never, keep calling</option><option value="after">After a number of tries</option>
-                </select>
-                {maxAttempts > 0 && <><input type="number" aria-label="Tries before stopping" min={1} max={50} value={maxAttempts} onChange={(e) => setMaxAttempts(Math.max(1, Number(e.target.value)))} style={{ ...inputStyle, width: 74 }} /> "no contact" calls in a row</>}
-              </span></td></tr>
+            {free.length > 0 && <tr><td style={tdStyle} colSpan={3}><Btn kind="ghost" onClick={add}>+ Add status</Btn></td></tr>}
           </tbody>
         </table>
       </div>
-      <SaveRow onSave={save} saved={saved} err={err} />
-    </section>
-  );
-}
-
-function TeamPermissions({ team, all, onSaved }: { team: NonNullable<Settings["team"]>; all: string[]; onSaved: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const toggle = async (id: string, have: string[], p: string) => {
-    setBusy(`${id}-${p}`);
-    try {
-      const next = have.includes(p) ? have.filter((x) => x !== p) : [...have, p];
-      await api.put(`/crm/settings/team/${id}`, { permissions: next });
-      onSaved();
-    } finally {
-      setBusy(null);
-    }
-  };
-  return (
-    <Panel title="Who can use the CRM" sub="Every active account on the Team tab. Owners always have everything. Also editable in Team → Edit. Applies on the employee's next click.">
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
-          <thead><tr><th style={thStyle}>Rep</th>{all.map((p) => <th key={p} style={{ ...thStyle, textAlign: "center", whiteSpace: "normal" }}>{PERMISSION_LABELS[p] ?? p}</th>)}</tr></thead>
-          <tbody>{team.map((m) => (
-            <tr key={m.id} className="crm-row">
-              <td style={tdStyle}><span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}><Avatar name={m.name} size={30} /><span><b>{m.name}</b><div style={{ fontSize: 11.5, color: R.mute }}>{m.role === "owner" ? "Owner · always has access" : m.email}</div></span></span></td>
-              {all.map((p) => (
-                <td key={p} style={{ ...tdStyle, textAlign: "center" }}>
-                  <input type="checkbox" aria-label={`${m.name}: ${PERMISSION_LABELS[p]}`} checked={m.role === "owner" || m.permissions.includes(p)} disabled={m.role === "owner" || busy === `${m.id}-${p}`}
-                    onChange={() => toggle(m.id, m.permissions, p)} style={{ width: 18, height: 18, accentColor: R.out, cursor: m.role === "owner" ? "default" : "pointer" }} />
-                </td>
-              ))}
-            </tr>))}</tbody>
-        </table>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}>
+        <Btn onClick={save}>Save</Btn>
+        {saved && <span role="status" style={{ color: R.good, fontSize: 13, fontWeight: 600 }}>Saved ✓</span>}
+        {err && <span role="alert" style={{ color: R.bad, fontSize: 13 }}>{err}</span>}
       </div>
-    </Panel>
+    </section>
   );
 }

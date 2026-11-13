@@ -14,9 +14,9 @@ request (7 Nov 2026, "keep it simple") to two pages:
   (Name, Contact with Copy, Email, Guitar, Amount); **Call & follow-up** (Status in a coloured dropdown,
   Representative, next follow-up date/time, notes, reminder banner, Save). No Close button: a click on the
   empty area around it, or Esc, closes it. A side handle opens the follow-up snapshot and the call log.
-- **CRM Settings** (owner): **Statuses** (the sheet's letter codes: name and role of each, + Add status, follow-up wait,
-  drop limit) and **who can use the CRM**: per employee, Leads tab / CRM Settings tab / Export leads,
-  also set in Team → Edit. The owner has everything; only the owner hands out access.
+- **CRM Settings**: **Statuses**, the sheet's letter codes: name and colour of each, + Add status (13 Nov 2026:
+  what each code does is kept but no longer shown). Who can open Leads / CRM Settings / Export leads is
+  ticked per person on the **Users** tab. The Super Admin has everything; only the Super Admin hands out access.
 
 Leads come from the Meta lead Google Sheet through `scripts/apps-script/LeadSync.gs`. Reps dial on
 the KoreCall landline; the recording reaches CallFlow over FTP as before and is linked to the saved
@@ -26,7 +26,8 @@ Everything is behind `CRM_ENABLED` (API) and `NEXT_PUBLIC_CRM_ENABLED` (web): me
 until both are set.
 
 **Local runs cannot reach production:** every `crm:*` script preloads `apps/api/src/crmDevEnv.ts`,
-which loads `apps/api/.env.crm-dev` before `apps/api/.env`, blanks R2 / Resend / WATI / Deepgram, and
+which loads `apps/api/.env.crm-dev` before `apps/api/.env`, blanks R2 / Resend / Deepgram, keeps WATI only to
+list templates (`WATI_DRY_RUN=1`: a send is logged, never delivered), and
 exits unless the database host is `localhost` / `127.0.0.1`. The seed and DB tests check the host again.
 
 ## Statuses
@@ -112,15 +113,13 @@ pooja@ simran@crm-demo.local`. Every demo rep has the Leads tab; Neha may also e
 Sharma is on this lead") → Neha picks *Call later*, date, time, note → History handle → Save →
 owner → CRM Settings.
 
-## Tests and walkthrough
+## Tests
 
 ```bash
-cd apps/api && npm run crm:test     # 14 tests: rules, queue order, lock/409, matching both ways, intake, retention
-cd apps/web && npm run type-check   # only the 4 older errors in overview/page.tsx remain
-PLAYWRIGHT_MODULE=$CRM_VENV/pw/node_modules/playwright/index.mjs node docs/crm-prototype/demo-walkthrough.mjs
+cd apps/api && npm run crm:test     # unit tests: rules, queue order, lock/409, matching both ways, intake, retention, WATI preview
+cd apps/api && npm run crm:e2e      # with crm:dev running: Users tab, ranks, tabs, validation, WATI test mode (cleans up after itself)
+cd apps/web && npm run type-check
 ```
-The walkthrough plays the demo flow and saves `screenshots/01-leads-page.png` … `07-crm-settings.png`;
-it fails if any step fails. Playwright lives in `$CRM_VENV/pw` (`npm i playwright@1 && npx playwright install chromium`).
 
 ## Assumptions
 - "Due now" = from 15 min before a callback to 15 min after; after that it is Overdue.

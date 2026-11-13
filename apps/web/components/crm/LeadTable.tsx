@@ -2,10 +2,10 @@
 
 // Lead rows for the Leads page: the client's columns, one row per lead, click to open the form.
 // With `edit`, Assigned to / Status / Amount / Guitar / Last contacted / Next follow-up change right in the row (client, 8 Nov, 10 Nov).
-import type { CSSProperties, MouseEvent } from "react";
+import { useState, type CSSProperties, type MouseEvent } from "react";
 import { R } from "@/components/report/kit";
-import { DUE_WINDOW_MS, groupPhone, type CodeMeta, type LeadRow } from "@/lib/crm";
-import { WhatsAppIcon } from "@/components/ui/WABtn";
+import { DUE_WINDOW_MS, groupPhone, openWati, type CodeMeta, type LeadRow } from "@/lib/crm";
+import { WatiIcon, WhatsAppIcon } from "@/components/ui/WABtn";
 import { CodeChip, Tag, tdStyle, thStyle } from "./kit";
 import { Icon } from "./icons";
 
@@ -17,7 +17,7 @@ const actBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: 
   display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, textDecoration: "none" };
 // #, Received, Name, Contact, Assigned to (representative), Status, Amount, Guitar, Last contacted, Next follow-up, Follow-up alert, Actions
 // (sums to the table's width on a 1440 px screen; wider screens share out the extra)
-const COL_PX = [40, 94, 134, 112, 120, 66, 70, 64, 94, 112, 116, 84];
+const COL_PX = [40, 94, 134, 112, 120, 66, 70, 64, 94, 112, 116, 118];
 // Actions stays visible while the table scrolls sideways; its cell needs the row's own background
 const STICKY_CSS = `
   .crm-sticky{position:sticky;right:0;z-index:1;box-shadow:-8px 0 10px -8px rgba(43,33,24,.18)}
@@ -63,6 +63,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
   newSince?: number;
   edit?: TableEdit;
 }) {
+  const [watiErr, setWatiErr] = useState("");
   if (!rows.length) return <p style={{ margin: "6px 2px 0", color: R.mute, fontSize: 13 }}>{empty}</p>;
   const head = (label: string, key?: string, style?: CSSProperties) => {
     const on = sort && key && sort.sort === key;
@@ -77,6 +78,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
   return (
     <div style={{ overflowX: "auto" }}>
       <style>{STICKY_CSS}</style>
+      {watiErr && <p role="alert" style={{ margin: "0 2px 8px", color: R.bad, fontSize: 13 }}>WATI: {watiErr}</p>}
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, tableLayout: "fixed", minWidth: COL_PX.reduce((a, b) => a + b, 0) }}>
         {/* Fixed widths so every section lines up; narrower screens scroll sideways with Actions pinned */}
         <colgroup>{COL_PX.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
@@ -157,6 +159,8 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                   <span style={{ display: "inline-flex", gap: 5 }}>
                     <a className="crm-btn" style={{ ...actBtn, color: "#1fa855" }} href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer"
                       title="Chat on WhatsApp" aria-label={`WhatsApp ${l.name}`}><WhatsAppIcon size={15} /></a>
+                    <button className="crm-btn" style={actBtn} title="Open this chat in WATI" aria-label={`Open ${l.name} in WATI`}
+                      onClick={() => { setWatiErr(""); openWati(l.id).catch((e) => setWatiErr((e as Error).message)); }}><WatiIcon size={19} /></button>
                     <button className="crm-btn" style={{ ...actBtn, color: R.out }} onClick={() => onOpen(l.id)} title="Open lead form" aria-label={`Open lead form for ${l.name}`}>
                       <Icon name="open" size={15} /></button>
                   </span>

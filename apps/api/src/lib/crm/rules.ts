@@ -9,7 +9,8 @@ export type Code = string;
  *  closed: no more calls · other: the owner describes it; follow-up time optional · unused: not offered */
 export const ROLES = ["retry", "callback", "paid", "closed", "other", "unused"] as const;
 export type Role = (typeof ROLES)[number];
-export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string; description?: string };
+/** color: "#rrggbb" picked in CRM Settings; the code letter is shown in it on the Leads tab. */
+export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string; description?: string; color?: string };
 export type CodeSettings = Record<Code, CodeSetting>;
 /** The setting's own letters, A→Z. */
 export const codeLetters = (codes: CodeSettings) => Object.keys(codes).filter((c) => CODE_RE.test(c)).sort();
@@ -26,9 +27,6 @@ export const STATUS_OF_ROLE: Record<Role, LeadState["status"]> = { retry: "retry
 /** Matched recordings of these roles are kept past the 90-day retention. */
 export const keepsAudio = (role: Role | undefined) => role === "paid" || role === "closed";
 
-/** Per-employee CRM access, set by the owner (Team → Edit, or CRM Settings). The owner has all. */
-export const PERMISSIONS = ["crm_leads", "crm_settings", "export_leads"] as const;
-export type Permission = (typeof PERMISSIONS)[number];
 
 export const INVALID_REASON = "Invalid number";
 export const MIN_NOTE = 15;

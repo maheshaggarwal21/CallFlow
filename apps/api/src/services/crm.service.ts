@@ -1,12 +1,11 @@
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import pool from "../db/pool";
-import { IST_TODAY_START } from "../lib/dateRange";
 import { isFullPhone10, phone10 } from "../lib/crm/phone";
 import { DUE_WINDOW_MS, bucketOf, compareQueue, type QueueBucket } from "../lib/crm/queue";
 import {
-  CODE_RE, DEFAULT_CODES, DEFAULT_RETRY, codeLetters, PERMISSIONS, STATUS_OF_ROLE, keepsAudio, nextState, validateOutcome,
-  type CodeSettings, type OutcomeInput, type Permission, type RetryRules,
+  CODE_RE, DEFAULT_CODES, DEFAULT_RETRY, codeLetters, STATUS_OF_ROLE, keepsAudio, nextState, validateOutcome,
+  type CodeSettings, type OutcomeInput, type RetryRules,
 } from "../lib/crm/rules";
 import { audioUrlsFor } from "./audioUrls";
 
@@ -21,7 +20,7 @@ export class CrmError extends Error {
   }
 }
 
-type User = { sub: string; role: "owner" | "employee"; name: string };
+type User = { sub: string; role: "owner" | "admin" | "employee"; name: string };
 
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {
   const { rows } = await pool.query("SELECT value FROM crm_settings WHERE key = $1", [key]);
@@ -55,12 +54,6 @@ export async function reapplyCodeRoles(client: PoolClient, codes: CodeSettings) 
      WHERE l.current_code = v.code AND l.status NOT IN ('new','dropped') AND l.status <> v.status`,
     [pairs.map((p) => p[0]), pairs.map((p) => p[1])]
   );
-}
-
-export async function permissionsOf(user: User): Promise<Permission[]> {
-  if (user.role === "owner") return [...PERMISSIONS];
-  const { rows } = await pool.query("SELECT permission FROM employee_permissions WHERE employee_id = $1", [user.sub]);
-  return rows.map((r) => r.permission);
 }
 
 // ── Soft lock ──────────────────────────────────────────────────────────────
@@ -462,7 +455,7 @@ export async function ingestRows(input: unknown[], now = new Date()): Promise<In
   const out: IngestResult[] = [];
   const [codes, reps] = await Promise.all([
     getCodes(),
-    pool.query("SELECT id, name FROM employees WHERE role = 'employee' AND status = 'active'").then((r) => r.rows as { id: string; name: string }[]),
+    pool.query("SELECT id, name FROM employees WHERE role <> 'owner' AND status = 'active'").then((r) => r.rows as { id: string; name: string }[]),
   ]);
   for (const [index, raw] of input.entries()) {
     const parsed = ingestRowSchema.safeParse(raw);

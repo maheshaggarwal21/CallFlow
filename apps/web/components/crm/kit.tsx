@@ -4,7 +4,7 @@
 // as Reports / View report: espresso header band, cream cards, beige page, DM Sans.
 import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { R } from "@/components/report/kit";
-import { type Code } from "@/lib/crm";
+import { inkOn, type Code } from "@/lib/crm";
 import { useCrmCodes } from "@/hooks/useCrmCodes";
 
 export const CRM_CSS = `
@@ -38,11 +38,12 @@ export function CodeChip({ code, big = false, title }: { code: string | null | u
   const { meta } = useCrmCodes();
   if (!code) return <span style={{ color: "#c2b39c", fontSize: 12 }}>—</span>;
   const m = meta(code);
-  const [bg, fg] = CHIP[m?.kind ?? "retry"];
+  // The colour picked for the code in CRM Settings wins; a code without one keeps its old tint
+  const [bg, fg] = m?.color ? [m.color, inkOn(m.color)] : CHIP[m?.kind ?? "retry"];
   return (
     <span title={title ?? (m ? `${code}: ${m.label}` : code)}
       style={{ display: "inline-grid", placeItems: "center", minWidth: big ? 30 : 24, height: big ? 30 : 22, padding: "0 6px", borderRadius: 7,
-        background: bg, color: fg, fontWeight: 800, fontSize: big ? 15 : 12.5, border: m?.kind === "callback" ? `1px solid ${R.gold}` : "1px solid transparent" }}>
+        background: bg, color: fg, fontWeight: 800, fontSize: big ? 15 : 12.5, border: !m?.color && m?.kind === "callback" ? `1px solid ${R.gold}` : "1px solid transparent" }}>
       {code}
     </span>
   );
@@ -67,7 +68,7 @@ export function NoAccess({ what }: { what: string }) {
     <div style={{ padding: "8px 4px", color: R.ink }}>
       <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "18px 20px", maxWidth: 560 }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>No access to {what}</h3>
-        <p style={{ margin: "6px 0 0", fontSize: 13, color: R.mute }}>Ask the owner to give you access in Team → Edit.</p>
+        <p style={{ margin: "6px 0 0", fontSize: 13, color: R.mute }}>Ask the Super Admin to tick it for you on the Users tab.</p>
       </section>
     </div>
   );

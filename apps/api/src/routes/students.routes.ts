@@ -4,7 +4,7 @@ import multer from "multer";
 import { parse } from "csv-parse/sync";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
-import { requireOwner } from "../middleware/requireOwner";
+import { requirePermission } from "../middleware/requirePermission";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -16,7 +16,7 @@ const patchSchema = z.object({
 });
 
 router.use(requireAuth);
-router.use(requireOwner);
+router.use(requirePermission("payments"));
 
 router.get("/", async (_req, res) => {
   const result = await pool.query(

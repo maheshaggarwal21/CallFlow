@@ -1,6 +1,6 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
-import { createWriteStream, existsSync, mkdirSync, copyFileSync, readFileSync } from "fs";
+import { createWriteStream, existsSync, mkdirSync, copyFileSync } from "fs";
 import { pipeline } from "stream/promises";
 import path from "path";
 import os from "os";

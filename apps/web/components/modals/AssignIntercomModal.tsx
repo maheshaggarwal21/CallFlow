@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { mutate } from "swr";
+import useSWR, { mutate } from "swr";
 import { C } from "@/lib/colors";
-import { api } from "@/lib/api";
-import type { Intercom } from "@callflow/shared-types";
+import { api, fetcher } from "@/lib/api";
+import type { Intercom, Line } from "@callflow/shared-types";
 
 interface Props {
   intercom: Intercom;
@@ -12,7 +12,9 @@ interface Props {
 }
 
 export default function AssignIntercomModal({ intercom, onClose }: Props) {
+  const { data: lines } = useSWR<Line[]>("/lines", fetcher);
   const [phone,  setPhone]  = useState(intercom.phone_number ?? "");
+  const [line,   setLine]   = useState(intercom.line_number ?? "");
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
 
@@ -22,6 +24,7 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
     try {
       await api.patch(`/intercoms/${intercom.id}`, {
         phone_number: phone.trim() || null,
+        line_number: line || null,
       });
       await mutate("/intercoms");
       onClose();
@@ -53,6 +56,25 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
         <p style={{ margin: "0 0 24px", fontSize: 13, color: C.muted }}>
           Code: <strong>{intercom.intercom_code}</strong>
         </p>
+
+        {/* The Users form reads this link: picking the line there fills this intercom and number, and the other way round */}
+        <div style={{ marginBottom: 18 }}>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>
+            Line
+          </label>
+          <select
+            value={line}
+            onChange={(e) => setLine(e.target.value)}
+            style={{
+              width: "100%", padding: "10px 12px", boxSizing: "border-box",
+              background: C.bgDeep, border: `1px solid ${C.border}`,
+              borderRadius: 10, fontSize: 13, color: C.text, outline: "none",
+            }}
+          >
+            <option value="">— No line —</option>
+            {(lines ?? []).map((l) => <option key={l.id} value={l.line_number}>{l.line_number}{l.employee_name ? ` · ${l.employee_name}` : ""}</option>)}
+          </select>
+        </div>
 
         <div style={{ marginBottom: 24 }}>
           <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>

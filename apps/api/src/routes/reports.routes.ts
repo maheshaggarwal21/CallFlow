@@ -2,21 +2,29 @@ import { Router } from "express";
 import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
-import { requireOwner } from "../middleware/requireOwner";
+import { requirePermission } from "../middleware/requirePermission";
 import { resolveRange } from "../lib/dateRange";
 import { rangeLabel, reportWindow } from "../lib/reportSchedule";
-import { htmlToPdf, reportData, reportHtml, type PdfInput, type PdfPerson } from "../lib/reportPdf";
+import { htmlToPdf, reportData, reportHtml, type PdfInput } from "../lib/reportPdf";
 import {
-  activeEmployeeIds,
   buildEmployeeReport,
-  employeeStats,
+  employeesStats,
   pdfPerson,
   sendScheduledReport,
   type ReportSchedule,
 } from "../services/report.service";
 
 const router = Router();
-router.use(requireAuth, requireOwner);
+router.use(requireAuth);
+// A User (employee rank) only ever gets their own report: it is their home page. Everything else needs the Reports tab.
+const reportsTab = requirePermission("reports");
+router.use((req, res, next) => {
+  if ((req.path === "/data" || req.path === "/view") && req.user?.role === "employee") {
+    req.query.employee_id = req.user.sub;
+    return next();
+  }
+  return reportsTab(req, res, next);
+});
 
 const scheduleSchema = z
   .object({
@@ -121,13 +129,9 @@ async function loadReport(q: Record<string, unknown>): Promise<PdfInput | null |
   if (who !== "all" && !z.string().uuid().safeParse(who).success) return "bad-id";
   const { start, end, label, type } = reportPeriod(q);
   const ids = who === "all"
-    ? await activeEmployeeIds((await pool.query("SELECT id FROM employees")).rows.map((r) => r.id))
+    ? (await pool.query("SELECT id FROM employees WHERE status = 'active' ORDER BY name")).rows.map((r) => r.id)
     : [who];
-  const people: PdfPerson[] = [];
-  for (const id of ids) {
-    const st = await employeeStats(id, start, end);
-    if (st) people.push(pdfPerson(st));
-  }
+  const people = (await employeesStats(ids, start, end)).map(pdfPerson);
   if (who !== "all" && !people.length) return null;
   return { title: type === "Custom" ? "Call Report" : `${type} Call Report`, period: label, people };
 }

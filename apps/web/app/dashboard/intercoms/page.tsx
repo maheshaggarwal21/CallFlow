@@ -95,7 +95,7 @@ export default function IntercomsPage() {
 
                 {/* Phone */}
                 <div style={{ fontSize: 13, color: ic.phone_number ? C.text : C.dim, fontStyle: ic.phone_number ? "normal" : "italic" }}>
-                  {ic.phone_number ?? "Unassigned"}
+                  {ic.phone_number ?? "Unassigned"}{ic.line_number && <span style={{ color: C.muted, fontStyle: "normal" }}> · Line {ic.line_number}</span>}
                 </div>
 
                 {/* Calls bar */}

@@ -1,4 +1,5 @@
-export type UserRole = "owner" | "employee";
+/** Stored rank → what the screens call it: owner = Super Admin, admin = Admin, employee = User. */
+export type UserRole = "owner" | "admin" | "employee";
 
 export type AuthUser = {
   id: string;
@@ -6,6 +7,8 @@ export type AuthUser = {
   email: string;
   role: UserRole;
   color_index: number;
+  /** Tab keys ticked for this user (Users → Tabs). The Super Admin has every tab without rows. */
+  permissions?: string[];
 };
 
 export type LoginResponse = {
@@ -33,7 +36,37 @@ export type Employee = {
   color_index: number;
   employee_code: number;
   call_stats?: EmployeeCallStats;
+  // Users tab (GET /employees)
+  designation?: string | null;
+  fix_salary?: number;
+  trial_commission?: number;
+  trial_commission_type?: "pct" | "fix";
+  regular_commission?: number;
+  regular_commission_type?: "pct" | "fix";
+  other_amount?: number;
+  target_call_secs?: number;
+  target_trial?: number;
+  target_regular?: number;
+  permissions?: string[];
+  line_id?: string | null;
+  intercom_id?: string | null;
+  extra_commissions?: ExtraCommission[];
+  extra_deductions?: ExtraDeduction[];
+  team_id?: string | null;
 };
+
+/** Teams tab: an office and its agents (GET /teams). */
+export type TeamAgent = {
+  id: string; name: string; designation: string | null; color_index: number; employee_code: number;
+  team_id: string | null; calls_today: number; talk_secs_today: number;
+};
+export type Team = { id: string; name: string; location: string | null; color_index: number; members: TeamAgent[] };
+export type TeamsResponse = { teams: Team[]; unassigned: TeamAgent[] };
+
+/** A flat bonus on a user for a date range (Users form → Extra Commission). Checked by extraSchema in employees.routes.ts. */
+export type ExtraCommission = { name: string; amount: number; from: string; to: string };
+/** A cut from a user's salary for a date range (Users form → Extra Deduction): ₹ or % of the fix salary. */
+export type ExtraDeduction = ExtraCommission & { type: "fix" | "pct" };
 
 export type SystemStatus = {
   ftp_last_sync_at: string | null;
@@ -43,10 +76,6 @@ export type AudioFormat = "mp3" | "opus";
 
 /** Format of the file actually stored in R2 for a call. */
 export type StoredAudioFormat = AudioFormat | "wav";
-
-export type SystemSettings = {
-  audio_format: AudioFormat;
-};
 
 export type EmployeeName = {
   id: string;
@@ -69,6 +98,7 @@ export type Intercom = {
   id: string;
   intercom_code: string;
   phone_number: string | null;
+  line_number: string | null;
   assigned_at: string | null;
   call_count_total: number;
 };
@@ -111,24 +141,11 @@ export type Call = {
   updated_at: string;
 };
 
-export type CallListResponse = {
-  data: Call[];
-  total: number;
-  limit: number;
-  offset: number;
-};
-
 export type Paginated<T> = {
   data: T[];
   total: number;
   limit: number;
   offset: number;
-};
-
-export type LineStatus = {
-  line: string;
-  employee_name: string | null;
-  call_count_today: number;
 };
 
 /**
@@ -148,33 +165,6 @@ export type ActivityPoint = {
 /** Resolved analytics window, as instants. */
 export type AnalyticsRange = { from: string; to: string };
 
-export type OverviewStats = {
-  total_calls: number;
-  inbound: number;
-  outbound: number;
-  avg_duration_secs: number;
-  /** Change vs the equal-length window immediately before the selected range. */
-  mom_delta: {
-    total_pct: number | null;
-    inbound_pct: number | null;
-    outbound_pct: number | null;
-    avg_duration_secs: number;
-  };
-  direction_split: { inbound_pct: number; outbound_pct: number };
-  team_split: Array<{ employee_id: string; name: string; count: number; pct: number; color_index: number }>;
-  /** Non-misc calls in range with no employee attached (unassigned line). */
-  unassigned_count: number;
-  unassigned_pct: number;
-  weekly_activity: ActivityPoint[];
-  resolved_count: number;
-  escalated_count: number;
-  no_response_count: number;
-  top_line: { line_number: string; call_count: number } | null;
-  line_status: LineStatus[];
-  recent_calls: Call[];
-  range: AnalyticsRange;
-};
-
 export type EmployeeAnalytics = {
   total_calls: number;
   inbound: number;
@@ -182,13 +172,6 @@ export type EmployeeAnalytics = {
   avg_duration_secs: number;
   daily_breakdown: ActivityPoint[];
   range: AnalyticsRange;
-};
-
-export type MiscCountStats = {
-  count: number;
-  avg_duration_secs: number;
-  disconnected_count: number;
-  no_response_count: number;
 };
 
 export type ReportFrequency = "daily" | "weekly" | "monthly";

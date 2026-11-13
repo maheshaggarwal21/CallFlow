@@ -242,8 +242,7 @@ Migrations `apps/api/src/db/migrations/011_crm_1_core.sql` and `011_crm_2_calls.
 - Changed: `Sidebar.tsx`, `Topbar.tsx`, `middleware.ts` (CRM pages only with the flag), `lib/api.ts`
   (`put`), `components/ui/WABtn.tsx` (icon export).
 
-**Other:** `scripts/apps-script/LeadSync.gs` + README; `docs/crm-prototype/README.md` (run + go-live),
-`demo-walkthrough.mjs` (end-to-end check + screenshots).
+**Other:** `scripts/apps-script/LeadSync.gs` + README; `docs/crm-prototype/README.md` (run + go-live).
 
 ## 9. Running it, tests
 
@@ -253,8 +252,8 @@ See `README.md` → "Run it locally". Logins: `owner@crm-demo.local` and `neha@`
 Tests (`npm run crm:test`, 14): rule checks and next-state, queue order, retry times, phone parsing,
 lock and stale-version 409, matching (save after recording; recording 2 h late; clock fixed by 2 h;
 trigger error never blocks a recording), intake idempotency and re-enquiry, form save keeps
-representative and guitar, retention equivalence. The walkthrough script plays the whole demo in a
-browser and fails if any step fails.
+representative and guitar, retention equivalence. `npm run crm:e2e` checks the Users tab, ranks and tabs
+against the running local API. (The old Playwright walkthrough and its screenshots were removed on 13 Nov 2026.)
 
 ## 10. Going to production
 

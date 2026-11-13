@@ -4,11 +4,12 @@ import { z, type ZodTypeAny } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requireOwner } from "../middleware/requireOwner";
+import { fillTemplate, inboxUrl, listTemplates, sendTemplate, watiConfigured, watiDryRun } from "../services/wati.service";
 import { requirePermission } from "../middleware/requirePermission";
-import { CODE_RE, PERMISSIONS, ROLES, outcomeSchema } from "../lib/crm/rules";
+import { CODE_RE, ROLES, outcomeSchema } from "../lib/crm/rules";
 import {
   CrmError, LEAD_LIST_COLS, LEAD_LIST_JOINS, MAX_INGEST_ROWS, claimLock, getCodes, getSetting, ingestRows, leadDetail, leadFilters,
-  leadPatchSchema, permissionsOf, queue, queueFilterSchema, reapplyCodeRoles, reconcile, releaseLock, saveOutcome, updateLeadFields,
+  leadPatchSchema, queue, queueFilterSchema, reapplyCodeRoles, reconcile, releaseLock, saveOutcome, updateLeadFields,
 } from "../services/crm.service";
 import { audioUrlsFor } from "../services/audioUrls";
 
@@ -23,7 +24,7 @@ function parse<S extends ZodTypeAny>(schema: S, data: unknown): z.infer<S> {
 }
 
 const uuid = z.string().uuid();
-const user = (req: Request) => req.user! as { sub: string; role: "owner" | "employee"; name: string };
+const user = (req: Request) => req.user! as { sub: string; role: "owner" | "admin" | "employee"; name: string };
 
 // ── Lead intake (Apps Script), shared secret instead of a login ────────────
 
@@ -59,14 +60,15 @@ const leadsAccess = requirePermission("crm_leads");
 const settingsAccess = requirePermission("crm_settings");
 
 router.get("/me", async (req, res) => {
-  return res.json({ permissions: await permissionsOf(user(req)), is_owner: user(req).role === "owner" });
+  // read fresh by requireAuth; the Super Admin has every permission without rows
+  return res.json({ permissions: req.user!.permissions, is_owner: req.user!.role === "owner" });
 });
 
 /** What the lead form needs: the status codes, the representatives and the follow-up rules. */
 router.get("/config", async (_req, res) => {
   const [retry, codes, reps] = await Promise.all([
     getSetting("retry_rules", {}), getCodes(),
-    pool.query("SELECT id, name FROM employees WHERE role = 'employee' AND status = 'active' ORDER BY name"),
+    pool.query("SELECT id, name FROM employees WHERE role <> 'owner' AND status = 'active' ORDER BY name"),
   ]);
   return res.json({ retry_rules: retry, codes, reps: reps.rows });
 });
@@ -184,6 +186,54 @@ router.get("/calls/:id/audio", leadsAccess, async (req, res) => {
   return res.json(await audioUrlsFor(id, c.audio_storage_key));
 });
 
+// ── WhatsApp through WATI ───────────────────────────────────────────────────
+
+/** The approved templates for the lead form's dropdown. */
+router.get("/wati/templates", leadsAccess, async (_req, res) => {
+  if (!watiConfigured()) return res.json({ configured: false, dry_run: false, templates: [] });
+  try {
+    return res.json({ configured: true, dry_run: watiDryRun(), templates: await listTemplates() });
+  } catch (e) {
+    throw new CrmError(502, (e as Error).message);
+  }
+});
+
+/** Send one approved template to the lead's number and note it in the lead's history. */
+router.post("/leads/:id/whatsapp", leadsAccess, async (req, res) => {
+  const leadId = parse(uuid, req.params.id);
+  const body = parse(z.object({ template: z.string().min(1).max(200), values: z.record(z.string().max(60), z.string().trim().max(500)).default({}) }), req.body);
+  const { rows: [lead] } = await pool.query("SELECT phone10 FROM leads WHERE id = $1", [leadId]);
+  if (!lead) throw new CrmError(404, "Lead not found");
+  let mode: "sent" | "dry-run";
+  let text: string;
+  try {
+    const t = (await listTemplates()).find((x) => x.name === body.template);
+    if (!t) throw new CrmError(404, "That template is no longer approved in WATI");
+    const missing = t.params.find((x) => !body.values[x.name]);
+    if (missing) throw new CrmError(400, `Fill in "${missing.name}" before sending`);
+    mode = await sendTemplate(lead.phone10, t, body.values);
+    text = fillTemplate(t.body, body.values);
+  } catch (e) {
+    if (e instanceof CrmError) throw e;
+    throw new CrmError(502, (e as Error).message);
+  }
+  await pool.query(
+    "INSERT INTO lead_interactions (lead_id, employee_id, kind, note, meta) VALUES ($1, $2, 'system', $3, $4)",
+    [leadId, user(req).sub, `WhatsApp template "${body.template}" ${mode === "sent" ? "sent" : "previewed (test mode, not sent)"} by ${user(req).name}`,
+      JSON.stringify({ whatsapp: { template: body.template, mode, text } })]
+  );
+  return res.json({ mode });
+});
+
+/** The address that opens this lead's chat in WATI. */
+router.get("/leads/:id/wati-link", leadsAccess, async (req, res) => {
+  const { rows: [lead] } = await pool.query("SELECT phone10 FROM leads WHERE id = $1", [parse(uuid, req.params.id)]);
+  if (!lead) throw new CrmError(404, "Lead not found");
+  const url = await inboxUrl(lead.phone10);
+  if (!url) throw new CrmError(503, "WATI's inbox address is not set (WATI_INBOX_URL)");
+  return res.json({ url });
+});
+
 /** Owner: star / unstar a recording so retention never deletes it. */
 router.post("/calls/:id/keep", requireOwner, async (req, res) => {
   const { keep } = parse(z.object({ keep: z.boolean() }), req.body);
@@ -194,23 +244,9 @@ router.post("/calls/:id/keep", requireOwner, async (req, res) => {
 
 // ── Settings ───────────────────────────────────────────────────────────────
 
-router.get("/settings", settingsAccess, async (req, res) => {
-  const u = user(req);
-  const [s, team] = await Promise.all([
-    pool.query("SELECT key, value, updated_at FROM crm_settings"),
-    u.role === "owner"
-      ? pool.query(
-          // Every active account, as on the Team tab; owners are listed but always have everything
-          `SELECT e.id, e.name, e.email, e.employee_code, e.role,
-                  coalesce(array_agg(p.permission ORDER BY p.permission) FILTER (WHERE p.permission IS NOT NULL), '{}') AS permissions
-           FROM employees e LEFT JOIN employee_permissions p ON p.employee_id = e.id
-           WHERE e.status = 'active' GROUP BY e.id ORDER BY e.role = 'owner', e.name`)
-      : Promise.resolve({ rows: null }),
-  ]);
-  return res.json({
-    values: Object.fromEntries(s.rows.map((x) => [x.key, x.value])),
-    team: team.rows, permissions: await permissionsOf(u), all_permissions: PERMISSIONS,
-  });
+router.get("/settings", settingsAccess, async (_req, res) => {
+  const s = await pool.query("SELECT key, value, updated_at FROM crm_settings");
+  return res.json({ values: Object.fromEntries(s.rows.map((x) => [x.key, x.value])) });
 });
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -218,6 +254,7 @@ const codeSetting = z.object({
   label: z.string().trim().min(1).max(40), role: z.enum(ROLES),
   hours: z.number().min(0.25).max(168).optional(), next_day_at: hhmm.optional(),
   description: z.string().trim().max(80).optional(),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i, "Colour must look like #a1b2c3").optional(),
 }).refine((c) => c.role !== "other" || !!c.description, "Write what an \"Other\" status does");
 const VALUE_SCHEMAS: Record<string, ZodTypeAny> = {
   retry_rules: z.object({ invalid: z.object({ never: z.boolean() }), max_attempts: z.number().int().min(0).max(50) }), // 0 = never drop
@@ -248,29 +285,6 @@ router.patch("/settings/values/:key", settingsAccess, async (req, res) => {
     client.release();
   }
   return res.json(value);
-});
-
-router.put("/settings/team/:employeeId", requireOwner, async (req, res) => {
-  const employeeId = parse(uuid, req.params.employeeId);
-  const { permissions } = parse(z.object({ permissions: z.array(z.enum(PERMISSIONS)) }), req.body);
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query("DELETE FROM employee_permissions WHERE employee_id = $1", [employeeId]);
-    if (permissions.length) {
-      await client.query(
-        "INSERT INTO employee_permissions (employee_id, permission) SELECT $1, unnest($2::text[])",
-        [employeeId, permissions]
-      );
-    }
-    await client.query("COMMIT");
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
-  } finally {
-    client.release();
-  }
-  return res.json({ employee_id: employeeId, permissions });
 });
 
 // ── Dev only: show a lead arriving live in the demo ─────────────────────────

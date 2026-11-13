@@ -37,11 +37,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await api.post<LoginResponse>("/auth/login", { email, password });
-      if (res.user.role === "owner") {
-        router.push("/dashboard/recordings");
-      } else {
-        router.push(`/dashboard/employees/${res.user.id}`);
-      }
+      // everyone else lands on /dashboard, which sends them to their own dashboard or first ticked tab
+      router.push(res.user.role === "owner" ? "/dashboard/recordings" : "/dashboard");
     } catch (err: any) {
       setError(err.message ?? "Invalid email or password.");
     } finally {

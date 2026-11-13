@@ -1,3 +1,5 @@
+import { api } from "@/lib/api";
+
 // CRM prototype: feature flag, outcome codes and the shapes returned by /api/v1/crm.
 // The whole CRM UI is hidden unless NEXT_PUBLIC_CRM_ENABLED=true (inlined at build time).
 export const CRM_ENABLED = process.env.NEXT_PUBLIC_CRM_ENABLED === "true";
@@ -7,7 +9,12 @@ export const CRM_ENABLED = process.env.NEXT_PUBLIC_CRM_ENABLED === "true";
 export const CODE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 export type Code = string;
 export type Role = "retry" | "callback" | "paid" | "closed" | "other" | "unused";
-export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string; description?: string };
+export type CodeSetting = { label: string; role: Role; hours?: number; next_day_at?: string; description?: string; color?: string };
+/** Text colour that stays readable on a picked code colour: dark on light colours, white on dark ones. */
+export const inkOn = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 170 ? "#2b2118" : "#fff";
+};
 export type CodeMeta = CodeSetting & { code: Code; kind: Role; rule: string };
 export const ROLE_LABEL: Record<Role, string> = {
   retry: "No contact · follows up by itself", callback: "Talked · rep sets the follow-up",
@@ -25,12 +32,6 @@ export const codeList = (codes?: Record<Code, CodeSetting>): CodeMeta[] =>
 export const MIN_NOTE = 15;
 /** Same window as the server: a follow-up is "due" 15 min either side of its time. */
 export const DUE_WINDOW_MS = 15 * 60_000;
-
-/** Per-employee CRM access (the owner has all), set in Team → Edit or CRM Settings. */
-export const PERMISSION_LABELS: Record<string, string> = {
-  crm_leads: "Leads tab", crm_settings: "CRM Settings tab", export_leads: "Export leads",
-};
-export const PERMISSIONS = Object.keys(PERMISSION_LABELS);
 
 export const STATUS_LABEL: Record<string, string> = {
   new: "New", retry: "Retry", callback: "Callback", converted: "Converted", dnc: "Do not call", dropped: "Dropped",
@@ -98,3 +99,24 @@ export type CrmConfig = {
   codes: Record<Code, CodeSetting>;
 };
 export type CrmMe = { permissions: string[]; is_owner: boolean };
+
+export type WatiTemplate = { name: string; header: string; body: string; footer: string; buttons: string[]; params: { name: string; sample: string }[] };
+export type WatiTemplates = { configured: boolean; dry_run: boolean; templates: WatiTemplate[] };
+/** `{{name}}` / `{{1}}` filled in, as the server does it; an empty variable stays visible in the preview. */
+export const fillTemplate = (body: string, values: Record<string, string>) =>
+  body.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => values[k] || m);
+
+/**
+ * Opens the lead's chat in WATI in a new tab. The tab is opened before the address is known,
+ * because a tab opened after waiting for the server is blocked as a pop-up.
+ */
+export async function openWati(leadId: string) {
+  const tab = window.open("", "_blank");
+  try {
+    const { url } = await api.get<{ url: string }>(`/crm/leads/${leadId}/wati-link`);
+    if (tab) tab.location.href = url; else window.location.href = url;
+  } catch (e) {
+    tab?.close();
+    throw e;
+  }
+}

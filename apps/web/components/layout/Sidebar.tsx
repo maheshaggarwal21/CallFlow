@@ -2,29 +2,18 @@
 
 import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import useSWR from "swr";
 import { C, eClr, init } from "@/lib/colors";
-import { fetcher } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
-import type { EmployeeName } from "@callflow/shared-types";
-import { CRM_ENABLED } from "@/lib/crm";
-import { useCrmMe } from "@/hooks/useCrmMe";
+import { HOME, TABS, rankLabel } from "@/lib/tabs";
 
 export default function Sidebar() {
   const router   = useRouter();
   const pathname = usePathname();
-  const { name, role, color_index, isOwner } = useAuth();
-  const crm = useCrmMe();
+  const { name, role, color_index, isOwner, isUser, can } = useAuth();
   const { syncLabel, isLive } = useSystemStatus();
   const [logoutOpen, setLogoutOpen] = useState(false);
-  const [empOpen, setEmpOpen]       = useState(true);
   const [hovNav, setHovNav]         = useState<string | null>(null);
-
-  const { data: employees } = useSWR<EmployeeName[]>(
-    isOwner ? "/employees/names" : null,
-    fetcher
-  );
 
   function nav(path: string) { router.push(path); }
 
@@ -45,7 +34,10 @@ export default function Sidebar() {
   }
 
   const { t: myClrT, bg: myClrBg, br: myClrBr } = eClr(color_index);
-  const activeEmps = employees ?? [];
+  // only the tabs ticked for this user (Users → Tabs), grouped under their section labels
+  const myTabs = TABS.filter((t) => can(t.key));
+  const sections = [...new Set(myTabs.map((t) => t.section))];
+  const showSalary = isOwner && process.env.NODE_ENV !== "production";
 
   const SectionLabel = ({ label }: { label: string }) => (
     <p style={{
@@ -56,11 +48,11 @@ export default function Sidebar() {
   );
 
   const NavBtn = ({
-    id, label, path, icon, exact = false, badge,
+    id, label, path, icon, exact = false, badge, match,
   }: {
-    id: string; label: string; path: string; icon?: string; exact?: boolean; badge?: number;
+    id: string; label: string; path: string; icon?: string; exact?: boolean; badge?: number; match?: string;
   }) => {
-    const active = isActive(path, exact);
+    const active = isActive(match ?? path, exact);
     const hov    = hovNav === id;
     return (
       <button
@@ -129,103 +121,21 @@ export default function Sidebar() {
       <nav style={{ flex: 1, padding: "12px 12px", overflowY: "auto" }}>
 
 
-            {CRM_ENABLED && (crm.can("crm_leads") || crm.can("crm_settings")) && (
-              <>
-                <SectionLabel label="CRM" />
-                {crm.can("crm_leads") && <NavBtn id="crm-leads" label="Leads" path="/dashboard/crm" icon="☰" exact />}
-                {crm.can("crm_settings") && <NavBtn id="crm-settings" label="CRM Settings" path="/dashboard/crm/settings" icon="⚙" />}
-              </>
-            )}
+        {/* A User's own page: their details, targets and report */}
+        {isUser && <NavBtn id="home" label="My Dashboard" path={HOME} icon="⌂" />}
 
-            <SectionLabel label="Calls" />
-            <NavBtn id="recordings" label="Recordings" path="/dashboard/recordings" icon="▷" />
-            <NavBtn id="misc"       label="Misc Calls"  path="/dashboard/misc"       icon="◎" />
-
-        {isOwner && (
-          <>
-            <SectionLabel label="Analytics" />
-            <NavBtn id="overview" label="Dashboard" path="/dashboard/overview" icon="⊞" exact />
-            <NavBtn id="reports"  label="Reports"   path="/dashboard/reports"  icon="✉" />
-
-            {/* Employees with expandable sub-list */}
-            <button
-              onClick={() => { setEmpOpen(o => !o); nav("/dashboard/employees"); }}
-              onMouseEnter={() => setHovNav("employees")}
-              onMouseLeave={() => setHovNav(null)}
-              style={{
-                width: "100%", display: "flex", alignItems: "center", gap: 12,
-                padding: "11px 14px", borderRadius: 12, border: "none",
-                background: isActive("/dashboard/employees")
-                  ? "linear-gradient(135deg,rgba(232,118,26,0.14),rgba(245,158,11,0.07))"
-                  : hovNav === "employees" ? C.hover : "transparent",
-                color: isActive("/dashboard/employees") ? C.orange : C.textSub,
-                fontWeight: isActive("/dashboard/employees") ? 700 : 500,
-                fontSize: 15, cursor: "pointer", marginBottom: 3, textAlign: "left",
-                transition: "all 0.15s",
-                boxShadow: isActive("/dashboard/employees") ? "inset 0 0 0 1px rgba(232,118,26,0.20)" : "none",
-              }}
-            >
-              <span style={{ fontSize: 16, width: 22, textAlign: "center", flexShrink: 0, color: isActive("/dashboard/employees") ? C.orange : C.muted }}>◉</span>
-              <span style={{ flex: 1, letterSpacing: -0.1 }}>Employees</span>
-              <span style={{
-                fontSize: 11, color: isActive("/dashboard/employees") ? C.orange : C.muted,
-                transition: "transform 0.2s", display: "inline-block",
-                transform: empOpen ? "rotate(90deg)" : "rotate(0deg)",
-              }}>›</span>
-            </button>
-
-            {empOpen && (
-              <div style={{ marginLeft: 16, marginBottom: 4, borderLeft: `2px solid ${C.borderLight}`, paddingLeft: 8 }}>
-                {activeEmps.map((emp) => {
-                  const path   = `/dashboard/employees/${emp.id}`;
-                  const active = pathname.startsWith(path);
-                  const clr    = eClr(emp.color_index);
-                  return (
-                    <button
-                      key={emp.id}
-                      onClick={() => nav(path)}
-                      style={{
-                        width: "100%", display: "flex", alignItems: "center", gap: 9,
-                        padding: "9px 12px", borderRadius: 10, border: "none",
-                        background: active ? C.orangeLight : "transparent",
-                        cursor: "pointer", marginBottom: 2,
-                        color: active ? C.orange : C.textSub,
-                        transition: "all 0.12s",
-                      }}
-                    >
-                      <div style={{
-                        width: 22, height: 22, borderRadius: 7, flexShrink: 0,
-                        background: clr.bg, border: `1px solid ${clr.br}`,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 9, fontWeight: 800, color: clr.t,
-                      }}>
-                        {init(emp.name)}
-                      </div>
-                      <span style={{
-                        fontSize: 14, fontWeight: active ? 700 : 500,
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      }}>
-                        {emp.name.split(" ")[0]}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
+        {/* sample screen, local only until the real page exists; it sits in the Salary section with Payments */}
+        {[...sections, ...(showSalary && !sections.includes("Salary") ? ["Salary"] : [])].map((sec) => (
+          <div key={sec}>
+            <SectionLabel label={sec} />
+            {sec === "Salary" && showSalary && <NavBtn id="salary" label="Employee Tracker" path="/dashboard/salary" icon="₹" />}
+            {myTabs.filter((t) => t.section === sec).map((t) => (
+              <NavBtn key={t.key} id={t.key} label={t.label} path={t.path} match={t.match} icon={t.icon} exact={t.exact} />
+            ))}
+          </div>
+        ))}
 
 
-        {isOwner && (
-          <>
-            <SectionLabel label="Management" />
-            <NavBtn id="lines"     label="Lines"      path="/dashboard/lines"      icon="≡" />
-            <NavBtn id="intercoms" label="Intercoms"  path="/dashboard/intercoms"  icon="☎" />
-            <NavBtn id="team"      label="Team"       path="/dashboard/team"       icon="◯" />
-            <NavBtn id="students"  label="Students"   path="/dashboard/students"   icon="◈" />
-            <NavBtn id="settings"  label="Settings"   path="/dashboard/settings"   icon="⚙" />
-          </>
-        )}
       </nav>
 
       {/* Status indicators */}
@@ -269,7 +179,7 @@ export default function Sidebar() {
               {name}
             </p>
             <p style={{ margin: 0, fontSize: 12, color: C.muted }}>
-              {role === "owner" ? "Owner" : "Employee"}
+              {rankLabel(role)}
             </p>
           </div>
         </button>

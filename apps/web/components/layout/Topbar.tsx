@@ -3,20 +3,17 @@
 import { usePathname } from "next/navigation";
 import { C } from "@/lib/colors";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
-import useSWR from "swr";
-import { fetcher } from "@/lib/api";
-import type { Employee } from "@callflow/shared-types";
 
 const PAGE_LABELS: Record<string, string> = {
-  overview:   "Dashboard",
   recordings: "Recordings",
-  misc:       "Misc Calls",
+  reports:    "Reports",
   lines:      "Lines",
   intercoms:  "Intercoms",
-  team:       "Team",
-  students:   "Students",
-  settings:   "Settings",
-  employees:  "Employees",
+  users:      "Users",
+  teams:      "Teams",
+  me:         "My Dashboard",
+  students:   "Payments",
+  salary:     "Salary",
   "crm/":         "Leads",
   "crm/settings": "CRM Settings",
 };
@@ -27,13 +24,7 @@ export default function Topbar() {
 
   const segments = pathname.split("/").filter(Boolean); // ["dashboard", "overview"]
   const section  = segments[1] === "crm" ? `crm/${segments[2] ?? ""}` : segments[1] ?? "";
-  const empId    = segments[1] === "employees" && segments[2] ? segments[2] : null;
-
-  const { data: emp } = useSWR<Employee>(empId ? `/employees/${empId}` : null, fetcher);
-
-  const pageLabel = empId
-    ? (emp?.name ?? "Employee")
-    : (PAGE_LABELS[section] ?? "Dashboard");
+  const pageLabel = PAGE_LABELS[section] ?? "Dashboard";
 
   const now = new Date();
   const monthYear = now.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
