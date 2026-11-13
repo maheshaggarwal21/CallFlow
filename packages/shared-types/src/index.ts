@@ -91,6 +91,8 @@ export type Line = {
   assigned_at: string | null;
   employee_name: string | null;
   employee_color_index: number | null;
+  /** The agent's Reg No. */
+  employee_code: number | null;
   call_count_today: number;
 };
 

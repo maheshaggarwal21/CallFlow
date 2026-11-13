@@ -17,7 +17,7 @@ router.use(requireAuth);
 router.get("/", async (_req, res) => {
   const result = await pool.query(
     "SELECT l.id, l.line_number, l.employee_id, l.purpose, l.assigned_at, " +
-      "e.name AS employee_name, e.color_index AS employee_color_index, " +
+      "e.name AS employee_name, e.color_index AS employee_color_index, e.employee_code, " +
       "COALESCE(c.cnt, 0) AS call_count_today " +
     "FROM lines l " +
     "LEFT JOIN employees e ON e.id = l.employee_id " +

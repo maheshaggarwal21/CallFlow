@@ -109,7 +109,7 @@ export default function LinesPage() {
                       }}>{init(line.employee_name)}</div>
                       <div>
                         <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>{line.employee_name}</p>
-                        <p style={{ margin: 0, fontSize: 12, color: C.muted }}>{line.line_number}</p>
+                        {line.employee_code != null && <p style={{ margin: 0, fontSize: 12, color: C.muted }}>Reg No. {line.employee_code}</p>}
                       </div>
                     </div>
                   ) : (
@@ -119,7 +119,7 @@ export default function LinesPage() {
 
                 {/* Purpose */}
                 <div style={{ fontSize: 13, color: C.textSub }}>
-                  {line.purpose ? `"${line.purpose}"` : <span style={{ color: C.dim }}>—</span>}
+                  {line.purpose ? line.purpose : <span style={{ color: C.dim }}>—</span>}
                 </div>
 
                 {/* Calls today — bar graph */}
