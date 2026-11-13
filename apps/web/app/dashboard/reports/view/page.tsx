@@ -231,6 +231,7 @@ function useGroups(data: ReportData): Group[] {
 
 function TeamPage({ data, open }: { data: ReportData; open: (s: string) => void }) {
   const groups = useGroups(data);
+  const { can } = useAuth();
   const split = groups.length > 1 || groups[0]?.key !== "all";
   const maxCell = Math.max(1, ...data.people.flatMap((p) => p.b));
   const th: CSSProperties = { textAlign: "left", fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".06em", color: R.mute, background: R.soft, padding: "9px 10px", fontWeight: 600 };
@@ -243,6 +244,11 @@ function TeamPage({ data, open }: { data: ReportData; open: (s: string) => void 
   return (
     <>
       <Head eyebrow="Team" title="Team performance" />
+      {/* the split needs teams: say where to make them instead of looking unchanged */}
+      {!split && can("teams") && (
+        <p style={{ margin: 0, fontSize: 13.5, color: R.mute, background: R.card, border: `1px dashed ${R.line}`, borderRadius: 12, padding: "10px 14px" }}>
+          Set up teams on the <Link href="/dashboard/teams" style={{ color: R.out, fontWeight: 700 }}>Teams</Link> tab and this page splits by team.</p>
+      )}
       {groups.map((g) => (
         <Panel key={g.key} title={g.title} sub={`${split ? `${sum(g)} · ` : ""}Sorted by talk time · click a row to open the person${g.idle.length ? ` · No calls: ${g.idle.join(", ")}` : ""}`}>
           {g.people.length === 0 ? <p style={{ margin: 0, color: R.mute, fontSize: 13.5 }}>No calls from this team in this period.</p> : (

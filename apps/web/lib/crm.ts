@@ -101,7 +101,7 @@ export type CrmConfig = {
 export type CrmMe = { permissions: string[]; is_owner: boolean };
 
 export type WatiTemplate = { name: string; header: string; body: string; footer: string; buttons: string[]; params: { name: string; sample: string }[] };
-export type WatiTemplates = { configured: boolean; dry_run: boolean; templates: WatiTemplate[] };
+export type WatiTemplates = { configured: boolean; dry_run: boolean; inbox: boolean; templates: WatiTemplate[] };
 /** `{{name}}` / `{{1}}` filled in, as the server does it; an empty variable stays visible in the preview. */
 export const fillTemplate = (body: string, values: Record<string, string>) =>
   body.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => values[k] || m);

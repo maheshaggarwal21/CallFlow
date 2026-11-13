@@ -3,8 +3,10 @@
 // Lead rows for the Leads page: the client's columns, one row per lead, click to open the form.
 // With `edit`, Assigned to / Status / Amount / Guitar / Last contacted / Next follow-up change right in the row (client, 8 Nov, 10 Nov).
 import { useState, type CSSProperties, type MouseEvent } from "react";
+import useSWR from "swr";
+import { fetcher } from "@/lib/api";
 import { R } from "@/components/report/kit";
-import { DUE_WINDOW_MS, groupPhone, openWati, type CodeMeta, type LeadRow } from "@/lib/crm";
+import { DUE_WINDOW_MS, groupPhone, openWati, type CodeMeta, type LeadRow, type WatiTemplates } from "@/lib/crm";
 import { WatiIcon, WhatsAppIcon } from "@/components/ui/WABtn";
 import { CodeChip, Tag, tdStyle, thStyle } from "./kit";
 import { Icon } from "./icons";
@@ -64,6 +66,9 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
   edit?: TableEdit;
 }) {
   const [watiErr, setWatiErr] = useState("");
+  // same request as the lead form's template sender (SWR shares it); no WATI set up = no WATI button
+  const { data: wati } = useSWR<WatiTemplates>("/crm/wati/templates", fetcher, { revalidateOnFocus: false });
+  const watiOn = !!(wati?.configured && wati.inbox);
   if (!rows.length) return <p style={{ margin: "6px 2px 0", color: R.mute, fontSize: 13 }}>{empty}</p>;
   const head = (label: string, key?: string, style?: CSSProperties) => {
     const on = sort && key && sort.sort === key;
@@ -159,8 +164,8 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                   <span style={{ display: "inline-flex", gap: 5 }}>
                     <a className="crm-btn" style={{ ...actBtn, color: "#1fa855" }} href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer"
                       title="Chat on WhatsApp" aria-label={`WhatsApp ${l.name}`}><WhatsAppIcon size={15} /></a>
-                    <button className="crm-btn" style={actBtn} title="Open this chat in WATI" aria-label={`Open ${l.name} in WATI`}
-                      onClick={() => { setWatiErr(""); openWati(l.id).catch((e) => setWatiErr((e as Error).message)); }}><WatiIcon size={19} /></button>
+                    {watiOn && <button className="crm-btn" style={actBtn} title="Open this chat in WATI" aria-label={`Open ${l.name} in WATI`}
+                      onClick={() => { setWatiErr(""); openWati(l.id).catch((e) => setWatiErr((e as Error).message)); }}><WatiIcon size={19} /></button>}
                     <button className="crm-btn" style={{ ...actBtn, color: R.out }} onClick={() => onOpen(l.id)} title="Open lead form" aria-label={`Open lead form for ${l.name}`}>
                       <Icon name="open" size={15} /></button>
                   </span>

@@ -190,9 +190,11 @@ router.get("/calls/:id/audio", leadsAccess, async (req, res) => {
 
 /** The approved templates for the lead form's dropdown. */
 router.get("/wati/templates", leadsAccess, async (_req, res) => {
-  if (!watiConfigured()) return res.json({ configured: false, dry_run: false, templates: [] });
+  // `inbox`: the "open in WATI" buttons only show when the server knows WATI's inbox address
+  const inbox = !!process.env.WATI_INBOX_URL;
+  if (!watiConfigured()) return res.json({ configured: false, dry_run: false, inbox: false, templates: [] });
   try {
-    return res.json({ configured: true, dry_run: watiDryRun(), templates: await listTemplates() });
+    return res.json({ configured: true, dry_run: watiDryRun(), inbox, templates: await listTemplates() });
   } catch (e) {
     throw new CrmError(502, (e as Error).message);
   }

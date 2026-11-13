@@ -78,6 +78,9 @@ function DrawerBody({ leadId, presetCode, onClose, onSaved, isOwner, expanded, o
   const { data: cfg } = useSWR<CrmConfig>("/crm/config", fetcher);
   const [lock, setLock] = useState<Lock>(null);
   const [watiErr, setWatiErr] = useState("");
+  // shared with WatiSend below (SWR dedupes it): no WATI set up on the server = no WATI button
+  const { data: wati } = useSWR<WatiTemplates>("/crm/wati/templates", fetcher, { revalidateOnFocus: false });
+  const watiOn = !!(wati?.configured && wati.inbox);
   const lastActive = useRef(Date.now());
 
   // Claim on open, extend every minute while the rep is active, release on close
@@ -122,12 +125,12 @@ function DrawerBody({ leadId, presetCode, onClose, onSaved, isOwner, expanded, o
         {/* Client, 8 Nov: WhatsApp top right; the number lives in Basic details; no Close button
             (a click on the empty area around the pop-up, or Esc, closes it) */}
         {/* Client, 12 Nov: WATI beside WhatsApp, opening this number's chat in WATI */}
-        <button type="button" className="crm-btn" title="Open this chat in WATI" onClick={() => { setWatiErr(""); openWati(d.lead.id).catch((e) => setWatiErr((e as Error).message)); }}
+        {watiOn && <button type="button" className="crm-btn" title="Open this chat in WATI" onClick={() => { setWatiErr(""); openWati(d.lead.id).catch((e) => setWatiErr((e as Error).message)); }}
           style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center", background: "#fff", color: "#1d1d1b", border: `1px solid ${R.line}`, borderRadius: 12,
             padding: "9px 18px", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
-          <WatiIcon size={22} />wati</button>
+          <WatiIcon size={22} />wati</button>}
         <a href={`https://wa.me/91${d.lead.phone10}`} target="_blank" rel="noopener noreferrer" className="crm-btn" title="Chat on WhatsApp"
-          style={{ display: "inline-flex", gap: 8, alignItems: "center", background: "#25D366", color: "#fff", borderRadius: 12,
+          style={{ ...(watiOn ? {} : { marginLeft: "auto" }), display: "inline-flex", gap: 8, alignItems: "center", background: "#25D366", color: "#fff", borderRadius: 12,
             padding: "10px 18px", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 8px 18px -10px rgba(37,211,102,.9)" }}>
           <WhatsAppIcon size={18} />WhatsApp</a>
       </header>
