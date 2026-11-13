@@ -37,7 +37,8 @@ export default function Sidebar() {
   // only the tabs ticked for this user (Users → Tabs), grouped under their section labels
   const myTabs = TABS.filter((t) => can(t.key));
   const sections = [...new Set(myTabs.map((t) => t.section))];
-  const showSalary = isOwner && process.env.NODE_ENV !== "production";
+  // Employee Tracker: the Super Admin's only (live since payments were wired in, 14 Nov)
+  const showSalary = isOwner;
 
   const SectionLabel = ({ label }: { label: string }) => (
     <p style={{
