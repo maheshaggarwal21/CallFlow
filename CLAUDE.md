@@ -84,6 +84,10 @@ Schema lives in `apps/api/src/db/migrations/*.sql`. Core tables: `employees`, `l
 
 > **KoreCall filename format** (current): `{LL}--{A|B}-{phone}---{YYYYMMDDHHmmss}-Unknown.wav` — two-digit line, direction A/B, digits-only phone (variable length), timestamp after `---`. Intercom code is no longer present in filenames; the `intercom_code` column in DB and the intercom filter in the web app are kept for a possible future return.
 
+## Deploying
+
+Push to `main` → GitHub Actions (`.github/workflows/deploy.yml`): checks (API build + unit tests, web type-check), then deploy to the droplet: DB backup, pull + build API, **only the migrations added since the running commit** (`.github/deploy/server.sh`, via `scripts/migrate-one.js`), restart `api-server`; the web app is built on the runner and rsynced to `/var/www/callflow`, then `web` restarts; finally login 200 / API 401 checks. Docs-only pushes don't deploy. The FTP service is never deployed by CI. Migrations must stay re-runnable and are never edited after they ship. Needs repo secrets `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` (one-time `deploy-crm/setup-ci.sh` on the laptop, outside the repo).
+
 ## Key environment variables
 
 Per-app `.env` files (templates in `.env.example`). The essentials:

@@ -1,0 +1,95 @@
+# Push to main → checks → deploy to the droplet (https://callflow.maxmusicschool.co.in).
+# Replaces running deploy-crm/deploy-update.sh by hand. The FTP service is never touched here.
+#
+# Repo secrets (Settings → Secrets and variables → Actions), added by a repo admin:
+#   DEPLOY_SSH_KEY      private key whose public half is in root@droplet ~/.ssh/authorized_keys
+#   DEPLOY_KNOWN_HOSTS  the droplet's host key line (ssh-keyscan output), so we never trust a stranger
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
+  workflow_dispatch: {}
+
+# one deploy at a time; a newer push waits rather than racing the running one
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  HOST: root@159.65.158.155
+  SITE: https://callflow.maxmusicschool.co.in
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Shared types
+        working-directory: packages/shared-types
+        run: npm ci && npm run build
+      - name: API build + unit tests
+        working-directory: apps/api
+        # crm/db.test needs a local Postgres and refuses anything else, so it runs on laptops only
+        run: |
+          npm ci
+          npm run build
+          node --test $(ls dist/lib/*.test.js dist/lib/crm/*.test.js | grep -v crm/db.test.js)
+      - name: Web type check
+        working-directory: apps/web
+        run: npm ci && npm run type-check
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # the droplet has 512 MB: the web app is built here, as it used to be on the laptop
+      - name: Build web
+        env:
+          NEXT_PUBLIC_API_BASE_URL: /api/v1
+          NEXT_PUBLIC_CRM_ENABLED: "true"
+        run: |
+          (cd packages/shared-types && npm ci && npm run build)
+          cd apps/web && npm ci && npx next build
+          if grep -rl 'localhost:4000' .next/static; then echo "web build points at localhost"; exit 1; fi
+          mkdir -p ../../out && cp -a .next/standalone/. ../../out/
+          cp -a .next/static ../../out/apps/web/.next/static
+          cp -a public ../../out/apps/web/public
+
+      - name: SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          printf 'Host *\n  IdentityFile ~/.ssh/id_deploy\n  StrictHostKeyChecking yes\n  ServerAliveInterval 15\n' > ~/.ssh/config
+
+      - name: API (backup, pull, build, new migrations, restart)
+        run: ssh "$HOST" "SHA=$GITHUB_SHA STAMP=$(date -u +%Y%m%d-%H%M) bash -s" < .github/deploy/server.sh
+
+      - name: Web (upload, restart)
+        run: |
+          for try in 1 2 3; do rsync -az --timeout=60 out/ "$HOST:/var/www/callflow/" && break; [ $try = 3 ] && exit 1; sleep 10; done
+          ssh "$HOST" 'pm2 restart web >/dev/null && sleep 5 && pm2 ls --no-color | grep -E "api-server|web"'
+
+      - name: Checks (login page 200, API without login 401)
+        run: |
+          sleep 5
+          page=$(curl -s -o /dev/null -w '%{http_code}' "$SITE/login")
+          api=$(curl -s -o /dev/null -w '%{http_code}' "$SITE/api/v1/crm/me")
+          echo "login page: $page · API without login: $api"
+          [ "$page" = 200 ] && [ "$api" = 401 ]
