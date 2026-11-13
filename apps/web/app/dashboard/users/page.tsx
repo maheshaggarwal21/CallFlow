@@ -14,9 +14,9 @@ import { Icon } from "@/components/crm/icons";
 import ExtraCommissions, { extraProblem } from "@/components/users/ExtraCommissions";
 import type { Employee, Intercom, Line, TeamsResponse, UserRole } from "@callflow/shared-types";
 
-// Fits a 1280px laptop without sideways scrolling, Edit included; email gets the most room
-// (kritgunsingh1907@gmail.com fits) and every gap is 16px so no column touches the next.
-const COLS = "minmax(150px,1.2fr) 110px minmax(205px,1.8fr) 64px minmax(100px,1fr) 104px 60px 36px";
+// Fits a 1280px laptop without sideways scrolling, Edit included (the minimums); on wider screens the spare
+// room is shared out so Access, Status and Edit get space too, not just Designation. Email gets the most.
+const COLS = "minmax(150px,1.3fr) 110px minmax(205px,1.35fr) 64px minmax(100px,0.8fr) minmax(104px,0.8fr) minmax(60px,0.6fr) minmax(36px,0.4fr)";
 const TICKS = [...TABS.map((t) => ({ key: t.key, label: t.label })), ...EXTRA_PERMISSIONS];
 
 /** The green on/off switch from the client's design. */
