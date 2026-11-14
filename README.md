@@ -510,7 +510,7 @@ Next.js 15 App Router under `apps/web/app/`.
 | `/dashboard/misc` | any user | Short/misc calls view. |
 | `/dashboard/overview` | owner | Analytics dashboard (stat cards, direction/team splits, line status, recent calls). |
 | `/dashboard/employees` + `/[id]` | owner (employees redirected to their own detail) | Employee list and per-employee analytics. |
-| `/dashboard/lines` | owner | Assign lines to employees. |
+| `/dashboard/intercoms` | Intercoms tab | Each intercom's calling number, line and the person on that line (the Lines tab was folded in here, 14 Nov 2026). |
 | `/dashboard/intercoms` | owner | Manage intercom phone numbers. |
 | `/dashboard/team` | owner | Team management. |
 | `/dashboard/students` | owner | Student directory + CSV import. |

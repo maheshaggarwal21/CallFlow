@@ -39,7 +39,8 @@ router.get("/", async (_req, res) => {
   })));
 });
 
-router.patch("/:id", requirePermission("lines"), async (req, res) => {
+// a line's person is set on the Intercoms tab (the Lines tab was folded in there, 14 Nov 2026)
+router.patch("/:id", requirePermission("intercoms"), async (req, res) => {
   const parsed = patchSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid request" });

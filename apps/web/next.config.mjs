@@ -13,9 +13,13 @@ const nextConfig = {
   },
   // pages removed in the Nov 2026 revamp: old bookmarks land on the person's home instead of a 404
   async redirects() {
-    return ["overview", "team", "employees", "employees/:id", "misc", "settings"].map((p) => ({
-      source: `/dashboard/${p}`, destination: "/dashboard", permanent: false,
-    }));
+    return [
+      ...["overview", "team", "employees", "employees/:id", "misc", "settings"].map((p) => ({
+        source: `/dashboard/${p}`, destination: "/dashboard", permanent: false,
+      })),
+      // the Lines tab was folded into Intercoms (14 Nov 2026)
+      { source: "/dashboard/lines", destination: "/dashboard/intercoms", permanent: false },
+    ];
   },
 };
 

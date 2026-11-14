@@ -7,7 +7,6 @@ import { useSystemStatus } from "@/hooks/useSystemStatus";
 const PAGE_LABELS: Record<string, string> = {
   recordings: "Recordings",
   reports:    "Reports",
-  lines:      "Lines",
   intercoms:  "Intercoms",
   users:      "Users",
   teams:      "Teams",

@@ -99,6 +99,8 @@ ok((await call(rep, "GET", `/employees/${nehaId}`)).status === 403, "User can't 
 ok((await call(rep, "GET", "/calls?limit=1")).status === 200, "Recordings ticked → calls API open");
 ok((await call(rep, "GET", "/reports/schedules")).status === 403, "Reports not ticked → email schedules refused");
 ok((await call(rep, "GET", "/students")).status === 403, "Payments not ticked → refused");
+ok((await call(rep, "PATCH", `/lines/${freeLine.id}`, { purpose: null })).status === 403, "Intercoms not ticked → can't set a line's person");
+ok((await call(owner, "PATCH", `/lines/${freeLine.id}`, { purpose: null })).status === 200, "Super Admin can edit a line");
 const rd = (await call(rep, "GET", "/reports/data?employee_id=all")).data;
 ok(rd && (rd.people ?? []).every((p) => p.id === undefined || p.id === u.id), "User's report is only their own");
 const sm = (await call(rep, "GET", "/employees/me/summary")).data;

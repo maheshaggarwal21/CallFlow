@@ -19,7 +19,6 @@ const ALL: (Tab & { crm?: boolean })[] = [
   { key: "recordings",   label: "Recordings",   section: "Calls",      icon: "▷", path: "/dashboard/recordings" },
   // opens on the report itself; the email schedules are one click away (client, 12 Nov)
   { key: "reports",      label: "Reports",      section: "Analytics",  icon: "✉", path: "/dashboard/reports/view", match: "/dashboard/reports" },
-  { key: "lines",        label: "Lines",        section: "Management", icon: "≡", path: "/dashboard/lines" },
   { key: "intercoms",    label: "Intercoms",    section: "Management", icon: "☎", path: "/dashboard/intercoms" },
   { key: "users",        label: "Users",        section: "Management", icon: "◯", path: "/dashboard/users" },
   { key: "teams",        label: "Teams",        section: "Management", icon: "◐", path: "/dashboard/teams" },
