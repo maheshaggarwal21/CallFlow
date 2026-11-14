@@ -4,7 +4,7 @@ Written for an AI or developer picking this up cold. `DESIGN.md` in this folder 
 (10 Nov: a separate Commission Setup page, a `payments` table, `commission_entries`). Most of that plan
 was **not** built. This file describes the code as it is now.
 
-Status: branch `feature/access-salary`, **localhost only, not committed, not deployed**. Local DB is
+Status (15 Nov 2026): **committed, on `main` and live**; see `docs/HANDOFF.md` for the full picture. Local DB is
 Postgres on 127.0.0.1 (the scripts refuse any other host). `apps/api/.env` points at the remote
 Supabase DB, so never run plain `migrate.ts` against it. Use `npm run crm:migrate`.
 

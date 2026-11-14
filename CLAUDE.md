@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **New session? Read `docs/HANDOFF.md` first.** It lists what was built in the Nov 2026 revamp, the pay
+> rules the client confirmed, how to deploy, how this user likes to work, and the open questions.
+
 ## What this is
 
 CallFlow is a call-recording management system for Max Music School. Recordings arrive over FTP from a KoreCall PBX, get parsed and stored, and an owner/employee web dashboard searches and reviews them.
