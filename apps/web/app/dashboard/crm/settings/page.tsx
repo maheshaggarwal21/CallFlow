@@ -1,6 +1,6 @@
 "use client";
 
-// CRM & Pay Settings: the lead status codes (A, B, C…) and the payment status codes (1, 2, 3…) — name
+// Codes (was "CRM & Pay Settings"): the lead status codes (A, B, C…) and the payment status codes (1, 2, 3…) — name
 // each one and pick its colour (client, 12 and 14 Nov 2026).
 // What a code does and the follow-up rules are no longer shown here; each code keeps the behaviour it has.
 // Who may open the CRM tabs is ticked on the Users tab.
@@ -19,12 +19,12 @@ export default function CrmSettingsPage() {
   const { me, can } = useCrmMe();
   const allowed = !!me && can("crm_settings");
   const { data, error, mutate } = useSWR<Settings>(allowed ? "/crm/settings" : null, fetcher);
-  if (me && !allowed) return <NoAccess what="CRM & Pay Settings" />;
+  if (me && !allowed) return <NoAccess what="Codes" />;
 
   return (
     <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gap: 14 }}>
       <style>{CRM_CSS}</style>
-      <HeaderBand eyebrow="CRM" title="CRM & Pay Settings" sub="Lead and payment status codes, and their colours" />
+      <HeaderBand eyebrow="CRM" title="Codes" sub="Lead and payment status codes, and their colours" />
       {error ? <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p> : !data || !me ? <p style={{ color: R.mute }}>Loading…</p>
         // side by side when there is room (client, 14 Nov), one under the other on a narrow screen
         : <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-start" }}>

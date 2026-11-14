@@ -106,7 +106,6 @@ function TeamCard({ team, teams, onMove, run }: {
   const [mode, setMode] = useState<"view" | "edit" | "delete">("view");
   const clr = eClr(team.color_index);
   const calls = sum(team.members, (m) => m.calls_today), talk = sum(team.members, (m) => m.talk_secs_today);
-  const best = [...team.members].sort((a, b) => b.calls_today - a.calls_today)[0];
   return (
     <section style={{ ...S.card, overflow: "hidden" }}>
       <div style={{ height: 6, background: clr.t }} />
@@ -154,15 +153,15 @@ function TeamCard({ team, teams, onMove, run }: {
           ? <p style={{ margin: "4px 0 10px", padding: "16px", textAlign: "center", border: `1px dashed ${C.border}`, borderRadius: 10, color: C.muted, fontSize: 13.5 }}>
               No agents yet. Move someone here with the dropdown next to their name.</p>
           : team.members.map((a) => (
-              <AgentRow key={a.id} agent={a} teams={teams} onMove={onMove} placeholder="Move to…" star={!!best && best.calls_today > 0 && a.id === best.id} />
+              <AgentRow key={a.id} agent={a} teams={teams} onMove={onMove} placeholder="Move to…" />
             ))}
       </div>
     </section>
   );
 }
 
-function AgentRow({ agent, teams, onMove, placeholder, star }: {
-  agent: TeamAgent; teams: Team[]; onMove: (a: TeamAgent, teamId: string) => void; placeholder: string; star?: boolean;
+function AgentRow({ agent, teams, onMove, placeholder }: {
+  agent: TeamAgent; teams: Team[]; onMove: (a: TeamAgent, teamId: string) => void; placeholder: string;
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: `1px solid ${C.borderLight}` }}>
@@ -170,7 +169,6 @@ function AgentRow({ agent, teams, onMove, placeholder, star }: {
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 14.5, fontWeight: 700, color: C.text }}>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{agent.name}</span>
-          {star && <Tag label="★ Top today" color={C.orange} bg={C.orangeLight} style={{ fontSize: 10.5, padding: "2px 8px" }} />}
         </div>
         <div style={{ fontSize: 12.5, color: C.muted }}>{agent.designation || "Agent"} · Reg No. {agent.employee_code}</div>
       </div>

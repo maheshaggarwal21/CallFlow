@@ -166,7 +166,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                     <a className="crm-btn" style={{ ...actBtn, color: "#1fa855" }} href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer"
                       title="Chat on WhatsApp" aria-label={`WhatsApp ${l.name}`}><WhatsAppIcon size={15} /></a>
                     {watiOn && <button className="crm-btn" style={actBtn} title="Open this chat in WATI" aria-label={`Open ${l.name} in WATI`}
-                      onClick={() => { setWatiErr(""); openWati(l.id).catch((e) => setWatiErr((e as Error).message)); }}><WatiIcon size={19} /></button>}
+                      onClick={() => { setWatiErr(""); openWati(l.id).then((hint) => hint && setWatiErr(hint)).catch((e) => setWatiErr((e as Error).message)); }}><WatiIcon size={19} /></button>}
                     <button className="crm-btn" style={{ ...actBtn, color: R.out }} onClick={() => onOpen(l.id)} title="Open lead form" aria-label={`Open lead form for ${l.name}`}>
                       <Icon name="open" size={15} /></button>
                   </span>

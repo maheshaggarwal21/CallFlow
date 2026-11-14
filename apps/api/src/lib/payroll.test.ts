@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { commissionOn, feeCommission, monthBounds, monthPayout, proRated, type PayPlan } from "./payroll";
 
 const plan: PayPlan = {
-  fix_salary: 20000, other_amount: 1000,
+  fix_salary: 20000,
   trial_commission: 100, trial_commission_type: "fix",
   regular_commission: 10, regular_commission_type: "pct",
 };
@@ -42,8 +42,8 @@ test("an extra or deduction counts once, in the month it starts (client, 14 Nov 
   // "In" runs 25 Oct – 2 Nov: it started in October, so November doesn't pay it again
   assert.deepEqual(r.extras, []);
   assert.deepEqual(r.deductions, [{ name: "Late", amount: 2000 }, { name: "Fine", amount: 250 }]);
-  // 20000 + 1000 + 1500 − 2250
-  assert.equal(r.total, 20250);
+  // 20000 + 1500 − 2250
+  assert.equal(r.total, 19250);
   assert.deepEqual(monthPayout(p, [], "2026-10-01", "2026-10-31").extras, [{ name: "In", amount: 500 }, { name: "Before", amount: 900 }]);
   assert.deepEqual(monthPayout(p, [], "2026-12-01", "2026-12-31").deductions, [{ name: "After", amount: 999 }]);
 });
@@ -72,10 +72,9 @@ test("someone who left mid-month gets salary for the days worked; % deduction on
   const p: PayPlan = { ...plan, extra_deductions: [{ name: "Late", type: "pct", amount: 10, from: "2026-11-01", to: "2026-11-30" }] };
   const half = proRated(p, 15, 30);
   assert.equal(half.fix_salary, 10000);
-  assert.equal(half.other_amount, 500);
   const r = monthPayout(half, fees, "2026-11-01", "2026-11-30");
-  // 10000 + 500 + 1500 commission − 10 % of 10000
-  assert.equal(r.total, 11000);
+  // 10000 + 1500 commission − 10 % of 10000
+  assert.equal(r.total, 10500);
   assert.equal(proRated(p, 30, 30).fix_salary, 20000);
   assert.equal(proRated(p, 0, 30).fix_salary, 0);
 });

@@ -8,14 +8,14 @@
  *   client: whether "Other" (or a registration / late fee) should earn at all. The school's data has no
  *   student id, so a first fee can't be told from a renewal; a rule that needs that needs the field first.
  * - Rate type "pct" = % of the amount paid; "fix" = ₹ per payment.
- * - Fix salary and other amount are monthly. An extra commission or a deduction is paid once, in the
+ * - Fix salary is monthly (the old "other amount" was removed 15 Nov 2026: an extra commission or deduction does that job). An extra commission or a deduction is paid once, in the
  *   month its start date falls in (the form fills that with the day it is added); a % deduction is a % of
  *   the fix salary (client, 14 Nov 2026).
  * Money is kept in paise until the end, then rounded to whole rupees.
  */
 export type RateType = "fix" | "pct";
 export type PayPlan = {
-  fix_salary: number; other_amount: number;
+  fix_salary: number;
   trial_commission: number; trial_commission_type: RateType;
   regular_commission: number; regular_commission_type: RateType;
   extra_commissions?: { name: string; amount: number; from: string; to: string }[];
@@ -59,18 +59,18 @@ export function monthPayout(plan: PayPlan, payments: PaidFee[], from: string, to
   }));
   const plus = extras.reduce((t, x) => t + x.amount, 0);
   const minus = deductions.reduce((t, x) => t + x.amount, 0);
-  const gross = plan.fix_salary + plan.other_amount + c.commission + plus;
+  const gross = plan.fix_salary + c.commission + plus;
   // a payout never goes below zero, whatever the deductions add up to
-  return { ...c, base: plan.fix_salary, other: plan.other_amount, extras, deductions, total: Math.max(0, gross - minus) };
+  return { ...c, base: plan.fix_salary, extras, deductions, total: Math.max(0, gross - minus) };
 }
 
 /**
- * The plan for someone who left during the month (client, 14 Nov 2026): fix salary and other amount for
+ * The plan for someone who left during the month (client, 14 Nov 2026): fix salary for
  * the days worked, `days` of `monthDays` (option A, pro-rated). A % deduction is then a % of that salary.
  */
 export function proRated(plan: PayPlan, days: number, monthDays: number): PayPlan {
   const part = Math.min(Math.max(days, 0), monthDays) / monthDays;
-  return { ...plan, fix_salary: Math.round(plan.fix_salary * part), other_amount: Math.round(plan.other_amount * part) };
+  return { ...plan, fix_salary: Math.round(plan.fix_salary * part) };
 }
 
 /** First and last IST date of a `YYYY-MM` month, or null if it isn't one. */

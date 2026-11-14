@@ -25,7 +25,7 @@ Users form on 13 Nov.
 
 | Figure | Source |
 |---|---|
-| Fix salary, trial/regular rate and type, other amount, extras, deductions | `employees` columns, set on the Users form |
+| Fix salary, trial/regular rate and type, extras, deductions | `employees` columns, set on the Users form |
 | Fees collected, trial and regular commission | The school site's partner API, `GET /api/v1/partner/payments` (see §4a) |
 | Calls, talk time, hourly chart, funnel | `GET /reports/data` (call records) |
 
@@ -37,14 +37,14 @@ The sample ledger (`lib/salarySample.ts`, invented students) was **deleted** on 
   **regular** rate. So a rep earns again on each later monthly fee they enter (recurring commission),
   credited to the rep the school site files it under (`callFlowId`).
 - `pct` = % of the amount paid; `fix` = ₹ per payment.
-- Monthly payout (Employee Tracker, and "Pay · <month>" on My Dashboard, same function `monthPayout`) = fix salary + other amount + commission + extra commissions
+- Monthly payout (Employee Tracker, and "Pay · <month>" on My Dashboard, same function `monthPayout`) = fix salary + commission + extra commissions
   that start in the month − deductions that start in the month (a % deduction is a % of the fix
   salary), never below ₹0. Each extra or deduction is paid **once, in the month its start date falls
   in**; the form fills the start date with the day it is added (client, 14 Nov 2026: "applied the day
   it is added", and ranges are almost always inside one month).
 - Someone switched off during a month (`employees.left_on`, set on switch-off, cleared on switch-on;
   migration 022 back-filled earlier leavers with their last call day) is listed on the Employee Tracker
-  for that month only: greyed at the bottom, fix salary and other amount pro-rated to the days worked
+  for that month only: greyed at the bottom, fix salary pro-rated to the days worked
   (`proRated`, client chose this 14 Nov 2026), commission on payments up to the day they left.
 - My Dashboard's Earnings card shows the commission for the picked period, plus the monthly salary
   and the extras/deductions active today as separate lines.
@@ -147,7 +147,7 @@ Amount) and Call Setting, Target → **Extra Commission** → **Extra Deduction*
   `<UserDashboard id=… />` for a chosen user. Without `id` it calls `/employees/me/summary` and
   `/reports/data?employee_id=all` (the API narrows a User to their own data); with `id` it calls
   `/employees/:id/summary` and `/reports/data?employee_id=:id`.
-- Left card: profile, then the salary plan (fix salary, trial and regular rates, other amount),
+- Left card: profile, then the salary plan (fix salary, trial and regular rates; "other amount" was removed 15 Nov 2026),
   then **"Active now"**: each active extra commission (`+ name · ₹ · till date`, orange) and each
   active deduction (`− name · −₹value (x%) · till date`, red). A % deduction is shown as ₹ using
   `fix_salary`.

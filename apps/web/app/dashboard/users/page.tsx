@@ -3,7 +3,7 @@
 // Users (client's users.pdf, 12 Nov 2026): the list, and the "User Management System" form with
 // Basic, Salary, Call Setting, Target and the Tabs checklist that decides which tabs a user sees.
 import { useState, type CSSProperties, type ReactNode } from "react";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import { C } from "@/lib/colors";
 import { api, fetcher } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
@@ -40,11 +40,14 @@ export default function UsersPage() {
 
   const setStatus = async (u: Employee, active: boolean) => {
     setError("");
+    const to = active ? "active" : "inactive";
+    // the switch moves at once; the server (about a second away) confirms, and the old state comes back if it refuses
+    mutate((list) => list?.map((x) => (x.id === u.id ? { ...x, status: to } : x)), { revalidate: false });
     try {
-      await api.patch(`/employees/${u.id}`, { status: active ? "active" : "inactive" });
-      mutate();
+      await api.patch(`/employees/${u.id}`, { status: to });
     } catch (e) {
       setError((e as Error).message);
+      mutate();
     }
   };
 
@@ -128,18 +131,20 @@ const fromHms = (v: string) => {
   return p[0] * 3600 + p[1] * 60 + (p[2] ?? 0);
 };
 const num = (v: string) => (v.trim() === "" ? 0 : Number(v));
+const NEW_TEAM = "__new_team__";
 
 function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; isSelf: boolean; onClose: () => void; onSaved: () => void }) {
   const { isOwner, can } = useAuth();
   const { data: lines } = useSWR<Line[]>("/lines", fetcher);
   const { data: intercoms } = useSWR<Intercom[]>("/intercoms", fetcher);
-  const { data: teamsData } = useSWR<TeamsResponse>(can("teams") ? "/teams" : null, fetcher);
+  const { data: teamsData, mutate: reloadTeams } = useSWR<TeamsResponse>(can("teams") || can("users") ? "/teams" : null, fetcher);
+  const [newTeam, setNewTeam] = useState<{ name: string; location: string; err: string; busy: boolean } | null>(null);
   const [f, setF] = useState({
     name: user?.name ?? "", phone: user?.phone ?? "", email: user?.email ?? "", employee_code: user ? String(user.employee_code) : "",
     designation: user?.designation ?? "", password: "", role: (user?.role ?? "employee") as UserRole, active: (user?.status ?? "active") === "active",
     fix_salary: String(user?.fix_salary ?? ""), trial_commission: String(user?.trial_commission ?? ""), trial_commission_type: user?.trial_commission_type ?? "fix",
     regular_commission: String(user?.regular_commission ?? ""), regular_commission_type: user?.regular_commission_type ?? "fix",
-    other_amount: String(user?.other_amount ?? ""), duration: toHms(user?.target_call_secs ?? 0),
+    duration: toHms(user?.target_call_secs ?? 0),
     target_trial: String(user?.target_trial ?? ""), target_regular: String(user?.target_regular ?? ""),
     line_id: user?.line_id ?? "", intercom_id: user?.intercom_id ?? "", permissions: user?.permissions ?? [],
     extras: user?.extra_commissions ?? [], deductions: user?.extra_deductions ?? [], team_id: user?.team_id ?? "",
@@ -165,6 +170,22 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
     set({ intercom_id: id, line_id: onLine ?? f.line_id });
   };
 
+  // the small "Create team" popup: a name and the office address, then the new team is picked for this user
+  const createTeam = async () => {
+    if (!newTeam) return;
+    if (!newTeam.name.trim()) return setNewTeam({ ...newTeam, err: "Give the team a name" });
+    setNewTeam({ ...newTeam, err: "", busy: true });
+    try {
+      const t = await api.post<{ id: string }>("/teams", { name: newTeam.name.trim(), location: newTeam.location.trim() || null });
+      await reloadTeams();
+      globalMutate("/teams");
+      set({ team_id: t.id });
+      setNewTeam(null);
+    } catch (e) {
+      setNewTeam({ ...newTeam, err: (e as Error).message, busy: false });
+    }
+  };
+
   const all = f.role === "owner";
   const ticked = (k: string) => all || f.permissions.includes(k);
   const toggle = (k: string) => set({ permissions: ticked(k) ? f.permissions.filter((x) => x !== k) : [...f.permissions, k] });
@@ -179,7 +200,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) return setError("That Email Id doesn't look right.");
     if (f.phone.trim() && !/^\+?\d{8,14}$/.test(f.phone.replace(/[\s-]/g, ""))) return setError("Contact must be a phone number (8 to 15 digits).");
     if (f.employee_code.trim() && !(Number.isInteger(Number(f.employee_code)) && Number(f.employee_code) > 0)) return setError("Reg No. must be a whole number.");
-    const nums = [f.fix_salary, f.trial_commission, f.regular_commission, f.other_amount, f.target_trial, f.target_regular];
+    const nums = [f.fix_salary, f.trial_commission, f.regular_commission, f.target_trial, f.target_regular];
     if (nums.some((v) => v.trim() !== "" && !(Number(v) >= 0))) return setError("Salary and target figures can't be negative.");
     if ((f.trial_commission_type === "pct" && num(f.trial_commission) > 100) || (f.regular_commission_type === "pct" && num(f.regular_commission) > 100))
       return setError("A commission in % can't be more than 100.");
@@ -195,7 +216,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
       // your own rank and status can't be changed by you, so they aren't sent
       ...(isSelf ? {} : { role: f.role, status: f.active ? "active" : "inactive" }),
       fix_salary: num(f.fix_salary), trial_commission: num(f.trial_commission), trial_commission_type: f.trial_commission_type,
-      regular_commission: num(f.regular_commission), regular_commission_type: f.regular_commission_type, other_amount: num(f.other_amount),
+      regular_commission: num(f.regular_commission), regular_commission_type: f.regular_commission_type,
       target_call_secs: secs, target_trial: num(f.target_trial), target_regular: num(f.target_regular),
       permissions: all ? [] : f.permissions, line_id: f.line_id || null, intercom_id: f.intercom_id || null,
       extra_commissions: f.extras, extra_deductions: f.deductions,
@@ -267,9 +288,10 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
               </Field>
               {teamsData && (
                 <Field label="Team">
-                  <select value={f.team_id} onChange={(e) => set({ team_id: e.target.value })} style={input}>
+                  <select value={f.team_id} onChange={(e) => (e.target.value === NEW_TEAM ? setNewTeam({ name: "", location: "", err: "", busy: false }) : set({ team_id: e.target.value }))} style={input}>
                     <option value="">— No team —</option>
                     {teamsData.teams.map((t) => <option key={t.id} value={t.id}>{t.name}{t.location ? ` · ${t.location}` : ""}</option>)}
+                    <option value={NEW_TEAM}>+ Create team…</option>
                   </select>
                 </Field>
               )}
@@ -287,7 +309,6 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
                 <Field label="Fix Salary" sub="in rupees, per month"><input type="number" min={0} value={f.fix_salary} onChange={(e) => set({ fix_salary: e.target.value })} style={input} /></Field>
                 {rate("Trial Commission", "trial_commission")}
                 {rate("Regular Commission", "regular_commission")}
-                <Field label="Add Other Amount" sub="in rupees"><input type="number" min={0} value={f.other_amount} onChange={(e) => set({ other_amount: e.target.value })} style={input} /></Field>
               </div>
             </Section>
 
@@ -364,6 +385,28 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
           <button onClick={save} disabled={saving} style={{ ...S.btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save"}</button>
         </div>
       </div>
+
+      {newTeam && (
+        <>
+          <div onClick={() => setNewTeam(null)} style={{ position: "fixed", inset: 0, background: "rgba(43,33,24,0.35)", zIndex: 300 }} />
+          <div role="dialog" aria-label="Create team" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 301,
+            width: "min(380px, calc(100vw - 32px))", background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: "24px 26px", boxShadow: "0 24px 60px -20px rgba(43,33,24,0.4)" }}>
+            <h3 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 800, color: C.text }}>Create team</h3>
+            <p style={{ margin: "0 0 16px", fontSize: 13, color: C.muted }}>It is picked for this user as soon as it is created.</p>
+            <div style={{ display: "grid", gap: 12 }}>
+              <Field label="Team name"><input autoFocus value={newTeam.name} maxLength={60} onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && createTeam()} style={input} /></Field>
+              <Field label="Office address"><input value={newTeam.location} maxLength={60} onChange={(e) => setNewTeam({ ...newTeam, location: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && createTeam()} style={input} /></Field>
+            </div>
+            {newTeam.err && <p role="alert" style={{ margin: "12px 0 0", fontSize: 13, color: C.red }}>{newTeam.err}</p>}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18 }}>
+              <button type="button" onClick={() => setNewTeam(null)} style={S.btn}>Cancel</button>
+              <button type="button" onClick={createTeam} disabled={newTeam.busy} style={{ ...S.btnPrimary, opacity: newTeam.busy ? 0.6 : 1 }}>{newTeam.busy ? "Creating…" : "Create"}</button>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

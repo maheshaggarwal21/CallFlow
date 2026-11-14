@@ -67,13 +67,13 @@ const freeLine = (await pool.query("INSERT INTO lines (line_number) VALUES ('99'
 const icBefore = (await pool.query("SELECT id, line_number FROM intercoms")).rows;
 const ic608 = ics.find((i) => i.intercom_code === "608"), ic609 = ics.find((i) => i.intercom_code === "609");
 const full = { ...base, phone: "98765 43210".replace(" ", ""), designation: "Call Rep.", fix_salary: 12000, trial_commission: 20, trial_commission_type: "pct",
-  regular_commission: 500, regular_commission_type: "fix", other_amount: 1500, target_call_secs: 21600, target_trial: 2, target_regular: 1,
+  regular_commission: 500, regular_commission_type: "fix", target_call_secs: 21600, target_trial: 2, target_regular: 1,
   permissions: ["crm_leads", "recordings"], line_id: freeLine.id, intercom_id: ic608.id,
   extra_commissions: [ex, { ...ex, name: "Old rule", counts: "fee", reward: "pct", days: [], hours: null }], extra_deductions: [dd, { ...dd, name: "Fine", type: "fix", amount: 500 }] };
 const created = await call(owner, "POST", "/employees", full);
 ok(created.status === 201, "creates a valid user", `${created.status} ${created.msg}`);
 const u = created.data;
-ok(u?.fix_salary === 12000 && u?.trial_commission === 20 && u?.trial_commission_type === "pct" && u?.other_amount === 1500, "salary fields saved");
+ok(u?.fix_salary === 12000 && u?.trial_commission === 20 && u?.trial_commission_type === "pct", "salary fields saved");
 ok(u?.extra_commissions?.length === 2 && !("counts" in u.extra_commissions[1]), "extra commissions saved, old rule fields stripped");
 ok(u?.extra_deductions?.length === 2 && u.extra_deductions[1].amount === 500, "extra deductions saved");
 ok(u?.line_id === freeLine.id && u?.intercom_id === ic608.id, "line and intercom saved");
@@ -129,8 +129,8 @@ if (!ps?.payments?.connected) {
   ok(ps.payments.list.length === 105, "all pages of payments read (105 across 2 pages)", `got ${ps.payments.list.length}`);
   ok(ps.income.trial === 100 && ps.income.trial_count === 1, "trial commission = 20 % of ₹500", JSON.stringify(ps.income));
   ok(ps.income.regular === 52000 && ps.income.regular_count === 104, "regular commission = 104 × ₹500", JSON.stringify(ps.income));
-  // the dashboard's pay is the tracker's number: 12000 + 1500 + 52100 + 200 − 1700
-  ok(ps.pay?.month === "2026-11" && ps.pay.total === 64100, "dashboard month pay = tracker payout (extras added, deductions taken off)", JSON.stringify(ps.pay));
+  // the dashboard's pay is the tracker's number: 12000 + 52100 + 200 − 1700
+  ok(ps.pay?.month === "2026-11" && ps.pay.total === 62600, "dashboard month pay = tracker payout (extras added, deductions taken off)", JSON.stringify(ps.pay));
   ok(ps.payments.list.find((x) => x.id === "p2")?.receipt_url === null, "a javascript: receipt link is dropped");
   ok(ps.payments.list.find((x) => x.id === "p3")?.receipt_url?.startsWith("https://"), "an https receipt link is kept");
   ok(!JSON.stringify(ps.payments).includes("9000000000"), "student phone numbers are not passed to the browser");
@@ -172,10 +172,14 @@ if (!ps?.payments?.connected) {
   ok(ob.status === 200 && ob.data.payments.connected === false && /unexpected shape/.test(ob.data.payments.error), "a broken payments answer shows an error, the page still loads", JSON.stringify(ob.data?.payments));
   const pr = await call(owner, "GET", "/employees/payroll?month=2026-11");
   const mine = pr.data?.people?.find((x) => x.id === u.id);
-  // 12000 + 1500 + (100 + 52000) + 2 extras × ₹100 − (10 % of 12000 + ₹500)
-  ok(pr.status === 200 && mine?.total === 64100, "month payout = base + other + commission + extras − deductions", JSON.stringify(mine));
+  // 12000 + (100 + 52000) + 2 extras × ₹100 − (10 % of 12000 + ₹500)
+  ok(pr.status === 200 && mine?.total === 62600, "month payout = base + commission + extras − deductions", JSON.stringify(mine));
   ok(mine && !("extra_commissions" in mine) && mine.deductions.length === 2 && mine.extras.length === 2, "payroll row lists the extras and deductions applied");
   ok((await call(owner, "GET", "/employees/payroll?month=2026-13")).status === 400, "payroll: bad month → 400");
+  const ownerId = (await call(owner, "GET", "/auth/me")).data.id;
+  const ownRow = pr.data?.people?.find((x) => x.id === ownerId);
+  ok(ownRow && ownRow.error === null && !("role" in ownRow), "Employee Tracker lists the Owner when the school site knows them", JSON.stringify(ownRow && { error: ownRow.error }));
+  ok(!pr.data?.people?.some((x) => x.isOwner && x.error), "an owner account the school site doesn't know is left out");
   ok((await call(rep, "GET", "/employees/payroll")).status === 403, "payroll: a User is refused");
 }
 
@@ -186,6 +190,12 @@ ok((await call(rep, "GET", "/calls?limit=1")).status === 403, "unticking Recordi
 await call(owner, "PATCH", `/employees/${u.id}`, { role: "admin", permissions: ["users", "recordings"] });
 const adm = (await login(base.email, base.password)).token;
 ok((await call(adm, "GET", "/employees/payroll")).status === 403, "payroll: an Admin is refused (Super Admin only)");
+// the Users form lists and creates teams for a Users-tab holder; changing or deleting stays on the Teams tab
+ok((await call(adm, "GET", "/teams")).status === 200, "Users tab alone can list teams (the form's team picker)");
+const mk = await call(adm, "POST", "/teams", { name: `E2E Team ${stamp}`, location: "Sector 17, Chandigarh" });
+ok(mk.status === 201 && mk.data?.location === "Sector 17, Chandigarh", "Users tab alone can create a team (name + office address)", `${mk.status} ${mk.msg}`);
+ok((await call(adm, "DELETE", `/teams/${mk.data?.id}`)).status === 403, "…but can't delete it without the Teams tab");
+await call(owner, "DELETE", `/teams/${mk.data?.id}`);
 ok((await call(adm, "POST", "/employees", { ...base, email: `y${stamp}@crm-demo.local`, role: "owner" })).status === 403, "Admin can't create a Super Admin");
 const ownerId = (await call(owner, "GET", "/auth/me")).data.id;
 ok((await call(adm, "PATCH", `/employees/${ownerId}`, { name: "x" })).status === 403, "Admin can't edit a Super Admin");

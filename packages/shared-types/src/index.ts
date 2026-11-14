@@ -43,7 +43,6 @@ export type Employee = {
   trial_commission_type?: "pct" | "fix";
   regular_commission?: number;
   regular_commission_type?: "pct" | "fix";
-  other_amount?: number;
   target_call_secs?: number;
   target_trial?: number;
   target_regular?: number;

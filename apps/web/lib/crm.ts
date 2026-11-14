@@ -109,12 +109,17 @@ export const fillTemplate = (body: string, values: Record<string, string>) =>
 /**
  * Opens the lead's chat in WATI in a new tab. The tab is opened before the address is known,
  * because a tab opened after waiting for the server is blocked as a pop-up.
+ * A number that has never chatted has no conversation yet: WATI's inbox opens instead and the number is
+ * copied, so a new chat can be started with + (New chat). Returns that hint, or null when the chat itself opened.
  */
-export async function openWati(leadId: string) {
+export async function openWati(leadId: string): Promise<string | null> {
   const tab = window.open("", "_blank");
   try {
-    const { url } = await api.get<{ url: string }>(`/crm/leads/${leadId}/wati-link`);
+    const { url, found, phone } = await api.get<{ url: string; found: boolean; phone: string }>(`/crm/leads/${leadId}/wati-link`);
     if (tab) tab.location.href = url; else window.location.href = url;
+    if (found) return null;
+    navigator.clipboard?.writeText(phone).catch(() => {});
+    return `No chat with ${phone} in WATI yet. The number is copied: press + (New chat) in WATI and paste it.`;
   } catch (e) {
     tab?.close();
     throw e;

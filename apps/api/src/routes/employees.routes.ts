@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import pool from "../db/pool";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, forgetAuthCache } from "../middleware/auth";
 import { requirePermission } from "../middleware/requirePermission";
 import { requireOwner } from "../middleware/requireOwner";
 import { resolveRange, istDateKey } from "../lib/dateRange";
@@ -44,7 +44,6 @@ const fields = {
   trial_commission_type: z.enum(["pct", "fix"]),
   regular_commission: money,
   regular_commission_type: z.enum(["pct", "fix"]),
-  other_amount: money.int(),
   target_call_secs: z.number().int().min(0).max(86_400),
   target_trial: z.number().int().min(0).max(1000),
   target_regular: z.number().int().min(0).max(1000),
@@ -67,7 +66,7 @@ const COLUMNS = Object.keys(fields) as (keyof typeof fields)[];
 const SELECT =
   `SELECT e.id, e.name, e.email, e.phone, e.role, e.status, e.color_index, e.employee_code, e.designation,
           e.fix_salary, e.trial_commission::float, e.trial_commission_type, e.regular_commission::float, e.regular_commission_type,
-          e.other_amount, e.target_call_secs, e.target_trial, e.target_regular, e.extra_commissions, e.extra_deductions, e.team_id, e.created_at,
+          e.target_call_secs, e.target_trial, e.target_regular, e.extra_commissions, e.extra_deductions, e.team_id, e.created_at,
           ARRAY(SELECT permission FROM employee_permissions p WHERE p.employee_id = e.id) AS permissions,
           (SELECT l.id FROM lines l WHERE l.employee_id = e.id ORDER BY l.line_number LIMIT 1) AS line_id,
           (SELECT i.id FROM intercoms i JOIN lines l ON l.line_number = i.line_number WHERE l.employee_id = e.id ORDER BY l.line_number LIMIT 1) AS intercom_id
@@ -103,7 +102,7 @@ router.get("/", usersTab, async (_req, res) => {
  * shortcut: a joining is counted from CRM conversions (a lead this user saved with a "paid" code),
  * all as trial; regular joinings and their commission stay 0 until the Payments feed exists.
  */
-const PLAN_COLS = `e.fix_salary, e.other_amount, e.trial_commission::float, e.trial_commission_type,
+const PLAN_COLS = `e.fix_salary, e.trial_commission::float, e.trial_commission_type,
   e.regular_commission::float, e.regular_commission_type, e.extra_commissions, e.extra_deductions`;
 
 /** One payment as the dashboard shows it, with the commission it earned. */
@@ -171,7 +170,8 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
   });
 });
 
-// Employee Tracker: every active User's and Admin's pay for one month, from the school's payments (Super Admin only).
+// Employee Tracker: every active User's, Admin's and (when linked on the school site) Owner's pay for one month,
+// from the school's payments (Super Admin only). The Owner account is Varinder Max on the school site (client, 15 Nov 2026).
 // Someone switched off during that month is listed too (client, 14 Nov 2026): salary for the days worked,
 // payments up to the day they left. Before that month they show as usual; after it, not at all.
 router.get("/payroll", requireOwner, async (req, res) => {
@@ -179,9 +179,9 @@ router.get("/payroll", requireOwner, async (req, res) => {
   const b = monthBounds(month);
   if (!b) return bad(res, 400, "month must be YYYY-MM");
   const { rows } = await pool.query(
-    `SELECT e.id, e.name, e.employee_code, e.color_index, ${PLAN_COLS},
+    `SELECT e.id, e.name, e.role, e.employee_code, e.color_index, ${PLAN_COLS},
             CASE WHEN e.status = 'inactive' THEN to_char(e.left_on, 'YYYY-MM-DD') END AS left_on
-     FROM employees e WHERE e.role <> 'owner' AND (e.status = 'active' OR e.left_on >= $1::date) ORDER BY e.name`, [b.from]);
+     FROM employees e WHERE (e.status = 'active' OR e.left_on >= $1::date) ORDER BY e.name`, [b.from]);
   const connected = paymentsConfigured();
   // a few reps at a time, so a large team doesn't flood the school's server
   const out: unknown[] = [];
@@ -197,12 +197,16 @@ router.get("/payroll", requireOwner, async (req, res) => {
           error = err.message;
         }
       }
-      const { extra_commissions: _x, extra_deductions: _d, ...who } = e;
+      const { extra_commissions: _x, extra_deductions: _d, role: _r, ...who } = e;
       const plan = last < b.to ? proRated(e, days, monthDays) : e;
-      return { ...who, left_on: e.left_on && e.left_on <= b.to ? e.left_on : null, days_paid: days, month_days: monthDays, error, ...monthPayout(plan, list, b.from, last) };
+      // an Owner account is a person on the school site (Varinder Max): show the name payments are filed under
+      const name = e.role === "owner" && list[0]?.representativeName ? list[0].representativeName : e.name;
+      return { ...who, name, isOwner: e.role === "owner", left_on: e.left_on && e.left_on <= b.to ? e.left_on : null, days_paid: days, month_days: monthDays, error, ...monthPayout(plan, list, b.from, last) };
     })));
   }
-  return res.json({ month, from: b.from, to: b.to, connected, people: out });
+  // owner accounts that aren't someone on the school site (the system "WATI LINE", a second owner) have no pay to show
+  const people = (out as { isOwner: boolean; error: string | null }[]).filter((p) => !(p.isOwner && p.error));
+  return res.json({ month, from: b.from, to: b.to, connected, people });
 });
 
 router.get("/:id", async (req, res) => {
@@ -231,6 +235,19 @@ async function saveUser(id: string | null, d: z.infer<typeof patchSchema>): Prom
     cols.push("password_hash" as any);
     values.push(await bcrypt.hash(d.password, 12));
   }
+  // the day someone is switched off, for the Employee Tracker; kept on later saves, cleared when switched back on
+  const sets = cols.map((c, i) => `${c} = $${i + 1}`);
+  if (d.status !== undefined) {
+    sets.push(`left_on = CASE WHEN $${cols.indexOf("status" as any) + 1}::varchar = 'inactive' THEN COALESCE(left_on, (NOW() AT TIME ZONE 'Asia/Kolkata')::date) END`);
+  }
+  // Only columns changed (a status toggle, a plain edit): one statement, no transaction. Each round trip to the
+  // database costs ~110 ms, so BEGIN / COMMIT around a single UPDATE was a fifth of the wait.
+  if (id && d.permissions === undefined && d.line_id === undefined && d.intercom_id === undefined && d.employee_code === undefined) {
+    if (!cols.length) return id;
+    const r = await pool.query(`UPDATE employees SET ${sets.join(", ")} WHERE id = $${cols.length + 1} RETURNING id`, [...values, id]);
+    forgetAuthCache();
+    return r.rows.length ? id : null;
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -239,26 +256,26 @@ async function saveUser(id: string | null, d: z.infer<typeof patchSchema>): Prom
       values.push(Number((await client.query("SELECT COALESCE(MAX(color_index), -1) + 1 AS n FROM employees")).rows[0].n));
       id = (await client.query(
         `INSERT INTO employees (${cols.join(", ")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(", ")}) RETURNING id`, values)).rows[0].id;
+      if (d.status === "inactive") await client.query("UPDATE employees SET left_on = (NOW() AT TIME ZONE 'Asia/Kolkata')::date WHERE id = $1", [id]);
     } else if (cols.length) {
-      const r = await client.query(
-        `UPDATE employees SET ${cols.map((c, i) => `${c} = $${i + 1}`).join(", ")} WHERE id = $${cols.length + 1} RETURNING id`, [...values, id]);
+      const r = await client.query(`UPDATE employees SET ${sets.join(", ")} WHERE id = $${cols.length + 1} RETURNING id`, [...values, id]);
       if (!r.rows.length) { await client.query("ROLLBACK"); return null; }
-    }
-    // the day someone is switched off, for the Employee Tracker; kept on later saves, cleared when switched back on
-    if (d.status !== undefined) {
-      await client.query(
-        `UPDATE employees SET left_on = CASE WHEN status = 'inactive' THEN COALESCE(left_on, (NOW() AT TIME ZONE 'Asia/Kolkata')::date) END WHERE id = $1`, [id]);
     }
     // a Reg No. typed by hand must not collide with the next automatic one
     if (d.employee_code !== undefined) await client.query("SELECT setval('employees_employee_code_seq', (SELECT MAX(employee_code) FROM employees))");
     if (d.permissions !== undefined) {
-      await client.query("DELETE FROM employee_permissions WHERE employee_id = $1", [id]);
-      await client.query("INSERT INTO employee_permissions (employee_id, permission) SELECT $1, unnest($2::text[]) ON CONFLICT DO NOTHING", [id, d.permissions]);
+      // one statement: drop the ticks no longer wanted, add the new ones
+      await client.query(
+        `WITH gone AS (DELETE FROM employee_permissions WHERE employee_id = $1 AND permission <> ALL($2::text[]))
+         INSERT INTO employee_permissions (employee_id, permission) SELECT $1, unnest($2::text[]) ON CONFLICT DO NOTHING`, [id, d.permissions]);
     }
     if (d.line_id !== undefined) {
       // one line per user in the form: the picked line moves to them, their earlier line is freed
-      await client.query("UPDATE lines SET employee_id = NULL, assigned_at = NULL WHERE employee_id = $1 AND id IS DISTINCT FROM $2", [id, d.line_id]);
-      if (d.line_id) await client.query("UPDATE lines SET employee_id = $1, assigned_at = NOW() WHERE id = $2 AND employee_id IS DISTINCT FROM $1", [id, d.line_id]);
+      // in one statement: the picked line is theirs (keeping its date if it already was), their other lines are freed
+      await client.query(
+        `UPDATE lines SET employee_id = CASE WHEN id = $2::uuid THEN $1::uuid END,
+                          assigned_at = CASE WHEN id = $2::uuid THEN COALESCE(CASE WHEN employee_id = $1::uuid THEN assigned_at END, NOW()) END
+         WHERE employee_id = $1::uuid OR id = $2::uuid`, [id, d.line_id || null]);
     }
     if (d.intercom_id !== undefined) {
       const line = (await client.query("SELECT line_number FROM lines WHERE employee_id = $1 ORDER BY line_number LIMIT 1", [id])).rows[0]?.line_number;
@@ -270,6 +287,7 @@ async function saveUser(id: string | null, d: z.infer<typeof patchSchema>): Prom
       }
     }
     await client.query("COMMIT");
+    forgetAuthCache();
     return id;
   } catch (e) {
     await client.query("ROLLBACK");

@@ -231,9 +231,9 @@ router.post("/leads/:id/whatsapp", leadsAccess, async (req, res) => {
 router.get("/leads/:id/wati-link", leadsAccess, async (req, res) => {
   const { rows: [lead] } = await pool.query("SELECT phone10 FROM leads WHERE id = $1", [parse(uuid, req.params.id)]);
   if (!lead) throw new CrmError(404, "Lead not found");
-  const url = await inboxUrl(lead.phone10);
-  if (!url) throw new CrmError(503, "WATI's inbox address is not set (WATI_INBOX_URL)");
-  return res.json({ url });
+  const link = await inboxUrl(lead.phone10);
+  if (!link) throw new CrmError(503, "WATI's inbox address is not set (WATI_INBOX_URL)");
+  return res.json(link);
 });
 
 /** Owner: star / unstar a recording so retention never deletes it. */

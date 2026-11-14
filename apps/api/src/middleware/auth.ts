@@ -23,6 +23,14 @@ function getTokenFromRequest(req: Request): string | null {
   return cookieToken || null;
 }
 
+// The database is ~110 ms away (Tokyo, the API runs in Bengaluru), so this per-request check is remembered for a
+// few seconds. Any save on the Users tab clears it (forgetAuthCache), so a change still applies at once;
+// the short time limit is only the safety net. shortcut: one API process, so one map; with several
+// processes a change could take up to AUTH_TTL_MS to reach the others.
+const AUTH_TTL_MS = 10_000;
+const authCache = new Map<string, { at: number; u: { role: UserRole; name: string; color_index: number; permissions: string[] } }>();
+export const forgetAuthCache = () => authCache.clear();
+
 /**
  * The token proves who is signing in; rank, status and ticked tabs are read from the database on every
  * request, so switching someone off or changing their rank applies at once, not when the 8 h token expires.
@@ -44,11 +52,16 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   } catch {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  const { rows: [u] } = await pool.query(
-    `SELECT e.role, e.name, e.color_index, ARRAY(SELECT permission FROM employee_permissions p WHERE p.employee_id = e.id) AS permissions
-     FROM employees e WHERE e.id = $1 AND e.status = 'active'`,
-    [payload.sub]
-  );
+  const hit = authCache.get(payload.sub);
+  let u = hit && Date.now() - hit.at < AUTH_TTL_MS ? hit.u : undefined;
+  if (!u) {
+    u = (await pool.query(
+      `SELECT e.role, e.name, e.color_index, ARRAY(SELECT permission FROM employee_permissions p WHERE p.employee_id = e.id) AS permissions
+       FROM employees e WHERE e.id = $1 AND e.status = 'active'`,
+      [payload.sub]
+    )).rows[0];
+    if (u) authCache.set(payload.sub, { at: Date.now(), u });
+  }
   if (!u) return res.status(401).json({ error: "Unauthorized" });
   req.user = { sub: payload.sub, role: u.role, name: u.name, color_index: u.color_index, permissions: u.permissions };
   return next();

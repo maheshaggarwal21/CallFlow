@@ -45,7 +45,7 @@ export default function ExtraCommissions<T extends Item>({ value, onChange, inpu
   // null = closed, -1 = adding a new one, n = editing the n-th
   const [open, setOpen] = useState<number | null>(null);
   const word = deduction ? "extra deduction" : "extra commission";
-  const tone = deduction ? { c: C.red, bg: C.redLight, bdr: C.red } : { c: C.orange, bg: C.orangeLight, bdr: C.orangeBdr };
+  const tone = deduction ? { c: C.red, bg: C.redLight, bdr: C.red } : { c: C.green, bg: C.greenLight, bdr: C.greenBdr };
   const builder = (initial: T | undefined, done: (y: T) => void) => (
     <Builder<T> initial={initial} deduction={deduction} input={input} label={label} tone={tone.c} onCancel={() => setOpen(null)}
       onDone={(y) => { done(y); setOpen(null); }} />
@@ -62,7 +62,7 @@ export default function ExtraCommissions<T extends Item>({ value, onChange, inpu
                 <b style={{ fontSize: 14, color: C.text }}>{x.name}</b>
                 <Tag label={status(x).label} color={status(x).color} bg={status(x).bg} style={{ fontSize: 11 }} />
               </div>
-              <div style={{ fontSize: 13, color: C.textSub, marginTop: 2 }}>{deduction ? "− " : "+ "}{extraText(x)}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: tone.c, marginTop: 2 }}>{deduction ? "− " : "+ "}{extraText(x)}</div>
             </div>
             <button type="button" onClick={() => setOpen(i)} style={linkBtn(C.orange)}>Edit</button>
             <button type="button" onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label={`Remove ${x.name}`} style={linkBtn(C.red)}>Remove</button>

@@ -74,19 +74,21 @@ export async function sendTemplate(phone10: string, t: WatiTemplate, values: Rec
 }
 
 /**
- * Where "open in WATI" goes: the number's own chat when WATI knows the contact, else the inbox.
- * shortcut: the /teamInbox/<contact id> address is WATI's web app route, not part of their API docs;
- * set WATI_INBOX_URL (e.g. https://live-7375.wati.io/7375/teamInbox) and re-check it if WATI changes its app.
+ * Where "open in WATI" goes: the number's own conversation when it has one, else the inbox.
+ * The inbox page /teamInbox/<id> takes a CONVERSATION id, which is not the contact id (opening the contact id
+ * gave "Conversation can't be found"). WATI's getMessages for the number returns the conversation id.
+ * A number that has never chatted has no conversation yet: `found` is false and the caller says so.
+ * shortcut: /teamInbox/<id> is WATI's web app route, not part of their API docs; set WATI_INBOX_URL
+ * (e.g. https://live-7375.wati.io/7375/teamInbox) and re-check it if WATI changes its app.
  */
-export async function inboxUrl(phone10: string): Promise<string | null> {
+export async function inboxUrl(phone10: string): Promise<{ url: string; found: boolean; phone: string } | null> {
   const inbox = (process.env.WATI_INBOX_URL ?? "").replace(/\/$/, "");
   if (!inbox) return null;
+  const phone = `91${phone10}`;
   try {
-    const filter = encodeURIComponent(JSON.stringify([{ name: "phone", operator: "contain", value: phone10 }]));
-    const d = await wati(`/api/v1/getContacts?pageSize=1&pageNumber=1&attribute=${filter}`);
-    const id = d.contact_list?.[0]?.id;
-    return id ? `${inbox}/${id}` : inbox;
-  } catch {
-    return inbox;
-  }
+    const d = await wati(`/api/v1/getMessages/${phone}?pageSize=1&pageNumber=1`);
+    const id = d.messages?.items?.[0]?.conversationId;
+    if (typeof id === "string" && /^[0-9a-f]{24}$/i.test(id)) return { url: `${inbox}/${id}`, found: true, phone };
+  } catch { /* WATI unreachable or the number unknown to it: open the inbox */ }
+  return { url: inbox, found: false, phone };
 }

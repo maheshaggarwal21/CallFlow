@@ -17,13 +17,15 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
   const { data: people } = useSWR<EmployeeName[]>("/employees/names", fetcher);
   const [line,   setLine]   = useState(intercom.line_number ?? "");
   const lineRow = (lines ?? []).find((l) => l.line_number === line);
-  // the person field shows the picked line's owner until it is changed here
-  const [agent,  setAgent]  = useState<string | null>(null);
-  const agentId = agent ?? lineRow?.employee_id ?? "";
+  // Line and Agent are two separate choices (client, 15 Nov 2026): picking a line does not pick its person.
+  // "" = leave the line's person as it is; "none" = free the line; else the person it goes to. It starts on the
+  // current person of this intercom's line so nothing looks blank, and goes back to "leave as is" when the line changes.
+  const [agent,  setAgent]  = useState(() => (lines ?? []).find((l) => l.line_number === (intercom.line_number ?? ""))?.employee_id ?? "");
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
 
   async function handleSave() {
+    if (agent !== "" && !lineRow) return setError("Pick a line to put that person on.");
     setSaving(true);
     setError("");
     try {
@@ -31,9 +33,10 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
         phone_number: phone.trim() || null,
         line_number: line || null,
       });
-      // the line's owner gets every recording the line makes (this replaced the Lines tab, 14 Nov)
-      if (lineRow && agentId !== (lineRow.employee_id ?? "")) {
-        await api.patch(`/lines/${lineRow.id}`, { employee_id: agentId || null });
+      // the line's person gets every recording the line makes (this replaced the Lines tab, 14 Nov)
+      const to = agent === "none" ? null : agent;
+      if (agent !== "" && lineRow && to !== lineRow.employee_id) {
+        await api.patch(`/lines/${lineRow.id}`, { employee_id: to });
       }
       await Promise.all([mutate("/intercoms"), mutate("/lines")]);
       onClose();
@@ -73,7 +76,7 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
           </label>
           <select
             value={line}
-            onChange={(e) => { setLine(e.target.value); setAgent(null); }}
+            onChange={(e) => { setLine(e.target.value); setAgent(""); }}
             style={{
               width: "100%", padding: "10px 12px", boxSizing: "border-box",
               background: C.bgDeep, border: `1px solid ${C.border}`,
@@ -81,17 +84,17 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
             }}
           >
             <option value="">— No line —</option>
-            {(lines ?? []).map((l) => <option key={l.id} value={l.line_number}>{l.line_number}{l.employee_name ? ` · ${l.employee_name}` : ""}</option>)}
+            {(lines ?? []).map((l) => <option key={l.id} value={l.line_number}>{l.line_number}</option>)}
           </select>
         </div>
 
-        {line && (
+        {(
           <div style={{ marginBottom: 18 }}>
             <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>
-              Person on line {line}
+              Agent
             </label>
             <select
-              value={agentId}
+              value={agent}
               onChange={(e) => setAgent(e.target.value)}
               style={{
                 width: "100%", padding: "10px 12px", boxSizing: "border-box",
@@ -99,15 +102,17 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
                 borderRadius: 10, fontSize: 13, color: C.text, outline: "none",
               }}
             >
-              <option value="">— No one —</option>
-              {/* a switched-off owner isn't in the active list: keep them, so saving doesn't silently take the line away */}
+              <option value="">— Leave as it is —</option>
+              <option value="none">No one (free the line)</option>
+              {/* a switched-off person isn't in the active list: keep them, so the picker can still show who is on the line */}
               {lineRow?.employee_id && !(people ?? []).some((p) => p.id === lineRow.employee_id) && (
                 <option value={lineRow.employee_id}>{lineRow.employee_name} (switched off)</option>
               )}
               {(people ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <p style={{ margin: "6px 0 0", fontSize: 11, color: C.muted }}>
-              Every call this line records goes to this person.
+              {lineRow ? (lineRow.employee_name ? `Line ${line} is with ${lineRow.employee_name} now. ` : `Line ${line} has no one now. `) : ""}
+              Every call the line records goes to its agent.
             </p>
           </div>
         )}

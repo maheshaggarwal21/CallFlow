@@ -21,7 +21,7 @@ type Row = {
   id: string; name: string; employee_code: number; color_index: number; error: string | null;
   /** Set when they were switched off during this month: listed greyed, salary for `days_paid` of `month_days`. */
   left_on: string | null; days_paid: number; month_days: number;
-  trial: Bucket; regular: Bucket; commission: number; base: number; other: number;
+  trial: Bucket; regular: Bucket; commission: number; base: number;
   extras: { name: string; amount: number }[]; deductions: { name: string; amount: number }[]; total: number;
 };
 type Payroll = { month: string; connected: boolean; people: Row[] };
@@ -51,7 +51,6 @@ function Tracker() {
   const sum = (f: (r: Row) => number) => rows.reduce((t, r) => t + f(r), 0);
   const commission = sum((r) => r.commission);
   const top = rows.find((r) => r.commission > 0);
-  const failed = rows.filter((r) => r.error);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -72,10 +71,6 @@ function Tracker() {
       {data && !data.connected && (
         <p role="status" style={{ ...S.card, margin: 0, padding: "14px 20px", fontSize: 14, color: C.textSub, borderColor: C.orangeBdr, background: C.orangeLight }}>
           Payments from the school site are not connected yet, so commission shows ₹0. Salary, extras and deductions are already counted.</p>
-      )}
-      {failed.length > 0 && (
-        <p role="alert" style={{ ...S.card, margin: 0, padding: "14px 20px", fontSize: 14, color: C.red, borderColor: C.red }}>
-          Payments couldn&apos;t be read for {failed.map((r) => r.name).join(", ")}: {failed[0].error}. Their commission shows ₹0 until it loads.</p>
       )}
 
       {isLoading && !data ? <p style={{ color: C.muted, fontSize: 14 }}>Loading…</p>
@@ -105,7 +100,6 @@ function Tracker() {
                       <p style={{ margin: 0, fontSize: 13, color: r.error ? C.red : C.muted, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         {r.error ? "Payments didn't load" : `Reg No. ${r.employee_code}`}
                         {r.left_on && <Tag label={`Left ${dayMonth(r.left_on)}`} color={C.muted} bg={C.bgDeep} style={{ fontSize: 11 }} />}
-                        {top?.id === r.id && <Tag label="Top earner" color={C.orange} bg={C.orangeLight} style={{ fontSize: 11 }} />}
                       </p>
                     </div>
                   </div>
@@ -115,7 +109,7 @@ function Tracker() {
                     {r.extras.length ? `+${inr(sumOf(r.extras))}` : "—"}</span>
                   <span title={r.deductions.map((x) => `${x.name} −${inr(x.amount)}`).join("\n")} style={{ fontSize: 14.5, fontWeight: 600, color: r.deductions.length ? C.red : C.muted }}>
                     {r.deductions.length ? `−${inr(sumOf(r.deductions))}` : "—"}</span>
-                  <span style={{ fontSize: 14.5, color: C.textSub }}>{inr(r.base)}{r.other > 0 && <span style={{ fontSize: 12, color: C.muted }}> + {inr(r.other)}</span>}
+                  <span style={{ fontSize: 14.5, color: C.textSub }}>{inr(r.base)}
                     {r.left_on && r.days_paid < r.month_days && <span style={{ display: "block", fontSize: 12, color: C.muted }}>for {r.days_paid} of {r.month_days} days</span>}</span>
                   <span style={{ fontSize: 17, fontWeight: 700, color: C.text }}>{inr(r.total)}</span>
                   <div style={{ textAlign: "right" }}><EyeButton id={r.id} name={r.name} /></div>

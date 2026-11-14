@@ -83,8 +83,8 @@ export default function PaymentsPage() {
   }
 
   function exportCsv() {
-    const head = ["Name", "Status", "Student", "Email", "Phone", "Amount", "Paid date", "Payment mode", "Representative", "Fee type", "Receipt"];
-    const lines = rows.map((p) => [p.name, codeText(p.status), p.linked_to, p.email, p.phone, p.amount, p.paid_date, p.mode, p.rep, p.fee_type, p.receipt_url ?? ""]);
+    const head = ["Name", "Student", "Email", "Phone", "Amount", "Paid date", "Payment mode", "Representative", "Status", "Fee type", "Receipt"];
+    const lines = rows.map((p) => [p.name, p.linked_to, p.email, p.phone, p.amount, p.paid_date, p.mode, p.rep, codeText(p.status), p.fee_type, p.receipt_url ?? ""]);
     const url = URL.createObjectURL(new Blob([[head, ...lines].map((l) => l.map(cell).join(",")).join("\n")], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url; a.download = `payments-${from || "start"}-to-${to || istToday()}.csv`; a.click();
@@ -137,17 +137,13 @@ export default function PaymentsPage() {
         <p role="status" style={{ ...S.card, margin: 0, padding: "14px 20px", fontSize: 14, color: C.textSub, borderColor: C.orangeBdr, background: C.orangeLight }}>
           Payments from the school site are not connected yet.</p>
       )}
-      {!!data?.missing.length && (
-        <p role="status" style={{ ...S.card, margin: 0, padding: "14px 20px", fontSize: 14, color: C.textSub, borderColor: C.orangeBdr, background: C.orangeLight }}>
-          Not shown: {data.missing.map((m) => m.name).join(", ")}. {data.missing[0].error}.</p>
-      )}
 
       {isLoading && !data ? <p style={{ color: C.muted, fontSize: 14 }}>Loading payments from the school site…</p> : data && (
         <div style={{ ...S.card, overflowX: "auto" }}>
           <table style={{ width: "100%", minWidth: 1180, borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ background: C.bgDeep, borderBottom: `2px solid ${C.border}` }}>
-                {["Name", "Status", "Contact", "Amount", "Paid date", "Payment mode", "Representative", "Fee type", "Receipt"].map((h) => (
+                {["Name", "Contact", "Amount", "Paid date", "Payment mode", "Representative", "Status", "Fee type", "Receipt"].map((h) => (
                   <th key={h} style={{ ...S.th, padding: "16px 18px", textAlign: h === "Amount" ? "right" : "left" }}>{h}</th>))}
               </tr>
             </thead>
@@ -164,8 +160,6 @@ export default function PaymentsPage() {
                       <div style={{ fontWeight: 700, color: C.text, minWidth: 150 }}>{p.name || "—"}</div>
                       {p.linked_to && <div style={{ fontSize: 12, fontWeight: 600, color: lc }}>{cap(p.linked_to)}</div>}
                     </td>
-                    <td style={td}><StatusCell code={p.status} codes={codes} codeIds={codeIds} label={codeText}
-                      onPick={canGrade ? (c) => grade(p, c) : undefined} /></td>
                     <td style={td}>
                       <Copyable text={p.email} />
                       <Copyable text={p.phone} mono />
@@ -174,6 +168,8 @@ export default function PaymentsPage() {
                     <td style={{ ...td, whiteSpace: "nowrap" }}>{dmy(p.paid_date)}</td>
                     <td style={td}>{p.mode ? <Tag label={p.mode} color={C.blue} bg={C.blueLight} style={{ fontSize: 12 }} /> : "—"}</td>
                     <td style={td}>{p.rep || "—"}</td>
+                    <td style={td}><StatusCell code={p.status} codes={codes} codeIds={codeIds} label={codeText}
+                      onPick={canGrade ? (c) => grade(p, c) : undefined} /></td>
                     <td style={td}>{p.fee_type ? <Tag label={p.fee_type} color={trial ? C.blue : C.teal} bg={trial ? C.blueLight : C.tealLight} style={{ fontSize: 12 }} /> : "—"}</td>
                     <td style={td}>{p.receipt_url
                       ? <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" style={{ color: C.orange, fontWeight: 700 }}>View</a>

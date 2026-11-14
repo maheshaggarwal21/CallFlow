@@ -14,7 +14,7 @@ const PAGE_LABELS: Record<string, string> = {
   payments:   "Payments",
   salary:     "Salary",
   "crm/":         "Leads",
-  "crm/settings": "CRM & Pay Settings",
+  "crm/settings": "Codes",
 };
 
 export default function Topbar() {

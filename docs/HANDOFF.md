@@ -70,19 +70,36 @@ Deeper detail on pay: `docs/salary-commission/CURRENT-STATE.md`. Architecture an
 
 | Tab | What it does now |
 |---|---|
-| **Users** | One form per person: rank (Super Admin / Admin / User), ticked tabs, salary plan, extra commissions and deductions, line + intercom + calling number, daily targets, password. **Switched-off users sink to the bottom.** Switching someone off stores the day (`employees.left_on`). |
-| **Intercoms** | The old **Lines tab was folded in here** (`/dashboard/lines` redirects). Each intercom: calling number, line, the person on that line, the line's calls today; Edit sets all three. The client assigns them. |
+| **Users** | Switch toggle moves instantly (optimistic). Team picker has "+ Create team…" (popup: team name + office address; a Users-tab holder may list/create teams). One form per person: rank (Super Admin / Admin / User), ticked tabs, salary plan, extra commissions and deductions, line + intercom + calling number, daily targets, password. **Switched-off users sink to the bottom.** Switching someone off stores the day (`employees.left_on`). |
+| **Intercoms** | The old **Lines tab was folded in here** (`/dashboard/lines` redirects). Each intercom: calling number, line, the person on that line, the line's calls today. The Edit popup has **Line** (numbers only), **Agent** (separate; "leave as it is" / "no one" / a person) and the phone number: picking a line does not pick its agent. The client assigns them. |
 | **Teams** | Teams of reps by office/location (prod has none yet). |
-| **Employee Tracker** (Super Admin) | Month dropdown (this + 11 before; **no All time**, by decision). Per person: trial and regular commission, extras, deductions, salary, total payout; eye opens their dashboard. **Someone switched off during the month** is listed for that month only, greyed at the bottom, "Left 15 Nov", salary pro-rated to the days worked, commission up to that day. |
+| **Employee Tracker** (Super Admin) | Month dropdown (this + 11 before; **no All time**, by decision). **Includes the Owner (= Varinder Max on the school site) when linked**; owner accounts the school site doesn't know (system "WATI LINE") are left out. No "Top earner" tag on rows and no red "couldn't be read" banner (removed 15 Nov). Per person: trial and regular commission, extras, deductions, salary, total payout; eye opens their dashboard. **Someone switched off during the month** is listed for that month only, greyed at the bottom, "Left 15 Nov", salary pro-rated to the days worked, commission up to that day. |
 | **My Dashboard** (`/dashboard/me`, every User's home) | Profile, salary plan, **targets box** (calling time, trial joining, regular joining), call stats, hourly chart, Pay · month card, fees table. The targets box shows **the day picked** in the dropdown (Today / Yesterday / one custom day); a longer period shows today. Calling time = the same total as the Talk time card (all calls, short ones too). |
-| **Payments** | The school site's payments, **read only**. Opens on **every payment so far** (no dates sent); From / To optional; Clear dates; 50 per page; search; filters for mode, rep, fee type, **status**; Export CSV (all filtered rows). Columns: name + "linked to" label, **Status**, contact (email, phone, copy buttons), amount, paid date, mode, rep, fee type, receipt. Super Admin/Admin see everyone; a User sees only their own. Unlinked people are named in a banner. |
-| **CRM & Pay Settings** (renamed from CRM Settings) | Lead status codes (A, B, C…) and, beside them, **payment status codes 1, 2, 3…** (name + colour). Every payment starts on 1. Only Admins / Super Admin change a payment's status. |
+| **Payments** | The school site's payments, **read only**. Opens on **every payment so far** (no dates sent); From / To optional; Clear dates; 50 per page; search; filters for mode, rep, fee type, **status**; Export CSV (all filtered rows). Columns: name + "linked to" label, contact (email, phone, copy buttons), amount, paid date, mode, rep, **Status** (between Representative and Fee type), fee type, receipt. Super Admin/Admin see everyone; a User sees only their own. (The "Not shown: …" banner was removed 15 Nov.) |
+| **Codes** (was CRM Settings, then "CRM & Pay Settings"; `/dashboard/crm/settings`) | Lead status codes (A, B, C…) and, beside them, **payment status codes 1, 2, 3…** (name + colour). Every payment starts on 1. Only Admins / Super Admin change a payment's status. |
 | **Reports** | Report view split by teams (falls back to one "Staff" list). Super Admins without a line are left out. |
 | Removed | Overview, Team, Employees, Misc Calls, Settings (redirect to /dashboard); Students page is no longer in the menu. Login page has no demo credentials. |
 
 **Migrations live in prod:** 016 access, 017 calls index, 018 teams, 019 extra deductions,
 020 Lines→Intercoms permission move, 021 `payment_status`, 022 `employees.left_on` (earlier leavers
 back-filled with their last call day). Migrations are re-runnable and never edited after shipping.
+
+## 4b. Speed (15 Nov): the database is far from the server
+
+The droplet is in **Bengaluru**, the Supabase DB in **Tokyo**: every query costs **~109 ms**, so a user save
+(~8 queries) is ~1 s. Done in code: the per-request sign-in check is cached 10 s and cleared on any employee
+save (`forgetAuthCache` in `middleware/auth.ts`); a save that changes only columns is one statement, no
+transaction; permissions and line changes are one statement each; the status switch updates on screen first.
+**The real fix is moving the DB to a Mumbai (ap-south-1) Supabase project** (~2–5 ms per query); that needs the
+user's Supabase account and a dump/restore, so it is the user's call. Until then new code should keep the number
+of queries per request small.
+
+## 4c. WATI link
+
+"Open in WATI" finds the chat with WATI's `getMessages/91<phone>` (its `conversationId`) and opens
+`WATI_INBOX_URL/<conversationId>`. The contact id is NOT a conversation id (it gave "Conversation can't be
+found"). A number that never chatted has no conversation: the inbox opens and the number is copied so the user
+can press + (New chat).
 
 ## 5. Pay rules (code: `apps/api/src/lib/payroll.ts`, tests `payroll.test.ts`)
 
@@ -91,8 +108,9 @@ Confirmed by the client (14–15 Nov 2026):
 - Fee type **"Trial"** → trial rate; **every other fee type → regular rate**. A **renewal earns the same
   rate** as the first regular fee, so each later monthly fee earns again (recurring).
 - Rate type `pct` = % of the amount paid; `fix` = ₹ per payment. Money kept in paise, rounded at the end.
-- **Fix salary and "other amount" are monthly.** Someone who left mid-month gets them **pro-rated** to the
-  days worked (`proRated`).
+- **Fix salary is monthly.** Someone who left mid-month gets it **pro-rated** to the days worked (`proRated`).
+  The old "Other amount" field was **removed on 15 Nov** (client: extra commission/deduction does that job; no
+  prod user had a value; the DB column is left in place, unused).
 - **Extra commission / deduction: paid once, in the month its start date falls in** (the form fills the start
   with the day it's added). Ranges are almost always inside one month.
 - **% deduction = % of the fix salary** (of the pro-rated salary for a leaver).

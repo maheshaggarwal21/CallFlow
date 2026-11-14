@@ -7,7 +7,10 @@ import { IST_TODAY_START } from "../lib/dateRange";
 
 // Teams tab (client, 13 Nov 2026): offices in two or more places, each with its own agents.
 const router = Router();
-router.use(requireAuth, requirePermission("teams"));
+router.use(requireAuth);
+// the Users form lists and creates teams too (client, 15 Nov 2026); changing or deleting one stays on the Teams tab
+const teamsOrUsers = requirePermission("teams", "users");
+const teamsTab = requirePermission("teams");
 
 const bad = (res: any, status: number, message: string) => res.status(status).json({ error: message, message });
 const teamSchema = z.object({
@@ -17,7 +20,7 @@ const teamSchema = z.object({
 const uuid = z.string().uuid();
 
 /** Every team with its agents and their calls today, plus the agents in no team. The Super Admin is not an agent. */
-router.get("/", async (_req, res) => {
+router.get("/", teamsOrUsers, async (_req, res) => {
   const [teams, agents] = await Promise.all([
     pool.query("SELECT id, name, location, color_index FROM teams ORDER BY created_at"),
     pool.query(
@@ -38,7 +41,7 @@ router.get("/", async (_req, res) => {
 
 const conflict = (err: any) => (err?.code === "23505" ? "A team with that name already exists" : null);
 
-router.post("/", async (req, res) => {
+router.post("/", teamsOrUsers, async (req, res) => {
   const p = teamSchema.safeParse(req.body);
   if (!p.success) return bad(res, 400, p.error.issues[0].message);
   try {
@@ -54,7 +57,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", teamsTab, async (req, res) => {
   const p = teamSchema.safeParse(req.body);
   if (!p.success) return bad(res, 400, p.error.issues[0].message);
   if (!uuid.safeParse(req.params.id).success) return bad(res, 404, "Team not found");
@@ -71,7 +74,7 @@ router.patch("/:id", async (req, res) => {
 });
 
 /** Its agents are kept, just without a team. */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", teamsTab, async (req, res) => {
   if (!uuid.safeParse(req.params.id).success) return bad(res, 404, "Team not found");
   const r = await pool.query("DELETE FROM teams WHERE id = $1", [req.params.id]);
   return r.rowCount ? res.status(204).end() : bad(res, 404, "Team not found");

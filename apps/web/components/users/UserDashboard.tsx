@@ -21,7 +21,7 @@ type PaymentRow = {
 };
 type Summary = {
   name: string; phone: string | null; email: string; employee_code: number; designation: string | null;
-  fix_salary: number; other_amount: number;
+  fix_salary: number;
   trial_commission: number; trial_commission_type: "pct" | "fix"; regular_commission: number; regular_commission_type: "pct" | "fix";
   extra_commissions: ExtraCommission[]; extra_deductions: ExtraDeduction[];
   line_number: string | null; intercom_code: string | null; calling_number: string | null;
@@ -32,7 +32,7 @@ type Summary = {
   payments: { connected: boolean; error: string | null; list: PaymentRow[] };
   /** The month's pay, as the Employee Tracker works it out (month of the picked period's end). */
   pay: {
-    month: string; base: number; other: number; total: number;
+    month: string; base: number; total: number;
     trial: { count: number; commission: number }; regular: { count: number; commission: number };
     extras: { name: string; amount: number }[]; deductions: { name: string; amount: number }[];
   };
@@ -54,9 +54,9 @@ const hm = (secs: number) => `${Math.floor(secs / 3600)}h ${String(Math.floor((s
 function Row({ label, children, accent, minus }: { label: string; children: ReactNode; accent?: boolean; minus?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12,
-      background: minus ? "#fbeceb" : accent ? "#fdf1e7" : "#faf7f2", border: `1px solid ${minus ? "#f0c9c5" : accent ? "#f3d4b8" : "#f1e8da"}` }}>
+      background: minus ? "#fbeceb" : accent ? "#e8f3e2" : "#faf7f2", border: `1px solid ${minus ? "#f0c9c5" : accent ? "#bfdcb3" : "#f1e8da"}` }}>
       <span style={{ ...capLabel, fontSize: 10.5 }}>{label}</span>
-      <b style={{ fontSize: 13.5, color: minus ? R.bad : accent ? R.out : R.ink, textAlign: "right", overflowWrap: "anywhere" }}>{children}</b>
+      <b style={{ fontSize: 13.5, color: minus ? R.bad : accent ? R.good : R.ink, textAlign: "right", overflowWrap: "anywhere" }}>{children}</b>
     </div>
   );
 }
@@ -165,7 +165,6 @@ export default function UserDashboard({ id }: { id?: string }) {
           <Row label="Fix salary">{inr(s.fix_salary)} / month</Row>
           <Row label="Trial commission">{rate(s.trial_commission, s.trial_commission_type)}</Row>
           <Row label="Regular commission">{rate(s.regular_commission, s.regular_commission_type)}</Row>
-          {s.other_amount > 0 && <Row label="Other amount">{inr(s.other_amount)}</Row>}
           {bonuses.length + cuts.length > 0 && <div style={{ ...capLabel, marginTop: 8 }}>Active now</div>}
           {bonuses.map((x, i) => <Row key={`b${i}`} label={`+ ${x.name}`} accent><span title={extraText(x)}>{inr(x.amount)} · till {fmtTill(x.to)}</span></Row>)}
           {cuts.map((x, i) => <Row key={`d${i}`} label={`− ${x.name}`} minus><span title={extraText(x)}>−{inr(x.value)}{x.type === "pct" ? ` (${x.amount}%)` : ""} · till {fmtTill(x.to)}</span></Row>)}
@@ -231,7 +230,6 @@ export default function UserDashboard({ id }: { id?: string }) {
               <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1 }}>{inr(s.pay.total)}</div>
               <div style={{ display: "grid", gap: 8, fontSize: 13.5, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,.14)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Fix salary</span><b style={{ color: "#fff" }}>{inr(s.pay.base)}</b></div>
-                {s.pay.other > 0 && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Other amount</span><b style={{ color: "#fff" }}>{inr(s.pay.other)}</b></div>}
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Trial commission · {s.pay.trial.count}</span><b style={{ color: "#fff" }}>{inr(s.pay.trial.commission)}</b></div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Regular commission · {s.pay.regular.count}</span><b style={{ color: "#fff" }}>{inr(s.pay.regular.commission)}</b></div>
                 {s.pay.extras.map((x, i) => <div key={`b${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>+ {x.name}</span><b style={{ color: "#9fd18b" }}>+{inr(x.amount)}</b></div>)}

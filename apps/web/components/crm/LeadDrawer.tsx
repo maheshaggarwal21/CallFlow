@@ -125,7 +125,7 @@ function DrawerBody({ leadId, presetCode, onClose, onSaved, isOwner, expanded, o
         {/* Client, 8 Nov: WhatsApp top right; the number lives in Basic details; no Close button
             (a click on the empty area around the pop-up, or Esc, closes it) */}
         {/* Client, 12 Nov: WATI beside WhatsApp, opening this number's chat in WATI */}
-        {watiOn && <button type="button" className="crm-btn" title="Open this chat in WATI" onClick={() => { setWatiErr(""); openWati(d.lead.id).catch((e) => setWatiErr((e as Error).message)); }}
+        {watiOn && <button type="button" className="crm-btn" title="Open this chat in WATI" onClick={() => { setWatiErr(""); openWati(d.lead.id).then((hint) => hint && setWatiErr(hint)).catch((e) => setWatiErr((e as Error).message)); }}
           style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center", background: "#fff", color: "#1d1d1b", border: `1px solid ${R.line}`, borderRadius: 12,
             padding: "9px 18px", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
           <WatiIcon size={22} />wati</button>}
@@ -135,7 +135,6 @@ function DrawerBody({ leadId, presetCode, onClose, onSaved, isOwner, expanded, o
           <WhatsAppIcon size={18} />WhatsApp</a>
       </header>
       {watiErr && <p role="alert" style={{ margin: 0, color: R.bad, fontSize: 13 }}>WATI: {watiErr}</p>}
-      <WatiSend lead={d.lead} readOnly={readOnly} onSent={() => mutate()} />
       {readOnly && (
         <div role="status" style={{ display: "flex", gap: 10, alignItems: "center", background: "#fff1d6", border: `1px solid ${R.gold}`, borderRadius: 12, padding: "10px 14px", fontSize: 13.5, fontWeight: 600 }}>
           <Icon name="lock" size={18} style={{ color: "#8a5a12" }} />
@@ -541,12 +540,14 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
               <input type="time" value={time} disabled={dateOff} onChange={(e) => setTime(e.target.value)} aria-label="Next follow-up time"
                 style={{ ...inputStyle, opacity: dateOff ? 0.5 : 1 }} /></label>
           </div>
-          {kind === "retry" && !drops && <div style={{ fontSize: 12, color: R.mute, marginTop: -4 }}>Filled automatically from the follow-up rules in CRM &amp; Pay Settings. Change it if needed.</div>}
+          {kind === "retry" && !drops && <div style={{ fontSize: 12, color: R.mute, marginTop: -4 }}>Filled automatically from the follow-up rules on the Codes tab. Change it if needed.</div>}
           <label>
             <span style={{ ...labelStyle, display: "flex" }}>Notes / conversation summary{star(needsNote)}
               <span style={{ marginLeft: "auto", textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>{note.length} / {NOTE_MAX}</span></span>
             <textarea value={note} maxLength={NOTE_MAX} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="What did the student say?" style={{ ...inputStyle, resize: "vertical" }} />
           </label>
+          {/* Client, 15 Nov: the WATI card sits right below the notes */}
+          <WatiSend lead={d.lead} readOnly={readOnly} onSent={onReload} />
         <Reminder at={reminder.at} repName={repName} note={reminder.note} live={reminder.live} />
         {err && (
           <div role="alert" style={{ color: R.bad, fontSize: 13, fontWeight: 600, display: "flex", gap: 10, alignItems: "center" }}>
