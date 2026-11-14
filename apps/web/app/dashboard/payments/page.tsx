@@ -3,7 +3,7 @@
 // Payments tab (client, 14 Nov 2026): the school site's payments, read only (GET /payments). Adding, editing
 // and deleting payments stays on the school site. A User sees only their own; Admins and the Super Admin see
 // everyone. The dates are asked of the server; search and the dropdowns filter what came back.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { C } from "@/lib/colors";
 import { api, fetcher } from "@/lib/api";
@@ -14,6 +14,9 @@ import { istToday } from "@/lib/period";
 import { S } from "@/components/salary/kit";
 import { Icon } from "@/components/crm/icons";
 import Tag from "@/components/ui/Tag";
+import Pagination from "@/components/ui/Pagination";
+
+const PER_PAGE = 50;
 
 type Pay = {
   id: string; name: string; linked_to: string; email: string; phone: string; amount: number;
@@ -58,6 +61,12 @@ export default function PaymentsPage() {
     (!mode || p.mode === mode) && (!status || p.status === status) && (!rep || p.rep === rep) && (!fee || p.fee_type === fee) &&
     (!needle || [p.name, p.email, p.phone].some((v) => v.toLowerCase().includes(needle))));
   const total = rows.reduce((t, p) => t + p.amount, 0);
+  const [page, setPage] = useState(1);
+  // a new search, filter or date range starts again on page 1
+  useEffect(() => setPage(1), [q, mode, rep, fee, status, from, to]);
+  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const at = Math.min(page, pages);
+  const shown = rows.slice((at - 1) * PER_PAGE, at * PER_PAGE);
   const codes = data?.codes ?? {};
   const codeIds = Object.keys(codes).sort((a, b) => Number(a) - Number(b));
   // "1 · New" in the lists; a code still on its default name ("Code 1") is just its number
@@ -144,7 +153,7 @@ export default function PaymentsPage() {
               {rows.length === 0 && (
                 <tr><td colSpan={9} style={{ padding: 28, color: C.muted }}>No payments match.</td></tr>
               )}
-              {rows.map((p) => {
+              {shown.map((p) => {
                 const [lc, lbg] = LINK_CLR[p.linked_to] ?? [C.muted, C.bgDeep];
                 const trial = p.fee_type.trim().toLowerCase() === "trial";
                 return (
@@ -174,8 +183,14 @@ export default function PaymentsPage() {
           </table>
         </div>
       )}
+      {rows.length > PER_PAGE && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, color: C.muted }}>Showing {(at - 1) * PER_PAGE + 1}–{Math.min(at * PER_PAGE, rows.length)} of {rows.length}</span>
+          <Pagination page={at} totalPages={pages} onPageChange={(n) => { setPage(n); window.scrollTo({ top: 0 }); }} />
+        </div>
+      )}
       <p style={{ margin: 0, fontSize: 12.5, color: C.muted }}>
-        Read from the school site. To add, change or delete a payment, use the school site. A receipt link works for a limited time; press Refresh if it has expired.</p>
+        Showing the dates picked at the top; change From to see older payments. Read from the school site. To add, change or delete a payment, use the school site. A receipt link works for a limited time; press Refresh if it has expired.</p>
     </div>
   );
 }
