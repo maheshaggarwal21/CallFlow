@@ -31,7 +31,9 @@ function Switch({ on, onChange, label, disabled }: { on: boolean; onChange: (v: 
 }
 
 export default function UsersPage() {
-  const { data: users, isLoading, mutate } = useSWR<Employee[]>("/employees", fetcher);
+  const { data: all, isLoading, mutate } = useSWR<Employee[]>("/employees", fetcher);
+  // active people on top, switched-off ones at the bottom (client, 14 Nov); sort() keeps the API order within each group
+  const users = all && [...all].sort((a, b) => Number(a.status !== "active") - Number(b.status !== "active"));
   const { id: myId } = useAuth();
   const [editing, setEditing] = useState<Employee | "new" | null>(null);
   const [error, setError] = useState("");

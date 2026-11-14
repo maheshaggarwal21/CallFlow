@@ -204,7 +204,8 @@ function SchedulesTab({ employees }: { employees: EmployeeName[] }) {
           </p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
-            {schedules.map((s) => (
+            {/* paused schedules at the bottom (client, 14 Nov) */}
+            {[...schedules].sort((a, b) => Number(!a.is_active) - Number(!b.is_active)).map((s) => (
               <div key={s.id} style={{
                 border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 18px",
                 display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center",
