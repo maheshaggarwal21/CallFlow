@@ -38,8 +38,10 @@ The sample ledger (`lib/salarySample.ts`, invented students) was **deleted** on 
   credited to the rep the school site files it under (`callFlowId`).
 - `pct` = % of the amount paid; `fix` = ₹ per payment.
 - Monthly payout (Employee Tracker, and "Pay · <month>" on My Dashboard, same function `monthPayout`) = fix salary + other amount + commission + extra commissions
-  whose dates overlap the month − deductions whose dates overlap the month (a % deduction is a % of
-  the fix salary), never below ₹0. Each extra or deduction counts **once per month** it overlaps.
+  that start in the month − deductions that start in the month (a % deduction is a % of the fix
+  salary), never below ₹0. Each extra or deduction is paid **once, in the month its start date falls
+  in**; the form fills the start date with the day it is added (client, 14 Nov 2026: "applied the day
+  it is added", and ranges are almost always inside one month).
 - My Dashboard's Earnings card shows the commission for the picked period, plus the monthly salary
   and the extras/deductions active today as separate lines.
 

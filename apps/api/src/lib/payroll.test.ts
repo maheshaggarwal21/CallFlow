@@ -25,7 +25,7 @@ test("no payments, no commission", () => {
   assert.equal(commissionOn(plan, []).commission, 0);
 });
 
-test("extras and deductions count when their dates overlap the month", () => {
+test("an extra or deduction counts once, in the month it starts (client, 14 Nov 2026)", () => {
   const p: PayPlan = {
     ...plan,
     extra_commissions: [
@@ -39,10 +39,13 @@ test("extras and deductions count when their dates overlap the month", () => {
     ],
   };
   const r = monthPayout(p, fees, "2026-11-01", "2026-11-30");
-  assert.deepEqual(r.extras, [{ name: "In", amount: 500 }]);
+  // "In" runs 25 Oct – 2 Nov: it started in October, so November doesn't pay it again
+  assert.deepEqual(r.extras, []);
   assert.deepEqual(r.deductions, [{ name: "Late", amount: 2000 }, { name: "Fine", amount: 250 }]);
-  // 20000 + 1000 + 1500 + 500 − 2250
-  assert.equal(r.total, 20750);
+  // 20000 + 1000 + 1500 − 2250
+  assert.equal(r.total, 20250);
+  assert.deepEqual(monthPayout(p, [], "2026-10-01", "2026-10-31").extras, [{ name: "In", amount: 500 }, { name: "Before", amount: 900 }]);
+  assert.deepEqual(monthPayout(p, [], "2026-12-01", "2026-12-31").deductions, [{ name: "After", amount: 999 }]);
 });
 
 test("payout never goes below zero", () => {

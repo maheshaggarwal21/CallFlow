@@ -5,8 +5,9 @@
  * - feeType "Trial" earns the trial rate; every other fee type earns the regular rate, so a rep keeps
  *   earning on each later monthly fee they collect (recurring commission).
  * - Rate type "pct" = % of the amount paid; "fix" = ₹ per payment.
- * - Fix salary and other amount are monthly. An extra commission or a deduction counts once in a
- *   month when its dates overlap that month; a % deduction is a % of the fix salary.
+ * - Fix salary and other amount are monthly. An extra commission or a deduction is paid once, in the
+ *   month its start date falls in (the form fills that with the day it is added); a % deduction is a % of
+ *   the fix salary (client, 14 Nov 2026).
  * Money is kept in paise until the end, then rounded to whole rupees.
  */
 export type RateType = "fix" | "pct";
@@ -46,10 +47,11 @@ export function commissionOn(plan: PayPlan, payments: PaidFee[]) {
 
 /** Whole-month payout. `from`/`to` are the month's first and last IST dates (YYYY-MM-DD). */
 export function monthPayout(plan: PayPlan, payments: PaidFee[], from: string, to: string) {
-  const overlaps = (x: { from: string; to: string }) => x.from <= to && x.to >= from;
+  // once, in the month it starts: a range running into the next month isn't paid twice
+  const startsIn = (x: { from: string }) => x.from >= from && x.from <= to;
   const c = commissionOn(plan, payments);
-  const extras = (plan.extra_commissions ?? []).filter(overlaps).map((x) => ({ name: x.name, amount: Math.round(x.amount) }));
-  const deductions = (plan.extra_deductions ?? []).filter(overlaps).map((x) => ({
+  const extras = (plan.extra_commissions ?? []).filter(startsIn).map((x) => ({ name: x.name, amount: Math.round(x.amount) }));
+  const deductions = (plan.extra_deductions ?? []).filter(startsIn).map((x) => ({
     name: x.name, amount: Math.round(x.type === "pct" ? (plan.fix_salary * x.amount) / 100 : x.amount),
   }));
   const plus = extras.reduce((t, x) => t + x.amount, 0);

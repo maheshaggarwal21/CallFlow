@@ -119,7 +119,7 @@ function Tracker() {
             </div>
           </div>
           <p style={{ margin: 0, fontSize: 12.5, color: C.muted }}>
-            Trial and Regular: number of fees collected and the commission on them. Extras and deductions count when their dates fall in this month; hover to see each one.</p>
+            Trial and Regular: number of fees collected and the commission on them. An extra or deduction is paid once, in the month it starts; hover to see each one.</p>
         </>
       )}
     </div>
