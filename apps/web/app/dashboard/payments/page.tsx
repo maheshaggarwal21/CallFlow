@@ -60,7 +60,8 @@ export default function PaymentsPage() {
   const total = rows.reduce((t, p) => t + p.amount, 0);
   const codes = data?.codes ?? {};
   const codeIds = Object.keys(codes).sort((a, b) => Number(a) - Number(b));
-  const codeText = (c: string) => `${c} · ${codes[c]?.label ?? `Code ${c}`}`;
+  // "1 · New" in the lists; a code still on its default name ("Code 1") is just its number
+  const codeText = (c: string) => (!codes[c]?.label || codes[c].label === `Code ${c}` ? c : `${c} · ${codes[c].label}`);
 
   async function grade(p: Pay, code: string) {
     setSaveErr("");
@@ -132,11 +133,11 @@ export default function PaymentsPage() {
 
       {isLoading && !data ? <p style={{ color: C.muted, fontSize: 14 }}>Loading payments from the school site…</p> : data && (
         <div style={{ ...S.card, overflowX: "auto" }}>
-          <table style={{ width: "100%", minWidth: 980, borderCollapse: "collapse", fontSize: 14 }}>
+          <table style={{ width: "100%", minWidth: 1180, borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ background: C.bgDeep, borderBottom: `2px solid ${C.border}` }}>
                 {["Name", "Status", "Contact", "Amount", "Paid date", "Payment mode", "Representative", "Fee type", "Receipt"].map((h) => (
-                  <th key={h} style={{ ...S.th, padding: "14px 12px", textAlign: h === "Amount" ? "right" : "left" }}>{h}</th>))}
+                  <th key={h} style={{ ...S.th, padding: "16px 18px", textAlign: h === "Amount" ? "right" : "left" }}>{h}</th>))}
               </tr>
             </thead>
             <tbody>
@@ -149,7 +150,7 @@ export default function PaymentsPage() {
                 return (
                   <tr key={p.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
                     <td style={td}>
-                      <div style={{ fontWeight: 700, color: C.text }}>{p.name || "—"}</div>
+                      <div style={{ fontWeight: 700, color: C.text, minWidth: 150 }}>{p.name || "—"}</div>
                       {p.linked_to && <div style={{ fontSize: 12, fontWeight: 600, color: lc }}>{cap(p.linked_to)}</div>}
                     </td>
                     <td style={td}><StatusCell code={p.status} codes={codes} codeIds={codeIds} label={codeText}
@@ -179,14 +180,14 @@ export default function PaymentsPage() {
   );
 }
 
-const td = { padding: "12px 12px", verticalAlign: "middle", color: C.textSub } as const;
+const td = { padding: "16px 18px", verticalAlign: "middle", color: C.textSub } as const;
 
 function Copyable({ text, mono }: { text: string; mono?: boolean }) {
   const [done, setDone] = useState(false);
   if (!text) return null;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: mono ? "ui-monospace, monospace" : undefined, fontSize: mono ? 13 : 13.5 }}>
-      <span style={mono ? { whiteSpace: "nowrap" } : { overflowWrap: "anywhere" }}>{text}</span>
+      <span style={{ whiteSpace: "nowrap" }}>{text}</span>
       <button type="button" title={`Copy ${text}`} aria-label={`Copy ${text}`}
         onClick={() => navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1200); })}
         style={{ border: "none", background: "none", padding: 2, cursor: "pointer", color: done ? C.green : C.muted, display: "inline-flex" }}>
@@ -203,10 +204,17 @@ function StatusCell({ code, codes, codeIds, label, onPick }: {
   const color = codes[code]?.color;
   const chip = { background: color ?? C.bgDeep, color: color ? inkOn(color) : C.textSub, border: `1px solid ${color ?? C.border}`,
     borderRadius: 8, fontSize: 13, fontWeight: 800, padding: "4px 8px" } as const;
-  if (!onPick) return <span title={codes[code]?.label} style={chip}>{code}</span>;
+  const shown = <span title={codes[code]?.label} style={{ ...chip, display: "inline-flex", alignItems: "center", gap: 6, minWidth: 34, justifyContent: "center" }}>
+    {code}{onPick && <span aria-hidden style={{ fontSize: 9, opacity: 0.7 }}>▼</span>}</span>;
+  if (!onPick) return shown;
+  // the chip shows only the number; an invisible select over it does the picking and lists the names
   return (
-    <select aria-label="Payment status" title={codes[code]?.label} value={code} onChange={(e) => onPick(e.target.value)} style={{ ...chip, cursor: "pointer", maxWidth: 120 }}>
-      {codeIds.map((c) => <option key={c} value={c}>{label(c)}</option>)}
-    </select>
+    <span style={{ position: "relative", display: "inline-flex" }}>
+      {shown}
+      <select aria-label={`Payment status ${code}`} value={code} onChange={(e) => onPick(e.target.value)}
+        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%" }}>
+        {codeIds.map((c) => <option key={c} value={c}>{label(c)}</option>)}
+      </select>
+    </span>
   );
 }

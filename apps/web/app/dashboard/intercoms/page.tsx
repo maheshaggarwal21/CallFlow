@@ -19,7 +19,7 @@ export default function IntercomsPage() {
   const lineOf = (no: string | null) => (lines ?? []).find((l) => l.line_number === no);
   const maxCalls = Math.max(...(lines ?? []).map((l) => l.call_count_today), 1);
   const linked = (intercoms ?? []).filter((i) => i.line_number).length;
-  // lines that make calls but have no intercom yet: shown so no one's line disappears from view
+  // lines with a person but no intercom yet: shown as rows so no one's line disappears from view
   const bare = (lines ?? []).filter((l) => l.employee_id && !(intercoms ?? []).some((i) => i.line_number === l.line_number));
 
   return (
@@ -45,6 +45,24 @@ export default function IntercomsPage() {
                 <span key={i} style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.9 }}>{h}</span>
               ))}
             </div>
+            {bare.map((l) => (
+              <div key={l.id} style={{ display: "grid", gridTemplateColumns: COLS, gap: 12, alignItems: "center", padding: "14px 20px", borderBottom: `1px solid ${C.borderLight}` }}>
+                <span style={{ fontSize: 12, color: C.dim }}>No intercom</span>
+                <span style={{ fontSize: 14, color: C.dim }}>—</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{l.line_number}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: C.text }}>{l.employee_name}</span>
+                  {l.employee_code != null && <span style={{ fontSize: 12, color: C.muted }}>Reg No. {l.employee_code}</span>}
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ flex: 1, height: 4, background: C.bgDeep, borderRadius: 4 }}>
+                    <span style={{ display: "block", width: `${(l.call_count_today / maxCalls) * 100}%`, height: "100%", background: C.orange, borderRadius: 4 }} />
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: l.call_count_today ? C.orange : C.dim, minWidth: 24, textAlign: "right" }}>{l.call_count_today}</span>
+                </span>
+                <span />
+              </div>
+            ))}
             {(intercoms ?? []).map((ic, i) => {
               const line = lineOf(ic.line_number);
               const calls = line?.call_count_today ?? 0;
@@ -81,7 +99,7 @@ export default function IntercomsPage() {
 
       {bare.length > 0 && (
         <p style={{ margin: 0, fontSize: 13, color: C.muted }}>
-          Lines with a person but no intercom yet: {bare.map((l) => `${l.line_number} · ${l.employee_name}`).join(", ")}. Their calls are still recorded; press Assign on an intercom to put it on one.</p>
+          &ldquo;No intercom&rdquo; rows: the line has a person and records their calls, but no intercom is on it yet. Press Assign on an intercom and pick that line.</p>
       )}
 
       {editing && <AssignIntercomModal intercom={editing} onClose={() => setEditing(null)} />}
