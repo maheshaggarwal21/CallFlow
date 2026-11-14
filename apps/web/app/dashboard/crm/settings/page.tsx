@@ -26,10 +26,11 @@ export default function CrmSettingsPage() {
       <style>{CRM_CSS}</style>
       <HeaderBand eyebrow="CRM" title="CRM & Pay Settings" sub="Lead and payment status codes, and their colours" />
       {error ? <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p> : !data || !me ? <p style={{ color: R.mute }}>Loading…</p>
-        : <>
+        // side by side when there is room (client, 14 Nov), one under the other on a narrow screen
+        : <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-start" }}>
           <Statuses codes={data.values.codes} onSaved={() => mutate()} />
           <PayStatuses codes={data.values.pay_codes ?? {}} onSaved={() => mutate()} />
-        </>}
+        </div>}
     </div>
   );
 }
@@ -63,7 +64,7 @@ function Statuses({ codes, onSaved }: { codes: Record<Code, CodeSetting>; onSave
     }
   };
   return (
-    <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px" }}>
+    <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px", flex: "1 1 460px", minWidth: 0 }}>
       <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Statuses</h3>
       <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>
         The codes from the lead sheet. Name each one and pick its colour from the Palette: the code is shown in that colour on the Leads tab. Add a new one with + Add status.</p>
@@ -127,7 +128,7 @@ function PayStatuses({ codes, onSaved }: { codes: Record<string, { label: string
     }
   };
   return (
-    <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px" }}>
+    <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px", flex: "1 1 460px", minWidth: 0 }}>
       <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Payment statuses</h3>
       <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>
         The codes on the Payments tab. Name each one and pick its colour from the Palette. Every payment starts on 1. Add a new one with + Add status.</p>
