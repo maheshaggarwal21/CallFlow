@@ -26,7 +26,8 @@ type Summary = {
   extra_commissions: ExtraCommission[]; extra_deductions: ExtraDeduction[];
   line_number: string | null; intercom_code: string | null; calling_number: string | null;
   target_call_secs: number; target_trial: number; target_regular: number;
-  today: { call_secs: number; trial: number; regular: number };
+  /** The day the targets box shows: the day picked, or today for a longer period. */
+  today: { date: string; is_today: boolean; call_secs: number; trial: number; regular: number };
   income: { joinings: number; trial: number; regular: number; total: number; trial_count: number; regular_count: number; fees: number };
   payments: { connected: boolean; error: string | null; list: PaymentRow[] };
   /** The month's pay, as the Employee Tracker works it out (month of the picked period's end). */
@@ -172,7 +173,7 @@ export default function UserDashboard({ id }: { id?: string }) {
 
         <main style={{ display: "grid", gap: 14, minWidth: 0 }}>
           {/* ── Today's targets ── */}
-          <Panel title="Today's targets" sub="Set by the school · resets every day">
+          <Panel title={s.today.is_today ? "Today's targets" : `Targets · ${fmtDay(s.today.date)}`} sub="Set by the school · resets every day">
             <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: 22, alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
                 <Donut size={150} center={s.target_call_secs ? `${Math.min(100, Math.round((s.today.call_secs / s.target_call_secs) * 100))}%` : "—"} sub="of calling time" fmt={hm}

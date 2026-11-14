@@ -106,6 +106,13 @@ ok(rd && (rd.people ?? []).every((p) => p.id === undefined || p.id === u.id), "U
 const sm = (await call(rep, "GET", "/employees/me/summary")).data;
 ok(sm?.extra_deductions?.length === 2 && sm.extra_commissions?.length === 2, "My Dashboard summary carries extras and deductions");
 ok((await call(rep, "GET", `/employees/${nehaId}/summary`)).status === 403, "User can't open someone else's dashboard");
+{ // the targets box follows the day picked: Yesterday shows yesterday's targets, a week shows today's
+  const d = (await pool.query("SELECT to_char((NOW() AT TIME ZONE 'Asia/Kolkata')::date - 1, 'YYYY-MM-DD') AS y, to_char((NOW() AT TIME ZONE 'Asia/Kolkata')::date - 6, 'YYYY-MM-DD') AS w, to_char((NOW() AT TIME ZONE 'Asia/Kolkata')::date, 'YYYY-MM-DD') AS t")).rows[0];
+  const y = (await call(rep, "GET", `/employees/me/summary?date_from=${d.y}&date_to=${d.y}`)).data?.today;
+  ok(y?.date === d.y && y.is_today === false, "targets box: Yesterday picked → yesterday's targets", JSON.stringify(y));
+  const w = (await call(rep, "GET", `/employees/me/summary?date_from=${d.w}&date_to=${d.t}`)).data?.today;
+  ok(w?.date === d.t && w.is_today === true, "targets box: a longer period → today's targets", JSON.stringify(w));
+}
 const eye = await call(owner, "GET", `/employees/${u.id}/summary`);
 ok(eye.status === 200 && eye.data.name === base.name, "Super Admin's eye opens the user's dashboard");
 ok((await call(owner, "GET", "/employees/not-a-uuid/summary")).status === 404, "eye with a bad id → 404");

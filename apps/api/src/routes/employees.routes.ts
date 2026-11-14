@@ -5,7 +5,7 @@ import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requirePermission } from "../middleware/requirePermission";
 import { requireOwner } from "../middleware/requireOwner";
-import { resolveRange, IST_TODAY_START, istDateKey } from "../lib/dateRange";
+import { resolveRange, istDateKey } from "../lib/dateRange";
 import { commissionOn, feeCommission, isTrial, monthBounds, monthPayout, proRated, type PayPlan } from "../lib/payroll";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "../services/payments.service";
 
@@ -121,6 +121,11 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
     typeof req.query.date_from === "string" ? req.query.date_from : null,
     typeof req.query.date_to === "string" ? req.query.date_to : null
   );
+  const today = istDateKey(new Date());
+  const lastDay = istDateKey(new Date(end.getTime() - 1));
+  // the targets box shows the day picked (Today, Yesterday or one custom day); a longer period shows today
+  // (client, 15 Nov 2026: after midnight "Today's targets" read 0 while the cards showed yesterday)
+  const targetDay = istDateKey(start) === lastDay ? lastDay : today;
   const [me, talk] = await Promise.all([
     pool.query(
       `SELECT e.name, e.phone, e.email, e.employee_code, e.designation, e.role, e.color_index, ${PLAN_COLS},
@@ -132,14 +137,13 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
     pool.query(
       // every call, short ones too: the same total as the Talk time card, so the two never disagree (client, 14 Nov 2026)
       `SELECT COALESCE(SUM(duration_secs), 0)::int AS secs FROM calls
-       WHERE employee_id = $1 AND called_at >= ${IST_TODAY_START} AND called_at < ${IST_TODAY_START} + INTERVAL '1 day'`, [id]),
+       WHERE employee_id = $1 AND called_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Kolkata')
+         AND called_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`, [id, targetDay]),
   ]);
   const u = me.rows[0];
   if (!u) return bad(res, 404, "Not found");
 
   // Joinings and commission come from the school's payments; if that service is down the rest of the page still loads
-  const today = istDateKey(new Date());
-  const lastDay = istDateKey(new Date(end.getTime() - 1));
   // the pay shown is for the month the picked period ends in, worked out exactly as the Employee Tracker does
   const pay = monthBounds(lastDay.slice(0, 7))!;
   let list: Payment[] = [], todays: Payment[] = [], monthList: Payment[] = [], error: string | null = null;
@@ -147,7 +151,7 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
     try {
       [list, todays, monthList] = await Promise.all([
         paymentsFor(id, istDateKey(start), lastDay),
-        paymentsFor(id, today, today),
+        paymentsFor(id, targetDay, targetDay),
         paymentsFor(id, pay.from, pay.to),
       ]);
     } catch (e) {
@@ -159,7 +163,7 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
   const t = commissionOn(u, todays);
   return res.json({
     ...u,
-    today: { call_secs: talk.rows[0].secs, trial: t.trial.count, regular: t.regular.count },
+    today: { date: targetDay, is_today: targetDay === today, call_secs: talk.rows[0].secs, trial: t.trial.count, regular: t.regular.count },
     income: { joinings: c.trial.count + c.regular.count, trial: c.trial.commission, regular: c.regular.commission, total: c.commission,
       trial_count: c.trial.count, regular_count: c.regular.count, fees: c.trial.fees + c.regular.fees },
     payments: { connected: paymentsConfigured() && !error, error, list: list.map(paymentRow(u)) },
