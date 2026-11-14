@@ -1,6 +1,7 @@
 "use client";
 
-// CRM Settings: the status codes — name each one and pick its colour (client, 12 Nov 2026).
+// CRM & Pay Settings: the lead status codes (A, B, C…) and the payment status codes (1, 2, 3…) — name
+// each one and pick its colour (client, 12 and 14 Nov 2026).
 // What a code does and the follow-up rules are no longer shown here; each code keeps the behaviour it has.
 // Who may open the CRM tabs is ticked on the Users tab.
 import { useEffect, useState } from "react";
@@ -18,14 +19,17 @@ export default function CrmSettingsPage() {
   const { me, can } = useCrmMe();
   const allowed = !!me && can("crm_settings");
   const { data, error, mutate } = useSWR<Settings>(allowed ? "/crm/settings" : null, fetcher);
-  if (me && !allowed) return <NoAccess what="CRM Settings" />;
+  if (me && !allowed) return <NoAccess what="CRM & Pay Settings" />;
 
   return (
     <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gap: 14 }}>
       <style>{CRM_CSS}</style>
-      <HeaderBand eyebrow="CRM" title="CRM Settings" sub="Status codes and their colours" />
+      <HeaderBand eyebrow="CRM" title="CRM & Pay Settings" sub="Lead and payment status codes, and their colours" />
       {error ? <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p> : !data || !me ? <p style={{ color: R.mute }}>Loading…</p>
-        : <Statuses codes={data.values.codes} onSaved={() => mutate()} />}
+        : <>
+          <Statuses codes={data.values.codes} onSaved={() => mutate()} />
+          <PayStatuses codes={data.values.pay_codes ?? {}} onSaved={() => mutate()} />
+        </>}
     </div>
   );
 }
@@ -87,6 +91,64 @@ function Statuses({ codes, onSaved }: { codes: Record<Code, CodeSetting>; onSave
               </tr>
             ))}
             {free.length > 0 && <tr><td style={tdStyle} colSpan={3}><Btn kind="ghost" onClick={add}>+ Add status</Btn></td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}>
+        <Btn onClick={save}>Save</Btn>
+        {saved && <span role="status" style={{ color: R.good, fontSize: 13, fontWeight: 600 }}>Saved ✓</span>}
+        {err && <span role="alert" style={{ color: R.bad, fontSize: 13 }}>{err}</span>}
+      </div>
+    </section>
+  );
+}
+
+type PayCode = { code: string; label: string; color?: string };
+
+/** The Payments tab's status codes 1, 2, 3…: laid out like the lead statuses above. Code 1 is every payment's start. */
+function PayStatuses({ codes, onSaved }: { codes: Record<string, { label: string; color?: string }>; onSaved: () => void }) {
+  const [v, setV] = useState<PayCode[]>(() =>
+    Object.entries({ "1": { label: "Code 1" }, ...codes }).map(([code, c]) => ({ code, ...c })).sort((a, b) => Number(a.code) - Number(b.code)));
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(false), 2500); return () => clearTimeout(t); }, [saved]);
+  const set = (i: number, patch: Partial<PayCode>) => setV(v.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  const isNew = (c: string) => c !== "1" && !codes[c];
+  const next = String(Math.max(0, ...v.map((c) => Number(c.code))) + 1);
+  const save = async () => {
+    setErr("");
+    try {
+      await api.patch("/crm/settings/values/pay_codes", Object.fromEntries(v.map((c) => [c.code, { label: c.label.trim() || `Code ${c.code}`, color: c.color || undefined }])));
+      setSaved(true);
+      onSaved();
+      globalMutate((k) => typeof k === "string" && k.startsWith("/payments"));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  return (
+    <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px" }}>
+      <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Payment statuses</h3>
+      <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>
+        The codes on the Payments tab. Name each one and pick its colour from the Palette. Every payment starts on 1. Add a new one with + Add status.</p>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 13.5 }}>
+          <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>Colour</th></tr></thead>
+          <tbody>
+            {v.map((c, i) => (
+              <tr key={c.code}>
+                <td style={{ ...tdStyle, fontWeight: 800, fontSize: 15 }}>{c.code}</td>
+                <td style={tdStyle}><input aria-label={`Name of payment status ${c.code}`} value={c.label} maxLength={40} onChange={(e) => set(i, { label: e.target.value })} style={{ ...inputStyle, width: 220 }} /></td>
+                <td style={tdStyle}>
+                  <span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                    <ColorPalette code={c.code} value={c.color} onSelect={(color) => set(i, { color })} />
+                    {isNew(c.code) && <button type="button" aria-label={`Remove new payment status ${c.code}`} onClick={() => setV(v.filter((_, j) => j !== i))}
+                      style={{ border: 0, background: "none", color: R.mute, cursor: "pointer", fontSize: 16 }}>×</button>}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {Number(next) <= 99 && <tr><td style={tdStyle} colSpan={3}><Btn kind="ghost" onClick={() => setV([...v, { code: next, label: "" }])}>+ Add status</Btn></td></tr>}
           </tbody>
         </table>
       </div>

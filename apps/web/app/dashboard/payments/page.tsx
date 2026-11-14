@@ -6,7 +6,9 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { C } from "@/lib/colors";
-import { fetcher } from "@/lib/api";
+import { api, fetcher } from "@/lib/api";
+import { inkOn } from "@/lib/crm";
+import { useAuth } from "@/hooks/useAuth";
 import { inr } from "@/lib/money";
 import { istToday } from "@/lib/period";
 import { S } from "@/components/salary/kit";
@@ -16,8 +18,11 @@ import Tag from "@/components/ui/Tag";
 type Pay = {
   id: string; name: string; linked_to: string; email: string; phone: string; amount: number;
   paid_date: string; mode: string; rep: string; fee_type: string; receipt_url: string | null;
+  /** Status code 1, 2, 3… (named on CRM & Pay Settings); every payment starts on 1. */
+  status: string;
 };
-type Answer = { from: string; to: string; connected: boolean; payments: Pay[]; missing: { name: string; error: string }[] };
+type Codes = Record<string, { label: string; color?: string }>;
+type Answer = { from: string; to: string; connected: boolean; codes: Codes; payments: Pay[]; missing: { name: string; error: string }[] };
 
 const LINK_CLR: Record<string, [string, string]> = {
   student: [C.green, C.greenLight], request: [C.orange, C.orangeLight], incomplete: [C.muted, C.bgDeep],
@@ -40,19 +45,35 @@ export default function PaymentsPage() {
   const [mode, setMode] = useState("");
   const [rep, setRep] = useState("");
   const [fee, setFee] = useState("");
+  const [status, setStatus] = useState("");
+  const [saveErr, setSaveErr] = useState("");
+  const { role } = useAuth();
+  const canGrade = role !== "employee";
   const ok = !!from && !!to && from <= to;
   const { data, error, isLoading, isValidating, mutate } = useSWR<Answer>(ok ? `/payments?from=${from}&to=${to}` : null, fetcher, { keepPreviousData: true });
 
   const all = data?.payments ?? [];
   const needle = q.trim().toLowerCase();
   const rows = all.filter((p) =>
-    (!mode || p.mode === mode) && (!rep || p.rep === rep) && (!fee || p.fee_type === fee) &&
+    (!mode || p.mode === mode) && (!status || p.status === status) && (!rep || p.rep === rep) && (!fee || p.fee_type === fee) &&
     (!needle || [p.name, p.email, p.phone].some((v) => v.toLowerCase().includes(needle))));
   const total = rows.reduce((t, p) => t + p.amount, 0);
+  const codes = data?.codes ?? {};
+  const codeIds = Object.keys(codes).sort((a, b) => Number(a) - Number(b));
+  const codeText = (c: string) => `${c} · ${codes[c]?.label ?? `Code ${c}`}`;
+
+  async function grade(p: Pay, code: string) {
+    setSaveErr("");
+    // shown at once; put back if the server refuses
+    const swap = (to: string) => (d?: Answer) => d && { ...d, payments: d.payments.map((x) => (x.id === p.id ? { ...x, status: to } : x)) };
+    mutate(swap(code), { revalidate: false });
+    try { await api.patch(`/payments/${encodeURIComponent(p.id)}/status`, { code }); }
+    catch (e) { mutate(swap(p.status), { revalidate: false }); setSaveErr((e as Error).message); }
+  }
 
   function exportCsv() {
-    const head = ["Name", "Status", "Email", "Phone", "Amount", "Paid date", "Payment mode", "Representative", "Fee type", "Receipt"];
-    const lines = rows.map((p) => [p.name, p.linked_to, p.email, p.phone, p.amount, p.paid_date, p.mode, p.rep, p.fee_type, p.receipt_url ?? ""]);
+    const head = ["Name", "Status", "Student", "Email", "Phone", "Amount", "Paid date", "Payment mode", "Representative", "Fee type", "Receipt"];
+    const lines = rows.map((p) => [p.name, codeText(p.status), p.linked_to, p.email, p.phone, p.amount, p.paid_date, p.mode, p.rep, p.fee_type, p.receipt_url ?? ""]);
     const url = URL.createObjectURL(new Blob([[head, ...lines].map((l) => l.map(cell).join(",")).join("\n")], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url; a.download = `payments-${from}-to-${to}.csv`; a.click();
@@ -86,6 +107,10 @@ export default function PaymentsPage() {
         {select("All modes", mode, setMode, uniq(all.map((p) => p.mode)))}
         {select("All representatives", rep, setRep, uniq(all.map((p) => p.rep)))}
         {select("All fee types", fee, setFee, uniq(all.map((p) => p.fee_type)))}
+        <select aria-label="All statuses" value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...S.input, width: "auto", minWidth: 150, background: C.card }}>
+          <option value="">All statuses</option>
+          {codeIds.map((c) => <option key={c} value={c}>{codeText(c)}</option>)}
+        </select>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <input type="date" aria-label="From" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} style={{ ...S.input, width: 150, background: C.card }} />
           <span style={{ color: C.muted }}>–</span>
@@ -94,6 +119,7 @@ export default function PaymentsPage() {
       </div>
 
       {!ok && <p role="alert" style={{ margin: 0, color: C.red, fontSize: 14 }}>Pick a start date on or before the end date.</p>}
+      {saveErr && <p role="alert" style={{ margin: 0, color: C.red, fontSize: 14 }}>{saveErr}</p>}
       {error && <p role="alert" style={{ ...S.card, margin: 0, padding: 20, color: C.red }}>{(error as Error).message}</p>}
       {data && !data.connected && (
         <p role="status" style={{ ...S.card, margin: 0, padding: "14px 20px", fontSize: 14, color: C.textSub, borderColor: C.orangeBdr, background: C.orangeLight }}>
@@ -106,16 +132,16 @@ export default function PaymentsPage() {
 
       {isLoading && !data ? <p style={{ color: C.muted, fontSize: 14 }}>Loading payments from the school site…</p> : data && (
         <div style={{ ...S.card, overflowX: "auto" }}>
-          <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse", fontSize: 14 }}>
+          <table style={{ width: "100%", minWidth: 980, borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ background: C.bgDeep, borderBottom: `2px solid ${C.border}` }}>
-                {["Name", "Contact", "Amount", "Paid date", "Payment mode", "Representative", "Fee type", "Receipt"].map((h) => (
-                  <th key={h} style={{ ...S.th, padding: "14px 16px", textAlign: h === "Amount" ? "right" : "left" }}>{h}</th>))}
+                {["Name", "Status", "Contact", "Amount", "Paid date", "Payment mode", "Representative", "Fee type", "Receipt"].map((h) => (
+                  <th key={h} style={{ ...S.th, padding: "14px 12px", textAlign: h === "Amount" ? "right" : "left" }}>{h}</th>))}
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={8} style={{ padding: 28, color: C.muted }}>No payments match.</td></tr>
+                <tr><td colSpan={9} style={{ padding: 28, color: C.muted }}>No payments match.</td></tr>
               )}
               {rows.map((p) => {
                 const [lc, lbg] = LINK_CLR[p.linked_to] ?? [C.muted, C.bgDeep];
@@ -126,6 +152,8 @@ export default function PaymentsPage() {
                       <div style={{ fontWeight: 700, color: C.text }}>{p.name || "—"}</div>
                       {p.linked_to && <div style={{ fontSize: 12, fontWeight: 600, color: lc }}>{cap(p.linked_to)}</div>}
                     </td>
+                    <td style={td}><StatusCell code={p.status} codes={codes} codeIds={codeIds} label={codeText}
+                      onPick={canGrade ? (c) => grade(p, c) : undefined} /></td>
                     <td style={td}>
                       <Copyable text={p.email} />
                       <Copyable text={p.phone} mono />
@@ -151,19 +179,34 @@ export default function PaymentsPage() {
   );
 }
 
-const td = { padding: "12px 16px", verticalAlign: "middle", color: C.textSub } as const;
+const td = { padding: "12px 12px", verticalAlign: "middle", color: C.textSub } as const;
 
 function Copyable({ text, mono }: { text: string; mono?: boolean }) {
   const [done, setDone] = useState(false);
   if (!text) return null;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: mono ? "ui-monospace, monospace" : undefined, fontSize: mono ? 13 : 13.5 }}>
-      <span style={{ overflowWrap: "anywhere" }}>{text}</span>
+      <span style={mono ? { whiteSpace: "nowrap" } : { overflowWrap: "anywhere" }}>{text}</span>
       <button type="button" title={`Copy ${text}`} aria-label={`Copy ${text}`}
         onClick={() => navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1200); })}
         style={{ border: "none", background: "none", padding: 2, cursor: "pointer", color: done ? C.green : C.muted, display: "inline-flex" }}>
         <Icon name={done ? "check" : "copy"} size={13} />
       </button>
     </div>
+  );
+}
+
+/** The payment's status code as a coloured chip; Admins and the Super Admin pick another code from it. */
+function StatusCell({ code, codes, codeIds, label, onPick }: {
+  code: string; codes: Codes; codeIds: string[]; label: (c: string) => string; onPick?: (code: string) => void;
+}) {
+  const color = codes[code]?.color;
+  const chip = { background: color ?? C.bgDeep, color: color ? inkOn(color) : C.textSub, border: `1px solid ${color ?? C.border}`,
+    borderRadius: 8, fontSize: 13, fontWeight: 800, padding: "4px 8px" } as const;
+  if (!onPick) return <span title={codes[code]?.label} style={chip}>{code}</span>;
+  return (
+    <select aria-label="Payment status" title={codes[code]?.label} value={code} onChange={(e) => onPick(e.target.value)} style={{ ...chip, cursor: "pointer", maxWidth: 120 }}>
+      {codeIds.map((c) => <option key={c} value={c}>{label(c)}</option>)}
+    </select>
   );
 }

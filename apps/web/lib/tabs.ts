@@ -15,7 +15,7 @@ export type Tab = {
 
 const ALL: (Tab & { crm?: boolean })[] = [
   { key: "crm_leads",    label: "Leads",        section: "CRM",        icon: "☰", path: "/dashboard/crm", exact: true, crm: true },
-  { key: "crm_settings", label: "CRM Settings", section: "CRM",        icon: "⚙", path: "/dashboard/crm/settings", crm: true },
+  { key: "crm_settings", label: "CRM & Pay Settings", section: "CRM",        icon: "⚙", path: "/dashboard/crm/settings", crm: true },
   { key: "recordings",   label: "Recordings",   section: "Calls",      icon: "▷", path: "/dashboard/recordings" },
   // opens on the report itself; the email schedules are one click away (client, 12 Nov)
   { key: "reports",      label: "Reports",      section: "Analytics",  icon: "✉", path: "/dashboard/reports/view", match: "/dashboard/reports" },

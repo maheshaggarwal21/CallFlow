@@ -262,6 +262,11 @@ const VALUE_SCHEMAS: Record<string, ZodTypeAny> = {
   retry_rules: z.object({ invalid: z.object({ never: z.boolean() }), max_attempts: z.number().int().min(0).max(50) }), // 0 = never drop
   codes: z.record(z.string().regex(CODE_RE, "Code must be one capital letter"), codeSetting)
     .refine((v) => Object.keys(v).length >= 1, "At least one status"),
+  // the Payments tab's status codes 1, 2, 3… (client, 14 Nov 2026); 1 is every payment's starting code
+  pay_codes: z.record(z.string().regex(/^[1-9][0-9]?$/, "A payment status is a number from 1 to 99"), z.object({
+    label: z.string().trim().min(1).max(40),
+    color: z.string().regex(/^#[0-9a-f]{6}$/i, "Colour must look like #a1b2c3").optional(),
+  })).refine((v) => Object.keys(v).length >= 1, "At least one status"),
 };
 
 router.patch("/settings/values/:key", settingsAccess, async (req, res) => {
@@ -270,6 +275,8 @@ router.patch("/settings/values/:key", settingsAccess, async (req, res) => {
   let value = parse(schema, req.body);
   // Codes merge into what is stored: a code leads may carry is never removed, only set to "Not used"
   if (req.params.key === "codes") value = { ...(await getCodes()), ...value };
+  // the same for payment codes: one a payment may carry is never removed
+  if (req.params.key === "pay_codes") value = { ...(await getSetting("pay_codes", {})), ...value };
   const client = await pool.connect();
   try {
     await client.query("BEGIN");

@@ -143,6 +143,17 @@ if (!ps?.payments?.connected) {
   await call(owner, "PATCH", `/employees/${u.id}`, { permissions: [...me.permissions, "payments"] });
   const rp = await call(rep, "GET", "/payments?from=2026-11-02&to=2026-11-30");
   ok(rp.status === 200 && rp.data.payments.length === 105 && rp.data.missing.length === 0, "Payments tab: a User asks only for their own", JSON.stringify(rp.data?.missing));
+  // payment status codes 1, 2, 3…: every payment starts on 1; Admins and the Super Admin change them
+  await pool.query("DELETE FROM payment_status WHERE payment_id IN ('p1', 'p2', 'p3')");
+  ok(op.data.codes?.["1"] && op.data.payments.every((x) => x.status === "1"), "payment status: every payment starts on 1");
+  ok((await call(owner, "PATCH", "/crm/settings/values/pay_codes", { 1: { label: "New" }, 2: { label: "Checked", color: "#22aa55" } })).status === 200, "payment status: codes 1 and 2 named");
+  ok((await call(owner, "PATCH", "/crm/settings/values/pay_codes", { A: { label: "x" } })).status === 400, "payment status: a letter code is refused");
+  ok((await call(owner, "PATCH", "/payments/p3/status", { code: "2" })).status === 200, "payment status: Super Admin sets 2");
+  ok((await call(owner, "PATCH", "/payments/p3/status", { code: "77" })).status === 400, "payment status: a code not set up is refused");
+  ok((await call(rep, "PATCH", "/payments/p3/status", { code: "1" })).status === 403, "payment status: a User can't change it");
+  const gp = (await call(rep, "GET", "/payments?from=2026-11-03&to=2026-11-30")).data;
+  ok(gp?.payments.find((x) => x.id === "p3")?.status === "2" && gp.codes["2"]?.color === "#22aa55", "payment status: the new code and its colour come back");
+  await pool.query("DELETE FROM payment_status WHERE payment_id IN ('p1', 'p2', 'p3')");
   await call(owner, "PATCH", `/employees/${u.id}`, { permissions: me.permissions });
   mock.broken.delete(nehaId);
 

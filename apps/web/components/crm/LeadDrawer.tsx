@@ -541,7 +541,7 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
               <input type="time" value={time} disabled={dateOff} onChange={(e) => setTime(e.target.value)} aria-label="Next follow-up time"
                 style={{ ...inputStyle, opacity: dateOff ? 0.5 : 1 }} /></label>
           </div>
-          {kind === "retry" && !drops && <div style={{ fontSize: 12, color: R.mute, marginTop: -4 }}>Filled automatically from the follow-up rules in CRM Settings. Change it if needed.</div>}
+          {kind === "retry" && !drops && <div style={{ fontSize: 12, color: R.mute, marginTop: -4 }}>Filled automatically from the follow-up rules in CRM &amp; Pay Settings. Change it if needed.</div>}
           <label>
             <span style={{ ...labelStyle, display: "flex" }}>Notes / conversation summary{star(needsNote)}
               <span style={{ marginLeft: "auto", textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>{note.length} / {NOTE_MAX}</span></span>
