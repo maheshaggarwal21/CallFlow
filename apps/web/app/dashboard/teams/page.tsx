@@ -20,6 +20,9 @@ export default function TeamsPage() {
   const { data, error, mutate } = useSWR<TeamsResponse>("/teams", fetcher);
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState("");
+  // filters (client, 15 Nov 2026): find an agent by name, Reg No. or designation, or look at one team
+  const [search, setSearch] = useState("");
+  const [teamPick, setTeamPick] = useState(""); // "" = every team, "none" = agents not in a team, else a team id
 
   const run = async (p: Promise<unknown>) => {
     setErr("");
@@ -30,6 +33,15 @@ export default function TeamsPage() {
   if (error) return <p role="alert" style={{ color: C.red }}>{(error as Error).message}</p>;
   if (!data) return <p style={{ color: C.muted, fontSize: 14 }}>Loading…</p>;
   const { teams, unassigned } = data;
+  const q = search.trim().toLowerCase();
+  const matches = (a: TeamAgent) => !q || a.name.toLowerCase().includes(q) || String(a.employee_code).includes(q) || (a.designation ?? "").toLowerCase().includes(q);
+  // a team card keeps its real totals; only the list of agents under it is narrowed
+  const cards = teams
+    .filter((t) => teamPick === "" || teamPick === t.id)
+    .map((t) => ({ team: t, shown: t.members.filter(matches) }))
+    .filter((c) => !q || c.shown.length > 0 || teamPick === c.team.id);
+  const showUnassigned = (teamPick === "" || teamPick === "none") ? unassigned.filter(matches) : [];
+  const filtering = q !== "" || teamPick !== "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
@@ -46,6 +58,19 @@ export default function TeamsPage() {
 
       {teams.length > 1 && <Race teams={teams} />}
 
+      {(teams.length > 0 || unassigned.length > 0) && (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input type="search" aria-label="Search agents" placeholder="Search name, Reg No. or designation…" value={search} onChange={(e) => setSearch(e.target.value)}
+            style={{ ...input, width: 280 }} />
+          <select aria-label="Team" value={teamPick} onChange={(e) => setTeamPick(e.target.value)} style={{ ...input, width: "auto", minWidth: 190 }}>
+            <option value="">All teams</option>
+            {teams.map((t) => <option key={t.id} value={t.id}>{t.name}{t.location ? ` · ${t.location}` : ""}</option>)}
+            <option value="none">Not in a team</option>
+          </select>
+          {filtering && <button type="button" onClick={() => { setSearch(""); setTeamPick(""); }} style={S.btn}>Clear filters</button>}
+        </div>
+      )}
+
       {teams.length === 0 && !adding && (
         <div style={{ ...S.card, padding: "28px 24px", textAlign: "center", color: C.muted, fontSize: 14 }}>
           No teams yet. Press <b style={{ color: C.orange }}>+ New team</b> to add one for each office.
@@ -53,17 +78,21 @@ export default function TeamsPage() {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 18, alignItems: "start" }}>
-        {teams.map((t) => <TeamCard key={t.id} team={t} teams={teams} onMove={move} run={run} />)}
+        {cards.map((c) => <TeamCard key={c.team.id} team={c.team} shown={c.shown} teams={teams} onMove={move} run={run} />)}
       </div>
 
-      {unassigned.length > 0 && (
+      {filtering && cards.length === 0 && showUnassigned.length === 0 && (
+        <p style={{ ...S.card, margin: 0, padding: 24, fontSize: 14, color: C.muted, textAlign: "center" }}>{teamPick === "none" && !q ? "Everyone is in a team." : "No agents match."}</p>
+      )}
+
+      {showUnassigned.length > 0 && (
         <section style={{ ...S.card, border: `1px dashed ${C.border}`, boxShadow: "none", padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: C.text }}>Not in a team yet</h2>
-            <Tag label={String(unassigned.length)} color={C.textSub} bg={C.bgDeep} />
+            <Tag label={String(showUnassigned.length)} color={C.textSub} bg={C.bgDeep} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: "0 24px" }}>
-            {unassigned.map((a) => <AgentRow key={a.id} agent={a} teams={teams} onMove={move} placeholder="Add to team…" />)}
+            {showUnassigned.map((a) => <AgentRow key={a.id} agent={a} teams={teams} onMove={move} placeholder="Add to team…" />)}
           </div>
         </section>
       )}
@@ -100,8 +129,8 @@ function Race({ teams }: { teams: Team[] }) {
   );
 }
 
-function TeamCard({ team, teams, onMove, run }: {
-  team: Team; teams: Team[]; onMove: (a: TeamAgent, teamId: string) => void; run: (p: Promise<unknown>) => Promise<boolean>;
+function TeamCard({ team, shown, teams, onMove, run }: {
+  team: Team; shown: TeamAgent[]; teams: Team[]; onMove: (a: TeamAgent, teamId: string) => void; run: (p: Promise<unknown>) => Promise<boolean>;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "delete">("view");
   const clr = eClr(team.color_index);
@@ -149,10 +178,10 @@ function TeamCard({ team, teams, onMove, run }: {
       </div>
 
       <div style={{ padding: "0 20px 12px" }}>
-        {team.members.length === 0
+        {shown.length === 0
           ? <p style={{ margin: "4px 0 10px", padding: "16px", textAlign: "center", border: `1px dashed ${C.border}`, borderRadius: 10, color: C.muted, fontSize: 13.5 }}>
-              No agents yet. Move someone here with the dropdown next to their name.</p>
-          : team.members.map((a) => (
+              {team.members.length === 0 ? "No agents yet. Move someone here with the dropdown next to their name." : "No agents here match."}</p>
+          : shown.map((a) => (
               <AgentRow key={a.id} agent={a} teams={teams} onMove={onMove} placeholder="Move to…" />
             ))}
       </div>
