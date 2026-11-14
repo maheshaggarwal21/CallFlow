@@ -154,7 +154,11 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
   // intercom not on any line yet is put on the picked line when the form is saved.
   const lineNo = (id: string) => (lines ?? []).find((l) => l.id === id)?.line_number;
   const intercom = (intercoms ?? []).find((i) => i.id === f.intercom_id);
-  const pickLine = (id: string) => set({ line_id: id, intercom_id: (intercoms ?? []).find((i) => i.line_number && i.line_number === lineNo(id))?.id ?? "" });
+  const pickLine = (id: string) => {
+    const onIt = (intercoms ?? []).find((i) => i.line_number && i.line_number === lineNo(id));
+    // a line with no intercom yet keeps an unattached intercom picked first (it goes on this line when saved)
+    set({ line_id: id, intercom_id: onIt?.id ?? (intercom && !intercom.line_number ? intercom.id : "") });
+  };
   const pickIntercom = (id: string) => {
     const ic = (intercoms ?? []).find((i) => i.id === id);
     const onLine = ic?.line_number ? (lines ?? []).find((l) => l.line_number === ic.line_number)?.id : undefined;
