@@ -127,6 +127,23 @@ if (!ps?.payments?.connected) {
   ok(!JSON.stringify(ps.payments).includes("9000000000"), "student phone numbers are not passed to the browser");
   const oct = (await call(rep, "GET", "/employees/me/summary?date_from=2026-10-01&date_to=2026-10-31")).data;
   ok(oct.payments.list.length === 0 && oct.income.total === 0, "another month shows no November payments");
+  // Payments tab: read only, everyone's for the Super Admin, own only for a User
+  const P = "/payments?from=2026-11-01&to=2026-11-30";
+  ok((await call(rep, "GET", P)).status === 403, "Payments tab: not ticked → refused");
+  const op = await call(owner, "GET", P);
+  ok(op.status === 200 && op.data.payments.length === 105 && op.data.payments[0].paid_date === "2026-11-20", "Payments tab: every payment, newest first", `${op.status} ${op.data?.payments?.length}`);
+  ok(op.data?.payments.find((x) => x.id === "p2")?.receipt_url === null && op.data.payments[0].phone === "9000000000", "Payments tab: phone shown, javascript: receipt dropped");
+  ok((await call(owner, "GET", "/payments?from=2026-11-30&to=2026-11-01")).status === 400, "Payments tab: start after end → 400");
+  ok((await call(owner, "GET", "/payments?from=2025-01-01&to=2026-11-30")).status === 400, "Payments tab: more than a year → 400");
+  mock.broken.add(nehaId);
+  // another period, so the 2-minute cache doesn't answer from the good read above
+  ok((await call(owner, "GET", "/payments?from=2026-11-02&to=2026-11-30")).data?.missing?.some((m) => /unexpected shape/.test(m.error)), "Payments tab: a rep whose payments fail is named, the rest still load");
+  await call(owner, "PATCH", `/employees/${u.id}`, { permissions: [...me.permissions, "payments"] });
+  const rp = await call(rep, "GET", "/payments?from=2026-11-02&to=2026-11-30");
+  ok(rp.status === 200 && rp.data.payments.length === 105 && rp.data.missing.length === 0, "Payments tab: a User asks only for their own", JSON.stringify(rp.data?.missing));
+  await call(owner, "PATCH", `/employees/${u.id}`, { permissions: me.permissions });
+  mock.broken.delete(nehaId);
+
   mock.broken.add((await call(owner, "GET", "/auth/me")).data.id);
   const ob = await call(owner, "GET", `/employees/me/summary?${nov}`);
   ok(ob.status === 200 && ob.data.payments.connected === false && /unexpected shape/.test(ob.data.payments.error), "a broken payments answer shows an error, the page still loads", JSON.stringify(ob.data?.payments));

@@ -2,7 +2,8 @@
  * The school site's payments, per rep (client, 13 Nov 2026):
  *   GET {PAYMENTS_API_URL}/api/v1/partner/payments?callFlowId&startDate&endDate&page&limit   (x-api-key)
  * `callFlowId` is our employees.id. The key stays on this server: it is never logged or sent to the browser.
- * Only the fields CallFlow shows are kept (no student email or phone). Every answer is checked with zod, so a changed or broken response fails loudly instead of paying wrong.
+ * Only the fields CallFlow shows are kept. Student email and phone are for the Payments tab only: other routes
+ * map payments field by field, so they never pass them on. Every answer is checked with zod, so a changed or broken response fails loudly instead of paying wrong.
  */
 import { z } from "zod";
 
@@ -22,6 +23,9 @@ const paymentSchema = z.object({
   paymentMode: z.string().max(60).nullish().transform((v) => v ?? ""),
   feeType: z.string().max(60).nullish().transform((v) => v ?? ""),
   linkedTo: z.string().max(40).nullish().transform((v) => v ?? ""),
+  email: z.string().max(200).nullish().transform((v) => v ?? ""),
+  phone: z.string().max(40).nullish().transform((v) => v ?? ""),
+  representativeName: z.string().max(200).nullish().transform((v) => v ?? ""),
   // only an https link is passed on, so a bad value can never become a javascript: link in the browser
   receiptUrl: z.string().max(2000).nullish().transform((v) => (v && /^https:\/\//i.test(v) ? v : null)),
 });

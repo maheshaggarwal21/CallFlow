@@ -13,6 +13,7 @@ import linesRoutes from "./routes/lines.routes";
 import systemRoutes from "./routes/system.routes";
 import audioRoutes from "./routes/audio.routes";
 import studentsRoutes from "./routes/students.routes";
+import paymentsRoutes from "./routes/payments.routes";
 import reportsRoutes from "./routes/reports.routes";
 import teamsRoutes from "./routes/teams.routes";
 import devRoutes from "./routes/dev.routes";
@@ -82,6 +83,7 @@ app.use("/api/v1/intercoms", intercomsRoutes);
 app.use("/api/v1/lines", linesRoutes);
 app.use("/api/v1/system", systemRoutes);
 app.use("/api/v1/students", studentsRoutes);
+app.use("/api/v1/payments", paymentsRoutes);
 app.use("/api/v1/reports", reportsRoutes);
 app.use("/api/v1/teams", teamsRoutes);
 

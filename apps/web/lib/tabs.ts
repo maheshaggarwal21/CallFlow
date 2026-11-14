@@ -23,7 +23,7 @@ const ALL: (Tab & { crm?: boolean })[] = [
   { key: "intercoms",    label: "Intercoms",    section: "Management", icon: "☎", path: "/dashboard/intercoms" },
   { key: "users",        label: "Users",        section: "Management", icon: "◯", path: "/dashboard/users" },
   { key: "teams",        label: "Teams",        section: "Management", icon: "◐", path: "/dashboard/teams" },
-  { key: "payments",     label: "Payments",     section: "Salary",     icon: "◈", path: "/dashboard/students" },
+  { key: "payments",     label: "Payments",     section: "Salary",     icon: "◈", path: "/dashboard/payments" },
 ];
 export const TABS: Tab[] = ALL.filter((t) => !t.crm || CRM_ENABLED);
 

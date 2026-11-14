@@ -12,7 +12,7 @@ const PAGE_LABELS: Record<string, string> = {
   users:      "Users",
   teams:      "Teams",
   me:         "My Dashboard",
-  students:   "Payments",
+  payments:   "Payments",
   salary:     "Salary",
   "crm/":         "Leads",
   "crm/settings": "CRM Settings",
