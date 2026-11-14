@@ -3,7 +3,6 @@ import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requirePermission } from "../middleware/requirePermission";
-import { istDateKey } from "../lib/dateRange";
 import { getSetting } from "../services/crm.service";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "../services/payments.service";
 
@@ -21,12 +20,11 @@ type PayCodes = Record<string, { label: string; color?: string }>;
 const payCodes = async (): Promise<PayCodes> => ({ "1": { label: "Code 1" }, ...(await getSetting<PayCodes>("pay_codes", {})) });
 
 router.get("/", async (req, res) => {
-  const today = istDateKey(new Date());
-  const from = typeof req.query.from === "string" ? req.query.from : `${today.slice(0, 8)}01`;
-  const to = typeof req.query.to === "string" ? req.query.to : today;
-  if (!DAY.test(from) || !DAY.test(to) || from > to) return bad(res, 400, "Pick a start date on or before the end date");
-  // the school site gives at most 2,000 payments per rep per query; a year keeps well inside that
-  if (Date.parse(to) - Date.parse(from) > 366 * 86_400_000) return bad(res, 400, "Pick a period of one year or less");
+  // no dates = every payment so far (client, 14 Nov 2026); either date narrows it
+  const from = typeof req.query.from === "string" ? req.query.from : "";
+  const to = typeof req.query.to === "string" ? req.query.to : "";
+  if ((from && !DAY.test(from)) || (to && !DAY.test(to))) return bad(res, 400, "Dates must be YYYY-MM-DD");
+  if (from && to && from > to) return bad(res, 400, "Pick a start date on or before the end date");
 
   const me = req.user!;
   const { rows: people } = await pool.query<{ id: string; name: string }>(

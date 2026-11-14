@@ -136,7 +136,10 @@ if (!ps?.payments?.connected) {
   ok(op.status === 200 && op.data.payments.length === 105 && op.data.payments[0].paid_date === "2026-11-20", "Payments tab: every payment, newest first", `${op.status} ${op.data?.payments?.length}`);
   ok(op.data?.payments.find((x) => x.id === "p2")?.receipt_url === null && op.data.payments[0].phone === "9000000000", "Payments tab: phone shown, javascript: receipt dropped");
   ok((await call(owner, "GET", "/payments?from=2026-11-30&to=2026-11-01")).status === 400, "Payments tab: start after end → 400");
-  ok((await call(owner, "GET", "/payments?from=2025-01-01&to=2026-11-30")).status === 400, "Payments tab: more than a year → 400");
+  const all = await call(owner, "GET", "/payments");
+  ok(all.status === 200 && all.data.payments.length === 105 && all.data.from === "" && all.data.to === "", "Payments tab: no dates → every payment so far", `${all.status} ${all.data?.payments?.length}`);
+  ok((await call(owner, "GET", "/payments?from=2026-11-10")).data?.payments?.length === 103, "Payments tab: only a start date → from that day on");
+  ok((await call(owner, "GET", "/payments?from=11-10-2026")).status === 400, "Payments tab: a bad date → 400");
   mock.broken.add(nehaId);
   // another period, so the 2-minute cache doesn't answer from the good read above
   ok((await call(owner, "GET", "/payments?from=2026-11-02&to=2026-11-30")).data?.missing?.some((m) => /unexpected shape/.test(m.error)), "Payments tab: a rep whose payments fail is named, the rest still load");

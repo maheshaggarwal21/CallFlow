@@ -41,9 +41,9 @@ const cell = (v: string | number) => {
 };
 
 export default function PaymentsPage() {
-  const today = istToday();
-  const [from, setFrom] = useState(`${today.slice(0, 8)}01`);
-  const [to, setTo] = useState(today);
+  // opens on every payment so far (client, 14 Nov 2026); From / To narrow it when needed
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [q, setQ] = useState("");
   const [mode, setMode] = useState("");
   const [rep, setRep] = useState("");
@@ -52,8 +52,9 @@ export default function PaymentsPage() {
   const [saveErr, setSaveErr] = useState("");
   const { role } = useAuth();
   const canGrade = role !== "employee";
-  const ok = !!from && !!to && from <= to;
-  const { data, error, isLoading, isValidating, mutate } = useSWR<Answer>(ok ? `/payments?from=${from}&to=${to}` : null, fetcher, { keepPreviousData: true });
+  const ok = !from || !to || from <= to;
+  const qs = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
+  const { data, error, isLoading, isValidating, mutate } = useSWR<Answer>(ok ? `/payments${qs ? `?${qs}` : ""}` : null, fetcher, { keepPreviousData: true });
 
   const all = data?.payments ?? [];
   const needle = q.trim().toLowerCase();
@@ -86,7 +87,7 @@ export default function PaymentsPage() {
     const lines = rows.map((p) => [p.name, codeText(p.status), p.linked_to, p.email, p.phone, p.amount, p.paid_date, p.mode, p.rep, p.fee_type, p.receipt_url ?? ""]);
     const url = URL.createObjectURL(new Blob([[head, ...lines].map((l) => l.map(cell).join(",")).join("\n")], { type: "text/csv" }));
     const a = document.createElement("a");
-    a.href = url; a.download = `payments-${from}-to-${to}.csv`; a.click();
+    a.href = url; a.download = `payments-${from || "start"}-to-${to || istToday()}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -125,6 +126,7 @@ export default function PaymentsPage() {
           <input type="date" aria-label="From" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} style={{ ...S.input, width: 150, background: C.card }} />
           <span style={{ color: C.muted }}>–</span>
           <input type="date" aria-label="To" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} style={{ ...S.input, width: 150, background: C.card }} />
+          {(from || to) && <button type="button" onClick={() => { setFrom(""); setTo(""); }} style={S.btn}>Clear dates</button>}
         </span>
       </div>
 
@@ -190,7 +192,7 @@ export default function PaymentsPage() {
         </div>
       )}
       <p style={{ margin: 0, fontSize: 12.5, color: C.muted }}>
-        Showing the dates picked at the top; change From to see older payments. Read from the school site. To add, change or delete a payment, use the school site. A receipt link works for a limited time; press Refresh if it has expired.</p>
+        Every payment so far; pick From / To to narrow it. Read from the school site. To add, change or delete a payment, use the school site. A receipt link works for a limited time; press Refresh if it has expired.</p>
     </div>
   );
 }

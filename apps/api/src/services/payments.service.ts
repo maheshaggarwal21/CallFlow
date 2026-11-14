@@ -40,7 +40,10 @@ export type Payment = z.infer<typeof paymentSchema>;
 export class PaymentsError extends Error {}
 
 async function page(callFlowId: string, startDate: string, endDate: string, n: number) {
-  const q = new URLSearchParams({ callFlowId, startDate, endDate, page: String(n), limit: String(PAGE) });
+  const q = new URLSearchParams({ callFlowId, page: String(n), limit: String(PAGE) });
+  // an empty date = no limit on that side (the Payments tab opens on everything so far)
+  if (startDate) q.set("startDate", startDate);
+  if (endDate) q.set("endDate", endDate);
   let res: Response;
   try {
     res = await fetch(`${base()}/api/v1/partner/payments?${q}`, {
@@ -73,12 +76,13 @@ async function page(callFlowId: string, startDate: string, endDate: string, n: n
 
 const cache = new Map<string, { at: number; list: Payment[] }>();
 
-/** Every payment by one rep from `startDate` to `endDate` (IST dates, both included), newest first. */
+/** Every payment by one rep from `startDate` to `endDate` (IST dates, both included; "" = no limit), newest first. */
 export async function paymentsFor(callFlowId: string, startDate: string, endDate: string): Promise<Payment[]> {
   if (!paymentsConfigured()) throw new PaymentsError("Payments are not connected yet (PAYMENTS_API_URL / PAYMENTS_API_KEY)");
   // the key must not travel in clear text to a live server
   if (process.env.NODE_ENV === "production" && !base().startsWith("https://")) throw new PaymentsError("PAYMENTS_API_URL must be https in production");
-  if (!z.string().uuid().safeParse(callFlowId).success || !DAY.test(startDate) || !DAY.test(endDate) || startDate > endDate) {
+  const okDay = (d: string) => d === "" || DAY.test(d);
+  if (!z.string().uuid().safeParse(callFlowId).success || !okDay(startDate) || !okDay(endDate) || (startDate && endDate && startDate > endDate)) {
     throw new PaymentsError("Bad payments query");
   }
   const key = `${callFlowId}|${startDate}|${endDate}`;
