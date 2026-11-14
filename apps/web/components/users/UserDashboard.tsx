@@ -175,7 +175,7 @@ export default function UserDashboard({ id }: { id?: string }) {
           <Panel title="Today's targets" sub="Set by the school · resets every day">
             <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: 22, alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-                <Donut size={150} center={s.target_call_secs ? `${Math.min(100, Math.round((s.today.call_secs / s.target_call_secs) * 100))}%` : "—"} sub="of calling time"
+                <Donut size={150} center={s.target_call_secs ? `${Math.min(100, Math.round((s.today.call_secs / s.target_call_secs) * 100))}%` : "—"} sub="of calling time" fmt={hm}
                   slices={[{ label: "Done", value: s.today.call_secs, color: R.out }, { label: "Left", value: s.target_call_secs ? left : 0, color: "#efe4d3" }]} />
                 <div style={{ display: "grid", gap: 10, fontSize: 13.5 }}>
                   <div style={capLabel}>Calling duration</div>

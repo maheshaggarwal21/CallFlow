@@ -122,7 +122,11 @@ export function Funnel({ f }: { f: number[] }) {
 }
 
 /** Donut with hover: the hovered slice's label and count replace the centre figure. */
-export function Donut({ slices, size = 170, center, sub }: { slices: { label: string; value: number; color: string }[]; size?: number; center: number | string; sub: string }) {
+export function Donut({ slices, size = 170, center, sub, fmt = String }: {
+  slices: { label: string; value: number; color: string }[]; size?: number; center: number | string; sub: string;
+  /** How a hovered slice's value is written (a time in seconds reads as "5h 55m", not 21352). */
+  fmt?: (v: number) => string;
+}) {
   const [hi, setHi] = useState<number | null>(null);
   const total = slices.reduce((a, s) => a + s.value, 0) || 1, c = 2 * Math.PI * 40;
   let off = 0;
@@ -138,7 +142,7 @@ export function Donut({ slices, size = 170, center, sub }: { slices: { label: st
         off += len;
         return el;
       })}
-      <text x="50" y="50" textAnchor="middle" fontSize={hi === null ? 17 : 14} fontWeight="800" fill={R.ink}>{hi === null ? center : slices[hi].value}</text>
+      <text x="50" y="50" textAnchor="middle" fontSize={hi === null ? 17 : 14} fontWeight="800" fill={R.ink}>{hi === null ? center : fmt(slices[hi].value)}</text>
       <text x="50" y="62" textAnchor="middle" fontSize="8" fill={R.mute}>{hi === null ? sub : `${slices[hi].label} · ${pct(slices[hi].value / total)}`}</text>
     </svg>
   );

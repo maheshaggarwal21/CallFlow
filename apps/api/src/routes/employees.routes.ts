@@ -130,8 +130,9 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
        LEFT JOIN intercoms i ON i.line_number = l.line_number
        WHERE e.id = $1`, [id]),
     pool.query(
+      // every call, short ones too: the same total as the Talk time card, so the two never disagree (client, 14 Nov 2026)
       `SELECT COALESCE(SUM(duration_secs), 0)::int AS secs FROM calls
-       WHERE employee_id = $1 AND is_misc = FALSE AND called_at >= ${IST_TODAY_START} AND called_at < ${IST_TODAY_START} + INTERVAL '1 day'`, [id]),
+       WHERE employee_id = $1 AND called_at >= ${IST_TODAY_START} AND called_at < ${IST_TODAY_START} + INTERVAL '1 day'`, [id]),
   ]);
   const u = me.rows[0];
   if (!u) return bad(res, 404, "Not found");
