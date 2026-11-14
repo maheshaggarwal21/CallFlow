@@ -1,7 +1,7 @@
 // Run: npm run build && node --test dist/lib/payroll.test.js
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { commissionOn, feeCommission, monthBounds, monthPayout, type PayPlan } from "./payroll";
+import { commissionOn, feeCommission, monthBounds, monthPayout, proRated, type PayPlan } from "./payroll";
 
 const plan: PayPlan = {
   fix_salary: 20000, other_amount: 1000,
@@ -66,4 +66,16 @@ test("a single fee's commission keeps paise, so the fees table adds up to the to
   assert.equal(feeCommission(plan, { amountPaise: 50_000, feeType: "Trial" }), 100);
   const rows = fees.map((p) => feeCommission(plan, p)).reduce((t, x) => t + x, 0);
   assert.equal(Math.round(rows), commissionOn(plan, fees).commission);
+});
+
+test("someone who left mid-month gets salary for the days worked; % deduction on that salary", () => {
+  const p: PayPlan = { ...plan, extra_deductions: [{ name: "Late", type: "pct", amount: 10, from: "2026-11-01", to: "2026-11-30" }] };
+  const half = proRated(p, 15, 30);
+  assert.equal(half.fix_salary, 10000);
+  assert.equal(half.other_amount, 500);
+  const r = monthPayout(half, fees, "2026-11-01", "2026-11-30");
+  // 10000 + 500 + 1500 commission − 10 % of 10000
+  assert.equal(r.total, 11000);
+  assert.equal(proRated(p, 30, 30).fix_salary, 20000);
+  assert.equal(proRated(p, 0, 30).fix_salary, 0);
 });

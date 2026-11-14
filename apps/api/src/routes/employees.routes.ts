@@ -6,7 +6,7 @@ import { requireAuth } from "../middleware/auth";
 import { requirePermission } from "../middleware/requirePermission";
 import { requireOwner } from "../middleware/requireOwner";
 import { resolveRange, IST_TODAY_START, istDateKey } from "../lib/dateRange";
-import { commissionOn, feeCommission, isTrial, monthBounds, monthPayout, type PayPlan } from "../lib/payroll";
+import { commissionOn, feeCommission, isTrial, monthBounds, monthPayout, proRated, type PayPlan } from "../lib/payroll";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "../services/payments.service";
 
 // The Users tab (client, 12 Nov 2026): one account per person with rank, tabs, salary rule, line and targets.
@@ -166,28 +166,35 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
   });
 });
 
-// Employee Tracker: every active User's and Admin's pay for one month, from the school's payments (Super Admin only)
+// Employee Tracker: every active User's and Admin's pay for one month, from the school's payments (Super Admin only).
+// Someone switched off during that month is listed too (client, 14 Nov 2026): salary for the days worked,
+// payments up to the day they left. Before that month they show as usual; after it, not at all.
 router.get("/payroll", requireOwner, async (req, res) => {
   const month = typeof req.query.month === "string" ? req.query.month : istDateKey(new Date()).slice(0, 7);
   const b = monthBounds(month);
   if (!b) return bad(res, 400, "month must be YYYY-MM");
   const { rows } = await pool.query(
-    `SELECT e.id, e.name, e.employee_code, e.color_index, ${PLAN_COLS}
-     FROM employees e WHERE e.role <> 'owner' AND e.status = 'active' ORDER BY e.name`);
+    `SELECT e.id, e.name, e.employee_code, e.color_index, ${PLAN_COLS},
+            CASE WHEN e.status = 'inactive' THEN to_char(e.left_on, 'YYYY-MM-DD') END AS left_on
+     FROM employees e WHERE e.role <> 'owner' AND (e.status = 'active' OR e.left_on >= $1::date) ORDER BY e.name`, [b.from]);
   const connected = paymentsConfigured();
   // a few reps at a time, so a large team doesn't flood the school's server
   const out: unknown[] = [];
   for (let i = 0; i < rows.length; i += 4) {
     out.push(...await Promise.all(rows.slice(i, i + 4).map(async (e) => {
+      // left during this month: paid up to and including the day they left
+      const last: string = e.left_on && e.left_on < b.to ? e.left_on : b.to;
+      const monthDays = Number(b.to.slice(8)), days = Number(last.slice(8));
       let list: Payment[] = [], error: string | null = null;
       if (connected) {
-        try { list = await paymentsFor(e.id, b.from, b.to); } catch (err) {
+        try { list = await paymentsFor(e.id, b.from, last); } catch (err) {
           if (!(err instanceof PaymentsError)) throw err;
           error = err.message;
         }
       }
       const { extra_commissions: _x, extra_deductions: _d, ...who } = e;
-      return { ...who, error, ...monthPayout(e, list, b.from, b.to) };
+      const plan = last < b.to ? proRated(e, days, monthDays) : e;
+      return { ...who, left_on: e.left_on && e.left_on <= b.to ? e.left_on : null, days_paid: days, month_days: monthDays, error, ...monthPayout(plan, list, b.from, last) };
     })));
   }
   return res.json({ month, from: b.from, to: b.to, connected, people: out });
@@ -231,6 +238,11 @@ async function saveUser(id: string | null, d: z.infer<typeof patchSchema>): Prom
       const r = await client.query(
         `UPDATE employees SET ${cols.map((c, i) => `${c} = $${i + 1}`).join(", ")} WHERE id = $${cols.length + 1} RETURNING id`, [...values, id]);
       if (!r.rows.length) { await client.query("ROLLBACK"); return null; }
+    }
+    // the day someone is switched off, for the Employee Tracker; kept on later saves, cleared when switched back on
+    if (d.status !== undefined) {
+      await client.query(
+        `UPDATE employees SET left_on = CASE WHEN status = 'inactive' THEN COALESCE(left_on, (NOW() AT TIME ZONE 'Asia/Kolkata')::date) END WHERE id = $1`, [id]);
     }
     // a Reg No. typed by hand must not collide with the next automatic one
     if (d.employee_code !== undefined) await client.query("SELECT setval('employees_employee_code_seq', (SELECT MAX(employee_code) FROM employees))");

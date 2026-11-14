@@ -193,6 +193,22 @@ await call(owner, "PATCH", `/employees/${u.id}`, { role: "admin" });
 await call(owner, "PATCH", `/employees/${u.id}`, { status: "inactive" });
 ok((await login(base.email, base.password)).status === 401, "inactive user can't sign in");
 ok((await call(adm, "GET", "/auth/me")).status === 401, "inactive user's open session stops working");
+// Employee Tracker keeps someone switched off this month: greyed, salary for the days worked; not the month after
+{
+  const today = (await pool.query("SELECT to_char((NOW() AT TIME ZONE 'Asia/Kolkata')::date, 'YYYY-MM-DD') AS d")).rows[0].d;
+  const [y, m] = today.split("-").map(Number);
+  const ym = (yy, mm) => `${yy + Math.floor((mm - 1) / 12)}-${String(((mm - 1) % 12 + 12) % 12 + 1).padStart(2, "0")}`;
+  const row = async (month) => (await call(owner, "GET", `/employees/payroll?month=${month}`)).data?.people?.find((x) => x.id === u.id);
+  const now = await row(today.slice(0, 7));
+  const days = Number(today.slice(8)), monthDays = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  ok(now?.left_on === today && now.days_paid === days && now.base === Math.round(12000 * days / monthDays), "tracker: switched off today → listed this month, salary for the days worked", JSON.stringify(now && { left_on: now.left_on, days_paid: now.days_paid, base: now.base }));
+  ok(!(await row(ym(y, m + 1))), "tracker: not listed the month after leaving");
+  const before = await row(ym(y, m - 1));
+  ok(before && before.left_on === null && before.base === 12000, "tracker: the month before leaving shows as usual");
+  await call(owner, "PATCH", `/employees/${u.id}`, { status: "active" });
+  ok((await pool.query("SELECT left_on FROM employees WHERE id = $1", [u.id])).rows[0].left_on === null, "switching back on clears the leaving day");
+  await call(owner, "PATCH", `/employees/${u.id}`, { status: "inactive" });
+}
 
 // ── removed / other endpoints ──
 ok((await call(owner, "GET", "/analytics/overview")).status === 404, "Dashboard API removed");

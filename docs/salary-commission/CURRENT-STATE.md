@@ -42,6 +42,10 @@ The sample ledger (`lib/salarySample.ts`, invented students) was **deleted** on 
   salary), never below ₹0. Each extra or deduction is paid **once, in the month its start date falls
   in**; the form fills the start date with the day it is added (client, 14 Nov 2026: "applied the day
   it is added", and ranges are almost always inside one month).
+- Someone switched off during a month (`employees.left_on`, set on switch-off, cleared on switch-on;
+  migration 022 back-filled earlier leavers with their last call day) is listed on the Employee Tracker
+  for that month only: greyed at the bottom, fix salary and other amount pro-rated to the days worked
+  (`proRated`, client chose this 14 Nov 2026), commission on payments up to the day they left.
 - My Dashboard's Earnings card shows the commission for the picked period, plus the monthly salary
   and the extras/deductions active today as separate lines.
 

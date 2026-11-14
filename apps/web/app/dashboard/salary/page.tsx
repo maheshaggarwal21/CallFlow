@@ -19,6 +19,8 @@ import Tag from "@/components/ui/Tag";
 type Bucket = { count: number; fees: number; commission: number };
 type Row = {
   id: string; name: string; employee_code: number; color_index: number; error: string | null;
+  /** Set when they were switched off during this month: listed greyed, salary for `days_paid` of `month_days`. */
+  left_on: string | null; days_paid: number; month_days: number;
   trial: Bucket; regular: Bucket; commission: number; base: number; other: number;
   extras: { name: string; amount: number }[]; deductions: { name: string; amount: number }[]; total: number;
 };
@@ -37,14 +39,15 @@ function lastMonths(): string[] {
 }
 const monthName = (ym: string) => new Date(`${ym}-01T00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 const sumOf = (xs: { amount: number }[]) => xs.reduce((t, x) => t + x.amount, 0);
+const dayMonth = (d: string) => new Date(`${d}T00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
 function Tracker() {
   const months = lastMonths();
   const [month, setMonth] = useState(months[0]);
   const { data, error, isLoading } = useSWR<Payroll>(`/employees/payroll?month=${month}`, fetcher, { keepPreviousData: true });
 
-  // best total first, so the table reads as a ranking
-  const rows = [...(data?.people ?? [])].sort((a, b) => b.total - a.total);
+  // best total first, so the table reads as a ranking; people who left this month go to the bottom
+  const rows = [...(data?.people ?? [])].sort((a, b) => Number(!!a.left_on) - Number(!!b.left_on) || b.total - a.total);
   const sum = (f: (r: Row) => number) => rows.reduce((t, r) => t + f(r), 0);
   const commission = sum((r) => r.commission);
   const top = rows.find((r) => r.commission > 0);
@@ -94,13 +97,14 @@ function Tracker() {
               </div>
               {rows.map((r, i) => (
                 <div key={r.id} style={{ display: "grid", gridTemplateColumns: COLS, alignItems: "center", gap: 12, padding: "16px 24px",
-                  borderBottom: i === rows.length - 1 ? "none" : `1px solid ${C.borderLight}` }}>
+                  borderBottom: i === rows.length - 1 ? "none" : `1px solid ${C.borderLight}`, opacity: r.left_on ? 0.55 : 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
                     <Avatar name={r.name} colorIndex={r.color_index} />
                     <div style={{ minWidth: 0 }}>
                       <p style={{ margin: "0 0 2px", fontSize: 15.5, fontWeight: 700, color: C.text, overflowWrap: "anywhere" }}>{r.name}</p>
                       <p style={{ margin: 0, fontSize: 13, color: r.error ? C.red : C.muted, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         {r.error ? "Payments didn't load" : `Reg No. ${r.employee_code}`}
+                        {r.left_on && <Tag label={`Left ${dayMonth(r.left_on)}`} color={C.muted} bg={C.bgDeep} style={{ fontSize: 11 }} />}
                         {top?.id === r.id && <Tag label="Top earner" color={C.orange} bg={C.orangeLight} style={{ fontSize: 11 }} />}
                       </p>
                     </div>
@@ -111,7 +115,8 @@ function Tracker() {
                     {r.extras.length ? `+${inr(sumOf(r.extras))}` : "—"}</span>
                   <span title={r.deductions.map((x) => `${x.name} −${inr(x.amount)}`).join("\n")} style={{ fontSize: 14.5, fontWeight: 600, color: r.deductions.length ? C.red : C.muted }}>
                     {r.deductions.length ? `−${inr(sumOf(r.deductions))}` : "—"}</span>
-                  <span style={{ fontSize: 14.5, color: C.textSub }}>{inr(r.base)}{r.other > 0 && <span style={{ fontSize: 12, color: C.muted }}> + {inr(r.other)}</span>}</span>
+                  <span style={{ fontSize: 14.5, color: C.textSub }}>{inr(r.base)}{r.other > 0 && <span style={{ fontSize: 12, color: C.muted }}> + {inr(r.other)}</span>}
+                    {r.left_on && r.days_paid < r.month_days && <span style={{ display: "block", fontSize: 12, color: C.muted }}>for {r.days_paid} of {r.month_days} days</span>}</span>
                   <span style={{ fontSize: 17, fontWeight: 700, color: C.text }}>{inr(r.total)}</span>
                   <div style={{ textAlign: "right" }}><EyeButton id={r.id} name={r.name} /></div>
                 </div>
@@ -119,7 +124,7 @@ function Tracker() {
             </div>
           </div>
           <p style={{ margin: 0, fontSize: 12.5, color: C.muted }}>
-            Trial and Regular: number of fees collected and the commission on them. An extra or deduction is paid once, in the month it starts; hover to see each one.</p>
+            Trial and Regular: number of fees collected and the commission on them. An extra or deduction is paid once, in the month it starts; hover to see each one. Someone switched off this month is greyed at the bottom: salary for the days they worked, and commission on the fees up to the day they left.</p>
         </>
       )}
     </div>

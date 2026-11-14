@@ -64,6 +64,15 @@ export function monthPayout(plan: PayPlan, payments: PaidFee[], from: string, to
   return { ...c, base: plan.fix_salary, other: plan.other_amount, extras, deductions, total: Math.max(0, gross - minus) };
 }
 
+/**
+ * The plan for someone who left during the month (client, 14 Nov 2026): fix salary and other amount for
+ * the days worked, `days` of `monthDays` (option A, pro-rated). A % deduction is then a % of that salary.
+ */
+export function proRated(plan: PayPlan, days: number, monthDays: number): PayPlan {
+  const part = Math.min(Math.max(days, 0), monthDays) / monthDays;
+  return { ...plan, fix_salary: Math.round(plan.fix_salary * part), other_amount: Math.round(plan.other_amount * part) };
+}
+
 /** First and last IST date of a `YYYY-MM` month, or null if it isn't one. */
 export function monthBounds(month: string): { from: string; to: string } | null {
   const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
