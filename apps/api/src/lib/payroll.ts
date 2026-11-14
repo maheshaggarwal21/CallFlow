@@ -1,9 +1,12 @@
 /**
  * A rep's pay from the school's payments (client, 13 Nov 2026). Pure: no DB, no network.
  *
- * Rules (confirm with the client, see docs/salary-commission/CURRENT-STATE.md):
- * - feeType "Trial" earns the trial rate; every other fee type earns the regular rate, so a rep keeps
- *   earning on each later monthly fee they collect (recurring commission).
+ * Rules (see docs/salary-commission/CURRENT-STATE.md):
+ * - Commission goes to the rep the payment is filed under, and a renewal earns the same rate as the first
+ *   regular fee (client, 14 Nov 2026), so each later monthly fee earns the regular rate again.
+ * - feeType "Trial" earns the trial rate; every other fee type earns the regular rate. Still open with the
+ *   client: whether "Other" (or a registration / late fee) should earn at all. The school's data has no
+ *   student id, so a first fee can't be told from a renewal; a rule that needs that needs the field first.
  * - Rate type "pct" = % of the amount paid; "fix" = ₹ per payment.
  * - Fix salary and other amount are monthly. An extra commission or a deduction is paid once, in the
  *   month its start date falls in (the form fills that with the day it is added); a % deduction is a % of
