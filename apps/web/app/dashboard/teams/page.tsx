@@ -3,11 +3,15 @@
 // Teams (client, 13 Nov 2026): the owner runs offices in two or more places. One card per team with
 // its agents and today's numbers, a "Today's race" bar comparing the offices, and the agents not in
 // a team yet. Agents move between teams with a dropdown (the client prefers dropdowns to dragging).
+// The day / date / month picker (client, 15 Nov 2026) sets the period the call numbers cover; it opens on Today.
 import { useState, type CSSProperties } from "react";
 import useSWR from "swr";
 import { C, eClr } from "@/lib/colors";
 import { api, fetcher } from "@/lib/api";
 import { Avatar, S } from "@/components/salary/kit";
+import PeriodSelect from "@/components/ui/PeriodSelect";
+import { usePeriodRange } from "@/hooks/usePeriodRange";
+import { periodPhrase, type Period } from "@/lib/period";
 import Tag from "@/components/ui/Tag";
 import type { Team, TeamAgent, TeamsResponse } from "@callflow/shared-types";
 
@@ -17,12 +21,11 @@ const input: CSSProperties = { ...S.input, background: C.card, fontSize: 14 };
 const smallBtn = (color: string): CSSProperties => ({ border: "none", background: "none", color, fontSize: 13, fontWeight: 700, cursor: "pointer", padding: "4px 6px" });
 
 export default function TeamsPage() {
-  const { data, error, mutate } = useSWR<TeamsResponse>("/teams", fetcher);
+  const { period, params, selectProps } = usePeriodRange("today");
+  // "All time" has no dates in the picker; ask from the start
+  const { data, error, mutate } = useSWR<TeamsResponse>(`/teams?${period === "all" ? "date_from=2000-01-01" : params}`, fetcher, { keepPreviousData: true });
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState("");
-  // filters (client, 15 Nov 2026): find an agent by name, Reg No. or designation, or look at one team
-  const [search, setSearch] = useState("");
-  const [teamPick, setTeamPick] = useState(""); // "" = every team, "none" = agents not in a team, else a team id
 
   const run = async (p: Promise<unknown>) => {
     setErr("");
@@ -33,15 +36,6 @@ export default function TeamsPage() {
   if (error) return <p role="alert" style={{ color: C.red }}>{(error as Error).message}</p>;
   if (!data) return <p style={{ color: C.muted, fontSize: 14 }}>Loading…</p>;
   const { teams, unassigned } = data;
-  const q = search.trim().toLowerCase();
-  const matches = (a: TeamAgent) => !q || a.name.toLowerCase().includes(q) || String(a.employee_code).includes(q) || (a.designation ?? "").toLowerCase().includes(q);
-  // a team card keeps its real totals; only the list of agents under it is narrowed
-  const cards = teams
-    .filter((t) => teamPick === "" || teamPick === t.id)
-    .map((t) => ({ team: t, shown: t.members.filter(matches) }))
-    .filter((c) => !q || c.shown.length > 0 || teamPick === c.team.id);
-  const showUnassigned = (teamPick === "" || teamPick === "none") ? unassigned.filter(matches) : [];
-  const filtering = q !== "" || teamPick !== "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
@@ -50,26 +44,16 @@ export default function TeamsPage() {
           <h1 style={S.h1}>Teams</h1>
           <p style={S.sub}>Your offices and the agents in each</p>
         </div>
-        {!adding && <button onClick={() => setAdding(true)} style={S.btnPrimary}><span style={{ fontSize: 17, lineHeight: 1 }}>+</span> New team</button>}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <PeriodSelect {...selectProps} />
+          {!adding && <button onClick={() => setAdding(true)} style={S.btnPrimary}><span style={{ fontSize: 17, lineHeight: 1 }}>+</span> New team</button>}
+        </div>
       </div>
       {err && <p role="alert" style={{ margin: 0, color: C.red, fontSize: 14 }}>{err}</p>}
 
       {adding && <TeamForm onCancel={() => setAdding(false)} onSave={async (v) => { if (await run(api.post("/teams", v))) setAdding(false); }} />}
 
-      {teams.length > 1 && <Race teams={teams} />}
-
-      {(teams.length > 0 || unassigned.length > 0) && (
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <input type="search" aria-label="Search agents" placeholder="Search name, Reg No. or designation…" value={search} onChange={(e) => setSearch(e.target.value)}
-            style={{ ...input, width: 280 }} />
-          <select aria-label="Team" value={teamPick} onChange={(e) => setTeamPick(e.target.value)} style={{ ...input, width: "auto", minWidth: 190 }}>
-            <option value="">All teams</option>
-            {teams.map((t) => <option key={t.id} value={t.id}>{t.name}{t.location ? ` · ${t.location}` : ""}</option>)}
-            <option value="none">Not in a team</option>
-          </select>
-          {filtering && <button type="button" onClick={() => { setSearch(""); setTeamPick(""); }} style={S.btn}>Clear filters</button>}
-        </div>
-      )}
+      {teams.length > 1 && <Race teams={teams} period={period} />}
 
       {teams.length === 0 && !adding && (
         <div style={{ ...S.card, padding: "28px 24px", textAlign: "center", color: C.muted, fontSize: 14 }}>
@@ -78,21 +62,17 @@ export default function TeamsPage() {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 18, alignItems: "start" }}>
-        {cards.map((c) => <TeamCard key={c.team.id} team={c.team} shown={c.shown} teams={teams} onMove={move} run={run} />)}
+        {teams.map((t) => <TeamCard key={t.id} team={t} teams={teams} onMove={move} run={run} />)}
       </div>
 
-      {filtering && cards.length === 0 && showUnassigned.length === 0 && (
-        <p style={{ ...S.card, margin: 0, padding: 24, fontSize: 14, color: C.muted, textAlign: "center" }}>{teamPick === "none" && !q ? "Everyone is in a team." : "No agents match."}</p>
-      )}
-
-      {showUnassigned.length > 0 && (
+      {unassigned.length > 0 && (
         <section style={{ ...S.card, border: `1px dashed ${C.border}`, boxShadow: "none", padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: C.text }}>Not in a team yet</h2>
-            <Tag label={String(showUnassigned.length)} color={C.textSub} bg={C.bgDeep} />
+            <Tag label={String(unassigned.length)} color={C.textSub} bg={C.bgDeep} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: "0 24px" }}>
-            {showUnassigned.map((a) => <AgentRow key={a.id} agent={a} teams={teams} onMove={move} placeholder="Add to team…" />)}
+            {unassigned.map((a) => <AgentRow key={a.id} agent={a} teams={teams} onMove={move} placeholder="Add to team…" />)}
           </div>
         </section>
       )}
@@ -101,14 +81,14 @@ export default function TeamsPage() {
 }
 
 /** Each office's share of today's calls, side by side. */
-function Race({ teams }: { teams: Team[] }) {
+function Race({ teams, period }: { teams: Team[]; period: Period }) {
   const calls = teams.map((t) => sum(t.members, (m) => m.calls_today));
   const total = calls.reduce((a, b) => a + b, 0);
   return (
     <section style={{ ...S.card, padding: "16px 20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
-        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: C.text }}>Today&apos;s race</h2>
-        <span style={{ fontSize: 13, color: C.muted }}>{total ? `${total} calls today across ${teams.length} offices` : "No calls yet today"}</span>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: C.text }}>{period === "today" ? "Today's race" : "Race"}</h2>
+        <span style={{ fontSize: 13, color: C.muted }}>{total ? `${total} calls ${periodPhrase(period)} across ${teams.length} offices` : `No calls ${periodPhrase(period)}`}</span>
       </div>
       <div style={{ display: "flex", height: 34, borderRadius: 10, overflow: "hidden", background: C.bgDeep }}>
         {total > 0 && teams.map((t, i) => calls[i] > 0 && (
@@ -129,8 +109,8 @@ function Race({ teams }: { teams: Team[] }) {
   );
 }
 
-function TeamCard({ team, shown, teams, onMove, run }: {
-  team: Team; shown: TeamAgent[]; teams: Team[]; onMove: (a: TeamAgent, teamId: string) => void; run: (p: Promise<unknown>) => Promise<boolean>;
+function TeamCard({ team, teams, onMove, run }: {
+  team: Team; teams: Team[]; onMove: (a: TeamAgent, teamId: string) => void; run: (p: Promise<unknown>) => Promise<boolean>;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "delete">("view");
   const clr = eClr(team.color_index);
@@ -168,7 +148,7 @@ function TeamCard({ team, shown, teams, onMove, run }: {
 
         {/* today's numbers for the office */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10, margin: "14px 0 10px" }}>
-          {[["Agents", String(team.members.length)], ["Calls today", String(calls)], ["Talk time", hm(talk)]].map(([label, value]) => (
+          {[["Agents", String(team.members.length)], ["Calls", String(calls)], ["Talk time", hm(talk)]].map(([label, value]) => (
             <div key={label} style={{ background: clr.bg, borderRadius: 10, padding: "9px 12px" }}>
               <div style={{ ...S.label, fontSize: 10.5, color: clr.t }}>{label}</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: C.text, marginTop: 2 }}>{value}</div>
@@ -178,10 +158,10 @@ function TeamCard({ team, shown, teams, onMove, run }: {
       </div>
 
       <div style={{ padding: "0 20px 12px" }}>
-        {shown.length === 0
+        {team.members.length === 0
           ? <p style={{ margin: "4px 0 10px", padding: "16px", textAlign: "center", border: `1px dashed ${C.border}`, borderRadius: 10, color: C.muted, fontSize: 13.5 }}>
-              {team.members.length === 0 ? "No agents yet. Move someone here with the dropdown next to their name." : "No agents here match."}</p>
-          : shown.map((a) => (
+              No agents yet. Move someone here with the dropdown next to their name.</p>
+          : team.members.map((a) => (
               <AgentRow key={a.id} agent={a} teams={teams} onMove={onMove} placeholder="Move to…" />
             ))}
       </div>
@@ -201,7 +181,7 @@ function AgentRow({ agent, teams, onMove, placeholder }: {
         </div>
         <div style={{ fontSize: 12.5, color: C.muted }}>{agent.designation || "Agent"} · Reg No. {agent.employee_code}</div>
       </div>
-      <span title="Calls today" style={{ fontSize: 13, fontWeight: 700, color: agent.calls_today ? C.text : C.dim, whiteSpace: "nowrap" }}>{agent.calls_today} calls</span>
+      <span title="Calls in the period picked" style={{ fontSize: 13, fontWeight: 700, color: agent.calls_today ? C.text : C.dim, whiteSpace: "nowrap" }}>{agent.calls_today} calls</span>
       <select aria-label={`Team for ${agent.name}`} value="" onChange={(e) => e.target.value && onMove(agent, e.target.value === "none" ? "" : e.target.value)}
         style={{ ...input, width: 128, padding: "6px 8px", fontSize: 12.5 }}>
         <option value="">{placeholder}</option>

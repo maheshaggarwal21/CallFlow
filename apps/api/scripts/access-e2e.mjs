@@ -192,6 +192,16 @@ const adm = (await login(base.email, base.password)).token;
 ok((await call(adm, "GET", "/employees/payroll")).status === 403, "payroll: an Admin is refused (Super Admin only)");
 // the Users form lists and creates teams for a Users-tab holder; changing or deleting stays on the Teams tab
 ok((await call(adm, "GET", "/teams")).status === 200, "Users tab alone can list teams (the form's team picker)");
+{ // Teams: the numbers cover the period asked for; none given = today
+  const tot = (r) => [...r.data.teams.flatMap((t) => t.members), ...r.data.unassigned].reduce((n, x) => n + x.calls_today, 0);
+  const dayAgo = (n) => pool.query("SELECT to_char((NOW() AT TIME ZONE 'Asia/Kolkata')::date - $1::int, 'YYYY-MM-DD') AS d", [n]).then((r) => r.rows[0].d);
+  const [today, old] = [await dayAgo(0), await dayAgo(4000)];
+  const dflt = await call(owner, "GET", "/teams"), todayR = await call(owner, "GET", `/teams?date_from=${today}&date_to=${today}`);
+  ok(dflt.status === 200 && tot(dflt) === tot(todayR), "teams: no dates = today", `${tot(dflt)} vs ${tot(todayR)}`);
+  const everything = await call(owner, "GET", "/teams?date_from=2000-01-01");
+  const longAgo = await call(owner, "GET", `/teams?date_from=${old}&date_to=${old}`);
+  ok(tot(everything) >= tot(todayR) && tot(longAgo) === 0, "teams: a wider period counts at least today's calls; a day long ago has none", `${tot(everything)} / ${tot(longAgo)}`);
+}
 const mk = await call(adm, "POST", "/teams", { name: `E2E Team ${stamp}`, location: "Sector 17, Chandigarh" });
 ok(mk.status === 201 && mk.data?.location === "Sector 17, Chandigarh", "Users tab alone can create a team (name + office address)", `${mk.status} ${mk.msg}`);
 ok((await call(adm, "DELETE", `/teams/${mk.data?.id}`)).status === 403, "…but can't delete it without the Teams tab");

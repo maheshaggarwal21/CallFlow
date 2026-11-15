@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requirePermission } from "../middleware/requirePermission";
-import { IST_TODAY_START } from "../lib/dateRange";
+import { istDateKey, resolveRange } from "../lib/dateRange";
 
 // Teams tab (client, 13 Nov 2026): offices in two or more places, each with its own agents.
 const router = Router();
@@ -19,8 +19,17 @@ const teamSchema = z.object({
 });
 const uuid = z.string().uuid();
 
-/** Every team with its agents and their calls today, plus the agents in no team. The Super Admin is not an agent. */
-router.get("/", teamsOrUsers, async (_req, res) => {
+/**
+ * Every team with its agents and their calls in the period asked for (`date_from` / `date_to`, IST days; today when
+ * neither is given, client 15 Nov 2026), plus the agents in no team. The Super Admin is not an agent.
+ * The fields keep their old names (`calls_today`, `talk_secs_today`) but hold the period's totals; every call
+ * counts, short ones too, the same as the Talk time card on My Dashboard.
+ */
+router.get("/", teamsOrUsers, async (req, res) => {
+  const today = istDateKey(new Date());
+  const q = (k: string) => (typeof req.query[k] === "string" && req.query[k] ? (req.query[k] as string) : null);
+  const both = !q("date_from") && !q("date_to");
+  const { start, end } = resolveRange(both ? today : q("date_from"), both ? today : q("date_to"));
   const [teams, agents] = await Promise.all([
     pool.query("SELECT id, name, location, color_index FROM teams ORDER BY created_at"),
     pool.query(
@@ -28,10 +37,10 @@ router.get("/", teamsOrUsers, async (_req, res) => {
               COALESCE(c.calls, 0)::int AS calls_today, COALESCE(c.secs, 0)::int AS talk_secs_today
        FROM employees e
        LEFT JOIN (SELECT employee_id, COUNT(*) AS calls, SUM(duration_secs) AS secs FROM calls
-                  WHERE is_misc = FALSE AND called_at >= ${IST_TODAY_START} AND called_at < ${IST_TODAY_START} + INTERVAL '1 day'
+                  WHERE called_at >= $1 AND called_at < $2
                   GROUP BY employee_id) c ON c.employee_id = e.id
        WHERE e.status = 'active' AND e.role <> 'owner'
-       ORDER BY e.name`),
+       ORDER BY e.name`, [start, end]),
   ]);
   return res.json({
     teams: teams.rows.map((t) => ({ ...t, members: agents.rows.filter((a) => a.team_id === t.id) })),
