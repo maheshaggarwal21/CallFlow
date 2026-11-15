@@ -25,7 +25,11 @@ export type DaysData = {
 };
 
 const WD = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const hm = (s: number) => `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+// exact to the second, the same as the targets box on the dashboard
+const hm = (s: number) => {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return h ? `${h}h ${String(m).padStart(2, "0")}m ${String(sec).padStart(2, "0")}s` : m ? `${m}m ${String(sec).padStart(2, "0")}s` : `${sec}s`;
+};
 const STEP: Record<number, string> = { 0: "0", 2: "½", 3: "¾", 4: "full" };
 const pct = (num: number, den: number) => `${Math.round((num / den) * 1000) / 10}%`;
 

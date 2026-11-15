@@ -6,7 +6,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import Link from "next/link";
 import DaysView from "@/components/salary/DaysView";
 import { HOME } from "@/lib/tabs";
 import { C } from "@/lib/colors";
@@ -71,7 +70,6 @@ function Tracker() {
             {daily ? ` · daily pay${soFar ? ", earned up to today" : ""}` : ""}</p>
         </div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
-        <Link href="/dashboard/working-days" style={{ ...S.btn, padding: "10px 16px", textDecoration: "none" }}>📅 Working Days</Link>
         <label style={{ display: "grid", gap: 4 }}>
           <span style={S.label}>Month</span>
           <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ ...S.input, width: 200, background: C.card, fontSize: 14 }}>

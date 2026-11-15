@@ -31,8 +31,10 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
 ### Targets
 - Three daily targets per rep: **calling time**, **trial joining**, **regular joining**, each with a round
   **tick beside the target box** on the Users form (✓ = counts for daily salary).
-- **Calling time** = the talk time of **all** the rep's calls that day (short ones too), the same number as the
-  Talk time card.
+- **Calling time** = the sum of the **recording lengths** of **all** the rep's calls that day (short ones too), the same
+  number as the Talk time card. The length is read from the recording file when it arrives (rounded to the second),
+  so an unanswered call counts its ringing time (the PBX records from the moment it dials). Shown to the second;
+  the % shown is rounded DOWN, so it reads 100 % only when the target is really met.
 - **Trial joining** = payments with fee type Trial filed under the rep that day (by the school's paid date).
 - **Regular joining** = every other payment that day: **new regular students and renewals**.
 - A ticked target set to **0** is treated as not ticked.
@@ -85,6 +87,14 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
 | Employee Tracker | Super Admin | Per rep: salary earned so far ("₹5,280 · 11 of 25 days"), commission, extras, deductions, **total earned so far** |
 | Days view (tracker → Days) | Super Admin | The month day by day: calling / trials / regular against target, share, ₹; **Count as full** / Undo |
 | My Dashboard → Pay card + My days | The rep (and the Super Admin through the eye) | The same totals and the same day-by-day list, read-only |
+
+## 5b. The rep's dashboard (client, 15 Nov 2026)
+
+Top to bottom: **Earned so far** this month (salary, commission, extras, deductions) with **Today** (live) and
+**Yesterday** (final) cards → **targets** (today live, or a closed day with its saved targets, marked final) → calls,
+talk time, real conversations, invalid numbers → **conversions** (trial and regular joinings with the fees) →
+busiest hours and the call funnel side by side → the **Days** list. Profile and salary plan sit behind **Details ▾**.
+A switched-off rep shows a grey **Inactive** badge. Every amount comes from `monthPay`.
 
 ## 6. Still open
 

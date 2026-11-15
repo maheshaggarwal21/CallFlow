@@ -22,6 +22,8 @@ const call = async (token, method, path, body) => {
 };
 
 const owner = (await login("owner@crm-demo.local")).token;
+// start from daily pay Off, whatever an earlier interrupted run left behind (the daily-pay block switches it on itself)
+await call(owner, "PUT", "/pay/settings", { weekdays: [1, 2, 3, 4, 5, 6], daily_pay_from: null });
 const neha = (await login("neha@crm-demo.local")).token;
 ok(!!owner && !!neha, "demo logins work");
 
@@ -437,6 +439,13 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok(sig(mine?.pay) === expect, "the rep's own dashboard = the same numbers", sig(mine?.pay));
   ok(sig(myDays) === expect && myDays.days.length === 30, "the rep's own Days list = the same numbers", sig(myDays));
   ok(mine?.today?.call_secs === kind("2026-11-21").done.call_secs && mine.today.call_secs === 3600, "today's targets box and today's row agree (1 h)", `${mine?.today?.call_secs}`);
+  // the redesigned dashboard: earnings at the top and the targets box come from the same calculation
+  ok(mine?.status === "active" && mine.today.final === false && mine.today.targets.call_secs === 3600 && mine.today.targets.tick_call === true, "dashboard: status, today's live targets and ticks", JSON.stringify(mine && { s: mine.status, f: mine.today.final, t: mine.today.targets }));
+  ok(mine?.today?.pay?.salary === kind("2026-11-21").paise / 100 && mine.today.pay.num === kind("2026-11-21").num && mine.today.pay.den === kind("2026-11-21").den, "dashboard: today's share and salary = the Days row", JSON.stringify(mine?.today?.pay));
+  ok(mine?.earnings?.today?.salary === 333.33 && mine.earnings.today.commission === 0 && mine.earnings.today.fees === 0, "dashboard: Today card = ₹333.33 salary, no fees", JSON.stringify(mine?.earnings?.today));
+  ok(mine?.earnings?.yesterday?.date === "2026-11-20" && mine.earnings.yesterday.salary === 333.33 && mine.earnings.yesterday.commission === 102 && mine.earnings.yesterday.fees === 102, "dashboard: Yesterday card = ₹333.33 salary + ₹102 commission on 102 fees", JSON.stringify(mine?.earnings?.yesterday));
+  const d9 = (await get(repTok, `/employees/me/summary?date_from=2026-11-09&date_to=2026-11-09&${AS}`)).data?.today;
+  ok(d9?.final === true && d9.targets.call_secs === 7200 && d9.targets.tick_trial === false && d9.pay?.salary === 500, "dashboard: a closed day shows its SAVED targets (2 h, only calling) and is final", JSON.stringify(d9 && { f: d9.final, t: d9.targets, p: d9.pay?.salary }));
   ok((await get(repTok, `/pay/days?employee_id=${nehaId}&month=2026-11&${AS}`)).status === 403, "a rep can't open someone else's days");
   ok((await get(repTok, "/pay/settings")).status === 403, "a rep can't open the Working days panel");
   await call(owner, "PATCH", `/employees/${rid}`, { permissions: ["recordings", "working_days"] });
@@ -453,6 +462,7 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok(left.base === (33333 + 50000 + 25000 + 16667 + 100000 + 33333 + 50000 + 50000) / 100 && left.days.find((x) => x.day === "2026-11-12").kind === "away", "switched off on 10 Nov: paid up to and including 10 Nov only", `${left.base}`);
   const leftRow = (await get(owner, `/employees/payroll?month=2026-11&${AS}`)).data.people.find((x) => x.id === rid);
   ok(leftRow?.base === left.base && leftRow.left_on === "2026-11-10", "…and the tracker shows the same for the leaver");
+  ok((await get(owner, `/employees/${rid}/summary?date_from=2026-11-21&date_to=2026-11-21&${AS}`)).data?.status === "inactive", "dashboard: a switched-off rep shows Inactive");
   await pool.query("UPDATE employees SET status = 'active', left_on = NULL WHERE id = $1", [rid]);
 
   // closing days saves the targets: closing up to 22 Nov leaves the money unchanged; a later target change only moves today
@@ -466,7 +476,8 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
 
   // count as full can be undone
   await call(owner, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-06", full: false });
-  ok((await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data.days.find((x) => x.day === "2026-11-06").paise === 0, "count as full undone: 6 Nov back to ₹0");
+  const undo = await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`);
+  ok(undo.data?.days?.find((x) => x.day === "2026-11-06")?.paise === 0, "count as full undone: 6 Nov back to ₹0", `${undo.status} ${undo.msg}`);
 
   // clean up: the rep (with her calls, saved days and overrides), the test holiday, the days closed here, the settings
   await pool.query("DELETE FROM calls WHERE source_file_key LIKE $1", [`e2e/${stamp}/dp-%`]);

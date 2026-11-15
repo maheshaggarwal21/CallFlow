@@ -9,7 +9,7 @@ import { open as unsealPassword, seal as sealPassword, vaultConfigured } from ".
 import { resolveRange, istDateKey } from "../lib/dateRange";
 import { commissionOn, feeCommission, isTrial, monthBounds, monthPayout, proRated, type PayPlan } from "../lib/payroll";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "../services/payments.service";
-import { monthPay, PAY_COLS, requestToday, type PayEmployee } from "../services/pay.service";
+import { addDays, monthPay, PAY_COLS, requestToday, type PayEmployee } from "../services/pay.service";
 
 // The Users tab (client, 12 Nov 2026): one account per person with rank, tabs, salary rule, line and targets.
 const router = Router();
@@ -135,10 +135,11 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
   // the targets box shows the day picked (Today, Yesterday or one custom day); a longer period shows today
   // (client, 15 Nov 2026: after midnight "Today's targets" read 0 while the cards showed yesterday)
   const targetDay = istDateKey(start) === lastDay ? lastDay : today;
-  const [me, talk, payRow] = await Promise.all([
+  const [me, talk, payRow, saved] = await Promise.all([
     pool.query(
-      `SELECT e.name, e.phone, e.email, e.employee_code, e.designation, e.role, e.color_index, ${PLAN_COLS},
-              e.target_call_secs, e.target_trial, e.target_regular, l.line_number, i.intercom_code, i.phone_number AS calling_number
+      `SELECT e.name, e.phone, e.email, e.employee_code, e.designation, e.role, e.status, e.color_index, ${PLAN_COLS},
+              e.target_call_secs, e.target_trial, e.target_regular, e.tick_call, e.tick_trial, e.tick_regular,
+              l.line_number, i.intercom_code, i.phone_number AS calling_number
        FROM employees e
        LEFT JOIN LATERAL (SELECT line_number FROM lines WHERE employee_id = e.id ORDER BY line_number LIMIT 1) l ON TRUE
        LEFT JOIN intercoms i ON i.line_number = l.line_number
@@ -149,6 +150,10 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
        WHERE employee_id = $1 AND called_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Kolkata')
          AND called_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`, [id, targetDay]),
     pool.query(`SELECT ${PAY_COLS} FROM employees e WHERE e.id = $1`, [id]),
+    // a day that has closed keeps the targets it had (client, 15 Nov 2026): "keep the finished day's targets fixed"
+    pool.query(
+      `SELECT target_call_secs, target_trial, target_regular, tick_call, tick_trial, tick_regular FROM day_targets
+       WHERE employee_id = $1 AND day = $2::date AND $2::date < $3::date`, [id, targetDay, today]),
   ]);
   const u = me.rows[0];
   if (!u) return bad(res, 404, "Not found");
@@ -171,10 +176,30 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
   // the pay shown is for the month the picked period ends in, from the same calculation as the Employee Tracker
   // and the Days view (services/pay.service.ts), so the three can never disagree
   const [p] = await monthPay([payRow.rows[0] as PayEmployee], lastDay.slice(0, 7), today);
-  const { payments: _pl, days: _pd, ...payOut } = p;
+  const { payments: monthPayments, days: payDays, ...payOut } = p;
+  // one day's earning, from the same calculation: its salary (daily pay) and the commission on that day's fees
+  const earning = (d: string) => {
+    if (d < p.from || d > p.to || d > today) return null;
+    const row = payDays?.find((x) => x.day === d) ?? null;
+    const c = commissionOn(u, monthPayments.filter((x) => x.paidDate === d));
+    return { date: d, salary: p.mode === "daily" ? (row?.paise ?? 0) / 100 : null, kind: row?.kind ?? null,
+      commission: c.commission, fees: c.trial.count + c.regular.count };
+  };
+  const dayRow = payDays?.find((x) => x.day === targetDay) ?? null;
+  const t0 = saved.rows[0] ?? u;
   return res.json({
     ...u,
-    today: { date: targetDay, is_today: targetDay === today, call_secs: talk.rows[0].secs, trial: t.trial.count, regular: t.regular.count },
+    today: {
+      date: targetDay, is_today: targetDay === today, final: targetDay < today, call_secs: talk.rows[0].secs, trial: t.trial.count, regular: t.regular.count,
+      // the day's targets: saved ones for a closed day, the current ones for today
+      targets: { call_secs: t0.target_call_secs, trial: t0.target_trial, regular: t0.target_regular,
+        tick_call: !!t0.tick_call, tick_trial: !!t0.tick_trial, tick_regular: !!t0.tick_regular },
+      // daily pay: that day's share and salary, exactly as the Days view and the Employee Tracker count it
+      pay: dayRow && (dayRow.kind === "working" || dayRow.kind === "away")
+        ? { kind: dayRow.kind, num: dayRow.num, den: dayRow.den, salary: dayRow.paise / 100, count_as_full: dayRow.countAsFull, parts: dayRow.parts }
+        : null,
+    },
+    earnings: { today: earning(today), yesterday: earning(addDays(today, -1)) },
     income: { joinings: c.trial.count + c.regular.count, trial: c.trial.commission, regular: c.regular.commission, total: c.commission,
       trial_count: c.trial.count, regular_count: c.regular.count, fees: c.trial.fees + c.regular.fees },
     payments: { connected: paymentsConfigured() && !error, error, list: list.map(paymentRow(u)) },

@@ -70,7 +70,8 @@ app.use(cookieParser());
 app.use(
   rateLimit({
     windowMs: 60 * 1000,
-    max: 200,
+    // 200 a minute per address in production; a local test run may raise it (API_RATE_MAX), never in production
+    max: process.env.NODE_ENV !== "production" && Number(process.env.API_RATE_MAX) > 0 ? Number(process.env.API_RATE_MAX) : 200,
     standardHeaders: true,
     legacyHeaders: false,
   })
