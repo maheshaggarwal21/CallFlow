@@ -365,8 +365,6 @@ export default function UserDashboard({ id }: { id?: string }) {
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "baseline", fontSize: 14, marginBottom: 12 }}>
           <span>Trial joined <b style={{ fontSize: 18 }}>{s.income.trial_count}</b> <span style={{ color: R.mute }}>· {inr(s.income.trial)} commission</span></span>
           <span>Regular joined <b style={{ fontSize: 18 }}>{s.income.regular_count}</b> <span style={{ color: R.mute }}>· {inr(s.income.regular)} commission</span></span>
-          {/* trial + regular together: what the students paid (client asked what "Fees" was, 15 Nov 2026) */}
-          <span style={{ marginLeft: "auto", paddingLeft: 14, borderLeft: `1px solid ${R.line}` }}>Total fees paid by students <b style={{ fontSize: 18 }}>{inr(s.income.fees)}</b></span>
         </div>
         {s.payments.error ? <p role="alert" style={{ margin: 0, color: R.bad, fontSize: 13.5 }}>Couldn&apos;t load payments: {s.payments.error}</p>
           : !s.payments.connected ? <p style={{ margin: 0, color: R.mute, fontSize: 13.5 }}>Payments from the school site are not connected yet.</p>
