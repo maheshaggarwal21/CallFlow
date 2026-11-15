@@ -137,7 +137,7 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
   const targetDay = istDateKey(start) === lastDay ? lastDay : today;
   const [me, talk, payRow, saved] = await Promise.all([
     pool.query(
-      `SELECT e.name, e.phone, e.email, e.employee_code, e.designation, e.role, e.status, e.color_index, ${PLAN_COLS},
+      `SELECT e.name, e.phone, e.email, e.employee_code, e.designation, e.role, e.status, to_char(e.left_on, 'YYYY-MM-DD') AS left_on, e.color_index, ${PLAN_COLS},
               e.target_call_secs, e.target_trial, e.target_regular, e.tick_call, e.tick_trial, e.tick_regular,
               l.line_number, i.intercom_code, i.phone_number AS calling_number
        FROM employees e

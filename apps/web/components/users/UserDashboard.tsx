@@ -7,13 +7,14 @@
 import DaysView from "@/components/salary/DaysView";
 import Link from "next/link";
 import useSWR from "swr";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { fetcher } from "@/lib/api";
 import { usePeriodRange } from "@/hooks/usePeriodRange";
 import PeriodSelect from "@/components/ui/PeriodSelect";
 import { Funnel, HourLine, Panel, R, dur, initials } from "@/components/report/kit";
 import { deductionValue, extraText, isActive } from "@/components/users/ExtraCommissions";
 import { inr } from "@/lib/money";
+import { istToday } from "@/lib/period";
 import type { ExtraCommission, ExtraDeduction, ReportData } from "@callflow/shared-types";
 
 type PaymentRow = {
@@ -29,6 +30,8 @@ type Summary = {
   line_number: string | null; intercom_code: string | null; calling_number: string | null;
   target_call_secs: number; target_trial: number; target_regular: number;
   status: "active" | "inactive";
+  /** The day a switched-off rep left ("YYYY-MM-DD"); null while active. */
+  left_on: string | null;
   /** The day the targets box shows: the day picked, or today for a longer period. Its targets are the saved ones once the day has closed. */
   today: {
     date: string; is_today: boolean; final: boolean; call_secs: number; trial: number; regular: number;
@@ -53,7 +56,7 @@ const CSS = `
   .me{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;align-items:start}
   .me-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
   .me-2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}
-  .me-earn{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr);gap:12px}
+  .me-earn{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:12px}
   @media (max-width:900px){.me-earn{grid-template-columns:minmax(0,1fr)}}
   @media (max-width:1150px){.me{grid-template-columns:minmax(0,1fr)}.me-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media (max-width:700px){.me-2{grid-template-columns:minmax(0,1fr)}}
@@ -73,12 +76,12 @@ const STEP: Record<number, string> = { 0: "₹0 share", 2: "½ share", 3: "¾ sh
 const dayLabel = (d: string) => new Date(`${d}T00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
 /** One line of the profile card: label on the left, value on the right (the client's reference). */
-function Row({ label, children, accent, minus }: { label: string; children: ReactNode; accent?: boolean; minus?: boolean }) {
+function Row({ label, children, accent, minus, wide }: { label: string; children: ReactNode; accent?: boolean; minus?: boolean; wide?: boolean }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12,
+    <div style={{ gridColumn: wide ? "1 / -1" : undefined, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12,
       background: minus ? "#fbeceb" : accent ? "#e8f3e2" : "#faf7f2", border: `1px solid ${minus ? "#f0c9c5" : accent ? "#bfdcb3" : "#f1e8da"}` }}>
       <span style={{ ...capLabel, fontSize: 10.5 }}>{label}</span>
-      <b style={{ fontSize: 13.5, color: minus ? R.bad : accent ? R.good : R.ink, textAlign: "right", overflowWrap: "anywhere" }}>{children}</b>
+      <b style={{ fontSize: 13.5, color: minus ? R.bad : accent ? R.good : R.ink, textAlign: "right", ...(wide ? { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } : { overflowWrap: "anywhere" }) }}>{children}</b>
     </div>
   );
 }
@@ -137,12 +140,15 @@ function Payments({ rows }: { rows: PaymentRow[] }) {
 const tile = (bg: string): CSSProperties => ({ background: bg, color: "#fff", borderRadius: 14, padding: "14px 16px", minWidth: 0 });
 
 /** The calling-time ring: filled to the exact share done (rounded down), no hover numbers to disagree with. */
-function Ring({ pct, done }: { pct: number; done: boolean }) {
+/** Ring colour (client, 15 Nov 2026): red below 50 %, orange 50 % to under 100 %, green at 100 %. */
+const ringColour = (pct: number) => (pct >= 100 ? R.good : pct >= 50 ? R.out : R.bad);
+
+function Ring({ pct }: { pct: number }) {
   const r = 52, c = 2 * Math.PI * r;
   return (
     <svg width={140} height={140} viewBox="0 0 140 140" role="img" aria-label={`${pct}% of the calling target`}>
       <circle cx="70" cy="70" r={r} fill="none" stroke="#efe4d3" strokeWidth="14" />
-      {pct > 0 && <circle cx="70" cy="70" r={r} fill="none" stroke={done ? R.good : R.out} strokeWidth="14" strokeLinecap="round"
+      {pct > 0 && <circle cx="70" cy="70" r={r} fill="none" stroke={ringColour(pct)} strokeWidth="14" strokeLinecap="round"
         strokeDasharray={`${(c * pct) / 100} ${c}`} transform="rotate(-90 70 70)" />}
       <text x="70" y="72" textAnchor="middle" fontSize="26" fontWeight="800" fill={R.ink}>{pct}%</text>
       <text x="70" y="92" textAnchor="middle" fontSize="11" fill={R.mute}>of calling time</text>
@@ -153,7 +159,7 @@ function Ring({ pct, done }: { pct: number; done: boolean }) {
 /** One earning card at the top: a day's salary (daily pay) and the commission on that day's fees. */
 function EarningCard({ title, tag, e, daily }: { title: string; tag: string; e: Earning | null; daily: boolean }) {
   return (
-    <section style={{ background: "#fff", border: `1px solid ${R.line}`, borderRadius: 14, padding: "14px 16px", display: "grid", gap: 6, minWidth: 0 }}>
+    <section style={{ background: "#fff", border: `1px solid ${R.line}`, borderRadius: 14, padding: "14px 16px", display: "grid", gap: 6, alignContent: "start", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
         <span style={capLabel}>{title}</span>
         <span style={{ fontSize: 11, fontWeight: 800, color: tag === "Live" ? R.out : R.mute }}>{tag}</span>
@@ -172,11 +178,19 @@ function EarningCard({ title, tag, e, daily }: { title: string; tag: string; e: 
 }
 
 export default function UserDashboard({ id }: { id?: string }) {
-  const { period, params, selectProps } = usePeriodRange();
+  const { period, params, range, selectProps, setPeriod, setCustomFrom, setCustomTo } = usePeriodRange();
   const { data: s, error } = useSWR<Summary>(`/employees/${id ?? "me"}/summary?${params}`, fetcher, { keepPreviousData: true });
   // the API answers a User with their own report only
   const { data: rep } = useSWR<ReportData>(`/reports/data?employee_id=${id ?? "all"}&${params}`, fetcher, { keepPreviousData: true });
   const [details, setDetails] = useState(false);
+  // a switched-off rep's dashboard is frozen at the day they left (client, 15 Nov 2026): it opens on their
+  // leaving month up to that day, and only earlier dates can be picked
+  const leftOn = s?.status === "inactive" ? s.left_on : null;
+  const [frozen, setFrozen] = useState(false);
+  useEffect(() => {
+    if (!leftOn || frozen) return;
+    setFrozen(true); setPeriod("custom"); setCustomFrom(`${leftOn.slice(0, 7)}-01`); setCustomTo(leftOn);
+  }, [leftOn, frozen, setPeriod, setCustomFrom, setCustomTo]);
   if (error) return <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p>;
   if (!s) return <p style={{ color: R.mute }}>Loading…</p>;
   const me = rep?.people[0];
@@ -191,7 +205,10 @@ export default function UserDashboard({ id }: { id?: string }) {
   const cuts = (s.extra_deductions ?? []).map((x) => ({ ...x, value: deductionValue(x, s.fix_salary) })).filter(isActive);
   const my = (t: string) => (id ? t : `My ${t.toLowerCase()}`);
   const inactive = s.status === "inactive";
-  const extrasTotal = s.pay.extras.reduce((t, x) => t + x.amount, 0), cutsTotal = s.pay.deductions.reduce((t, x) => t + x.amount, 0);
+  // inactive: the targets box only for one picked day on or before the leaving day
+  const oneDay = !!range.date_from && range.date_from === range.date_to;
+  const showTargets = !inactive || (oneDay && (!s.left_on || (range.date_to ?? "") <= s.left_on));
+  const payClosed = inactive || s.pay.month < istToday().slice(0, 7);
   const dayTitle = s.today.is_today ? "Today's targets" : `Targets · ${fmtDay(s.today.date)}`;
 
   // daily pay: the shown day is a working day only when it has a pay row (not a weekly off day or a holiday)
@@ -221,7 +238,7 @@ export default function UserDashboard({ id }: { id?: string }) {
           <button type="button" onClick={() => setDetails((v) => !v)} aria-expanded={details}
             style={{ padding: "9px 16px", borderRadius: 20, border: `1px solid ${R.line}`, background: "#fff", fontWeight: 700, fontSize: 14, color: R.ink, cursor: "pointer", fontFamily: "inherit" }}>
             {my("Details")} {details ? "▴" : "▾"}</button>
-          <PeriodSelect {...selectProps} />
+          <PeriodSelect {...selectProps} {...(inactive ? { only: ["custom" as const], max: s.left_on ?? undefined } : {})} />
         </div>
       </div>
 
@@ -232,7 +249,7 @@ export default function UserDashboard({ id }: { id?: string }) {
             <Row label="Reg No.">{s.employee_code}</Row>
             <Row label="Designation">{s.designation || "—"}</Row>
             <Row label="Contact">{s.phone || "—"}</Row>
-            <Row label="Email">{s.email}</Row>
+            <Row label="Email" wide><span title={s.email}>{s.email}</span></Row>
             <Row label="Line · Intercom">{s.line_number ? `${s.line_number} · ${s.intercom_code ?? "—"}` : "—"}</Row>
             <Row label="Calling number">{s.calling_number || "—"}</Row>
             <Row label="Fix salary">{inr(s.fix_salary)} / month</Row>
@@ -244,29 +261,43 @@ export default function UserDashboard({ id }: { id?: string }) {
         </Panel>
       )}
 
-      {/* ── 1. Earnings at the top: the month so far, today (live) and yesterday (final) ── */}
-      <div className="me-earn">
+      {/* ── 1. Earnings at the top (client, 15 Nov 2026): one live card, the total in bold, then each part by name; and yesterday (final) ── */}
+      <div className={inactive ? undefined : "me-earn"}>
         <section aria-label={my("Earnings")} style={{ background: `linear-gradient(160deg, #4a3527, ${R.espresso})`, color: "#fff", borderRadius: 14, padding: "16px 20px",
-          display: "grid", gap: 10, boxShadow: "0 14px 30px -18px rgba(43,33,24,.7)" }}>
-          <div style={{ ...capLabel, color: "#e3b778" }}>{daily ? "Earned so far" : "Pay"} · {monthName(s.pay.month)}</div>
-          <div style={{ fontSize: 38, fontWeight: 800, lineHeight: 1 }}>{inr(s.pay.total)}</div>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, color: "#e9dccb" }}>
-            <span>Salary <b style={{ color: "#fff" }}>{inr(s.pay.base)}</b>{daily && ` · ${s.pay.days_so_far} of ${s.pay.working_days} days`}</span>
-            <span>Commission <b style={{ color: "#fff" }}>{inr(s.pay.trial.commission + s.pay.regular.commission)}</b></span>
-            {extrasTotal > 0 && <span>Extras <b style={{ color: "#9fd18b" }}>+{inr(extrasTotal)}</b></span>}
-            {cutsTotal > 0 && <span>Deductions <b style={{ color: "#f2a69c" }}>−{inr(cutsTotal)}</b></span>}
+          display: "grid", gap: 12, boxShadow: "0 14px 30px -18px rgba(43,33,24,.7)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span style={{ ...capLabel, color: "#e3b778" }}>{inactive ? "Final payout" : payClosed ? "Pay" : "Earned so far"} · {monthName(s.pay.month)}</span>
+            {!inactive && !payClosed && <span style={{ fontSize: 11, fontWeight: 800, color: "#f4a36b" }}>● Live</span>}
           </div>
-          <div style={{ fontSize: 12, color: "#d9c8b4" }}>Paid at the end of the month{daily ? " · grows every working day" : ""}</div>
+          <div style={{ fontSize: 38, fontWeight: 800, lineHeight: 1 }}>{inr(s.pay.total)}</div>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 6, fontSize: 13.5, color: "#e9dccb", maxWidth: 520 }}>
+            {[
+              { name: `Fixed salary${daily && !inactive && !payClosed ? ` · ${s.pay.days_so_far} of ${s.pay.working_days} working days` : ""}`, amount: inr(s.pay.base), color: "#fff" },
+              { name: `Trial commission · ${s.pay.trial.count} joining${s.pay.trial.count === 1 ? "" : "s"}`, amount: inr(s.pay.trial.commission), color: "#fff" },
+              { name: `Regular commission · ${s.pay.regular.count} joining${s.pay.regular.count === 1 ? "" : "s"}`, amount: inr(s.pay.regular.commission), color: "#fff" },
+              ...s.pay.extras.map((x) => ({ name: x.name, amount: `+${inr(x.amount)}`, color: "#9fd18b" })),
+              ...s.pay.deductions.map((x) => ({ name: x.name, amount: `−${inr(x.amount)}`, color: "#f2a69c" })),
+            ].map((x, i) => (
+              <li key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, borderBottom: "1px dashed rgba(233,220,203,.18)", paddingBottom: 5 }}>
+                <span>• {x.name}</span><b style={{ color: x.color, whiteSpace: "nowrap" }}>{x.amount}</b></li>
+            ))}
+          </ul>
+          {/* today's share of the total above (what the old Today card showed) */}
+          {!inactive && !payClosed && s.earnings.today && (
+            <div style={{ fontSize: 13, color: "#e9dccb" }}>Today so far <b style={{ color: "#fff" }}>{inr((s.earnings.today.salary ?? 0) + s.earnings.today.commission)}</b>
+              {" "}({daily ? `${s.earnings.today.kind === "working" || s.earnings.today.kind === "away" ? inr(s.earnings.today.salary ?? 0) : "no"} salary · ` : ""}{inr(s.earnings.today.commission)} commission on {s.earnings.today.fees} fee{s.earnings.today.fees === 1 ? "" : "s"})</div>
+          )}
+          <div style={{ fontSize: 12, color: "#d9c8b4" }}>{inactive ? `Left on ${s.left_on ? fmtDay(s.left_on) : "—"} · nothing more is added`
+            : payClosed ? "This month has ended: final" : `Paid at the end of the month${daily ? " · grows every working day" : ""}`}</div>
         </section>
-        <EarningCard title="Today" tag="Live" e={s.earnings.today} daily={daily} />
-        <EarningCard title="Yesterday" tag="Final" e={s.earnings.yesterday} daily={daily} />
+        {!inactive && <EarningCard title="Yesterday" tag="Final" e={s.earnings.yesterday} daily={daily} />}
       </div>
 
       {/* ── 2. Targets: today live, or a closed day with its saved targets ── */}
-      <Panel title={dayTitle} sub={s.today.final ? "This day has closed: its targets and results are final" : "Updates live through the day"}>
+      {showTargets && <Panel title={dayTitle} sub={s.today.final ? "This day has closed: its targets and results are final" : "Updates live through the day"}>
         <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: 22, alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-            {T.call_secs ? <Ring pct={callPct} done={s.today.call_secs >= T.call_secs} /> : <div style={{ width: 140, textAlign: "center", color: R.mute, fontSize: 13 }}>No calling target</div>}
+            {T.call_secs ? <Ring pct={callPct} /> : <div style={{ width: 140, textAlign: "center", color: R.mute, fontSize: 13 }}>No calling target</div>}
             <div style={{ display: "grid", gap: 8, fontSize: 13.5 }}>
               <div style={capLabel}>Calling duration</div>
               <div>Done <b>{hms(s.today.call_secs)}</b></div>
@@ -291,7 +322,7 @@ export default function UserDashboard({ id }: { id?: string }) {
               : s.today.pay.parts.length === 0 ? "no targets ticked: full day" : `${Math.floor((s.today.pay.num * 1000) / s.today.pay.den) / 10}% of the day salary`}</span>
           </div>
         )}
-      </Panel>
+      </Panel>}
 
       {/* ── 3. Calls in the picked period ── */}
       <div className="me-4">

@@ -10,6 +10,10 @@ type Props = {
   customTo: string;
   onCustomFromChange: (value: string) => void;
   onCustomToChange: (value: string) => void;
+  /** Only these presets (e.g. a switched-off rep: only a custom range up to their last day). Default: all. */
+  only?: Period[];
+  /** The latest date that can be picked in a custom range ("YYYY-MM-DD"). */
+  max?: string;
 };
 
 const pillStyle = {
@@ -36,6 +40,8 @@ export default function PeriodSelect({
   customTo,
   onCustomFromChange,
   onCustomToChange,
+  only,
+  max,
 }: Props) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -44,7 +50,7 @@ export default function PeriodSelect({
           <input
             type="date"
             value={customFrom}
-            max={customTo || undefined}
+            max={customTo || max || undefined}
             onChange={(e) => onCustomFromChange(e.target.value)}
             aria-label="From date"
             style={pillStyle}
@@ -54,6 +60,7 @@ export default function PeriodSelect({
             type="date"
             value={customTo}
             min={customFrom || undefined}
+            max={max || undefined}
             onChange={(e) => onCustomToChange(e.target.value)}
             aria-label="To date"
             style={pillStyle}
@@ -73,7 +80,7 @@ export default function PeriodSelect({
           backgroundPosition: "right 12px center",
         }}
       >
-        {PERIODS.map((p) => (
+        {PERIODS.filter((p) => !only || only.includes(p.key)).map((p) => (
           <option key={p.key} value={p.key}>{p.label}</option>
         ))}
       </select>
