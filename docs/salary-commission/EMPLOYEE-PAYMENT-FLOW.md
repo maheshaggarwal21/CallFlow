@@ -21,16 +21,16 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
 ## 3. Daily salary (new)
 
 ### Working days
-- One **Working days** panel (Employee Tracker, Super Admin only), for everyone:
+- One **Working Days** tab (its own tab in the Salary section; open to whoever has the tab ticked, the Super Admin always), for everyone:
   - the **weekly working days** are ticked once (e.g. Mon–Sat) and stay until changed;
-  - **holidays**: a date and a name, added or removed any time.
+  - **holidays**: click a date in the month calendar and give it a name; click a holiday to remove it.
 - A non-working weekday or a holiday is **not counted at all**: no salary is owed for it and there are no targets.
 - **Day salary = fixed monthly salary ÷ number of working days in that month.**
 - Leave for one rep only: **not in this version** (later).
 
 ### Targets
-- Three daily targets per rep: **calling time**, **trial joining**, **regular joining**, each with a
-  **tick-box** "counts for daily salary" on the Users form.
+- Three daily targets per rep: **calling time**, **trial joining**, **regular joining**, each with a round
+  **tick beside the target box** on the Users form (✓ = counts for daily salary).
 - **Calling time** = the talk time of **all** the rep's calls that day (short ones too), the same number as the
   Talk time card.
 - **Trial joining** = payments with fee type Trial filed under the rep that day (by the school's paid date).
@@ -75,7 +75,7 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
 
 ## 4. Switching it on
 
-- Setting **"Daily pay starts from"** (Working days panel). Months before it, and every month while it is **Off**,
+- Setting **"Daily pay starts from"** (Working Days tab). Months before it, and every month while it is **Off**,
   keep the old rule (full fixed salary for the month). **Start month: still to be decided by the client.**
 
 ## 5. Where the numbers are shown (all from the same calculation)

@@ -6,8 +6,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
+import Link from "next/link";
 import DaysView from "@/components/salary/DaysView";
-import WorkingDays from "@/components/salary/WorkingDays";
 import { HOME } from "@/lib/tabs";
 import { C } from "@/lib/colors";
 import { fetcher } from "@/lib/api";
@@ -51,7 +51,6 @@ function Tracker() {
   const months = lastMonths();
   const [month, setMonth] = useState(months[0]);
   const { data, error, isLoading, mutate } = useSWR<Payroll>(`/employees/payroll?month=${month}`, fetcher, { keepPreviousData: true });
-  const [calendarOpen, setCalendarOpen] = useState(false);
   const [daysOf, setDaysOf] = useState<{ id: string; name: string } | null>(null);
   const daily = data?.mode === "daily";
   // the running month under daily pay shows what has been earned up to today
@@ -72,7 +71,7 @@ function Tracker() {
             {daily ? ` · daily pay${soFar ? ", earned up to today" : ""}` : ""}</p>
         </div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
-        <button type="button" onClick={() => setCalendarOpen(true)} style={{ ...S.btn, padding: "10px 16px" }}>📅 Working days</button>
+        <Link href="/dashboard/working-days" style={{ ...S.btn, padding: "10px 16px", textDecoration: "none" }}>📅 Working Days</Link>
         <label style={{ display: "grid", gap: 4 }}>
           <span style={S.label}>Month</span>
           <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ ...S.input, width: 200, background: C.card, fontSize: 14 }}>
@@ -143,7 +142,6 @@ function Tracker() {
         </>
       )}
 
-      {calendarOpen && <WorkingDays month={month} onClose={() => setCalendarOpen(false)} onChanged={() => mutate()} />}
       {daysOf && (
         <>
           <div onClick={() => setDaysOf(null)} style={{ position: "fixed", inset: 0, background: "rgba(43,33,24,0.35)", zIndex: 200 }} />

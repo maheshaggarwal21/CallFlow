@@ -120,13 +120,18 @@ function Section({ title, icon, right, children, style }: { title: string; icon:
   );
 }
 
-/** "Counts for daily salary" under a target. */
-function Tick({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+/** A target box with its round tick beside it (client's sketch, 15 Nov 2026): ticked = counts for the day's salary. */
+function TargetRow({ on, onChange, label, children }: { on: boolean; onChange: (v: boolean) => void; label: string; children: ReactNode }) {
   return (
-    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: -6, fontSize: 12.5, color: on ? C.green : C.textSub, fontWeight: 600, cursor: "pointer" }}>
-      <input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked)} aria-label={`${label} counts for daily salary`} style={{ accentColor: C.green, width: 15, height: 15 }} />
-      Counts for daily salary
-    </label>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 10, alignItems: "end" }}>
+      {children}
+      <button type="button" role="checkbox" aria-checked={on} aria-label={`${label} counts for daily salary`} title={on ? "Counts for daily salary" : "Doesn't count for daily salary"}
+        onClick={() => onChange(!on)}
+        style={{ width: 40, height: 40, borderRadius: "50%", cursor: "pointer", display: "grid", placeItems: "center", flex: "none", padding: 0,
+          border: `3px solid ${on ? C.blue : C.border}`, background: on ? C.card : C.bgDeep, color: C.green, fontSize: 20, fontWeight: 900, lineHeight: 1 }}>
+        {on ? "✓" : ""}
+      </button>
+    </div>
   );
 }
 
@@ -383,15 +388,15 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
 
             <Section title="Target" icon="◎">
               <div style={{ display: "grid", gap: 12 }}>
-                <Field label="Daily Calling Duration" sub="HH:MM:SS"><input value={f.duration} placeholder="06:00:00" onChange={(e) => set({ duration: e.target.value })} style={input} /></Field>
-                <Tick on={f.tick_call} onChange={(v) => set({ tick_call: v })} label="Calling duration" />
-                <Field label="Daily Trial Joining"><input type="number" min={0} value={f.target_trial} onChange={(e) => set({ target_trial: e.target.value })} style={input} /></Field>
-                <Tick on={f.tick_trial} onChange={(v) => set({ tick_trial: v })} label="Trial joining" />
-                <Field label="Daily Regular Joining" sub="new and renewals"><input type="number" min={0} value={f.target_regular} onChange={(e) => set({ target_regular: e.target.value })} style={input} /></Field>
-                <Tick on={f.tick_regular} onChange={(v) => set({ tick_regular: v })} label="Regular joining" />
+                <TargetRow on={f.tick_call} onChange={(v) => set({ tick_call: v })} label="Calling duration">
+                  <Field label="Daily Calling Duration" sub="HH:MM:SS"><input value={f.duration} placeholder="06:00:00" onChange={(e) => set({ duration: e.target.value })} style={input} /></Field></TargetRow>
+                <TargetRow on={f.tick_trial} onChange={(v) => set({ tick_trial: v })} label="Trial joining">
+                  <Field label="Daily Trial Joining"><input type="number" min={0} value={f.target_trial} onChange={(e) => set({ target_trial: e.target.value })} style={input} /></Field></TargetRow>
+                <TargetRow on={f.tick_regular} onChange={(v) => set({ tick_regular: v })} label="Regular joining">
+                  <Field label="Daily Regular Joining" sub="new and renewals"><input type="number" min={0} value={f.target_regular} onChange={(e) => set({ target_regular: e.target.value })} style={input} /></Field></TargetRow>
                 <Field label="Joining date" sub="first day paid">
                   <input type="date" value={f.join_date} onChange={(e) => set({ join_date: e.target.value })} style={input} /></Field>
-                <p style={{ margin: 0, fontSize: 12, color: C.muted }}>Ticked targets decide each working day&apos;s salary (each is an equal share: under 50 % ₹0, 50 % half, 75 % three quarters, 100 % full). None ticked: the full day.</p>
+                <p style={{ margin: 0, fontSize: 12, color: C.muted }}>✓ = counts for the daily salary. Ticked targets decide each working day&apos;s salary (each is an equal share: under 50 % ₹0, 50 % half, 75 % three quarters, 100 % full). None ticked: the full day.</p>
               </div>
             </Section>
           </div>

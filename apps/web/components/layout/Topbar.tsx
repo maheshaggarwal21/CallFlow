@@ -12,6 +12,7 @@ const PAGE_LABELS: Record<string, string> = {
   teams:      "Teams",
   me:         "My Dashboard",
   payments:   "Payments",
+  "working-days": "Working Days",
   salary:     "Salary",
   "crm/":         "Leads",
   "crm/settings": "Codes",

@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requireOwner } from "../middleware/requireOwner";
+import { requirePermission } from "../middleware/requirePermission";
 import { monthBounds, workingDaysOf } from "../lib/payroll";
 import {
   closeDays, forgetPayCalendar, holidaysBetween, isDailyMonth, monthPay, PAY_COLS, payCalendar, requestToday, type PayEmployee,
@@ -19,7 +20,9 @@ const day = z.string().regex(DAY, "Dates must be YYYY-MM-DD").refine((d) => !Num
 const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Months must be YYYY-MM");
 
 /** The Working days panel: the weekly pattern, the start month and every holiday. */
-router.get("/settings", requireOwner, async (req, res) => {
+// the Working Days tab (Users → Tabs); the Super Admin has every tab
+const workingDaysTab = requirePermission("working_days");
+router.get("/settings", workingDaysTab, async (req, res) => {
   const cal = await payCalendar();
   const { rows } = await pool.query("SELECT to_char(day, 'YYYY-MM-DD') AS day, name FROM holidays ORDER BY day");
   const m = typeof req.query.month === "string" && monthBounds(req.query.month) ? req.query.month : requestToday(req.query).slice(0, 7);
@@ -33,7 +36,7 @@ const settingsSchema = z.object({
     .refine((w) => new Set(w).size === w.length, "A weekday is ticked twice"),
   daily_pay_from: month.nullable(),
 });
-router.put("/settings", requireOwner, async (req, res) => {
+router.put("/settings", workingDaysTab, async (req, res) => {
   const p = settingsSchema.safeParse(req.body);
   if (!p.success) return bad(res, 400, p.error.issues[0].message);
   const weekdays = [...p.data.weekdays].sort((a, b) => a - b);
@@ -46,14 +49,14 @@ router.put("/settings", requireOwner, async (req, res) => {
 });
 
 const holidaySchema = z.object({ day, name: z.string().trim().min(1, "Give the holiday a name").max(60) });
-router.post("/holidays", requireOwner, async (req, res) => {
+router.post("/holidays", workingDaysTab, async (req, res) => {
   const p = holidaySchema.safeParse(req.body);
   if (!p.success) return bad(res, 400, p.error.issues[0].message);
   const r = await pool.query("INSERT INTO holidays (day, name) VALUES ($1, $2) ON CONFLICT (day) DO NOTHING RETURNING to_char(day, 'YYYY-MM-DD') AS day, name", [p.data.day, p.data.name]);
   if (!r.rows[0]) return bad(res, 409, "That date is already a holiday");
   return res.status(201).json(r.rows[0]);
 });
-router.delete("/holidays/:day", requireOwner, async (req, res) => {
+router.delete("/holidays/:day", workingDaysTab, async (req, res) => {
   if (!day.safeParse(req.params.day).success) return bad(res, 400, "Dates must be YYYY-MM-DD");
   const r = await pool.query("DELETE FROM holidays WHERE day = $1", [req.params.day]);
   return r.rowCount ? res.status(204).end() : bad(res, 404, "No holiday on that date");

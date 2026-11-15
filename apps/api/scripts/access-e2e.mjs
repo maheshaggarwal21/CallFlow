@@ -439,6 +439,10 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok(mine?.today?.call_secs === kind("2026-11-21").done.call_secs && mine.today.call_secs === 3600, "today's targets box and today's row agree (1 h)", `${mine?.today?.call_secs}`);
   ok((await get(repTok, `/pay/days?employee_id=${nehaId}&month=2026-11&${AS}`)).status === 403, "a rep can't open someone else's days");
   ok((await get(repTok, "/pay/settings")).status === 403, "a rep can't open the Working days panel");
+  await call(owner, "PATCH", `/employees/${rid}`, { permissions: ["recordings", "working_days"] });
+  ok((await get(repTok, "/pay/settings?month=2026-11")).status === 200, "…unless the Working Days tab is ticked for them");
+  ok((await get(repTok, `/employees/payroll?month=2026-11&${AS}`)).status === 403, "…which still doesn't open the Employee Tracker");
+  await call(owner, "PATCH", `/employees/${rid}`, { permissions: ["recordings"] });
 
   // joining later, and switching off, take days away
   await call(owner, "PATCH", `/employees/${rid}`, { join_date: "2026-11-04" });
