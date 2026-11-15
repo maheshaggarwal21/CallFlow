@@ -13,7 +13,7 @@
 import pool from "../db/pool";
 import { istDateKey } from "../lib/dateRange";
 import {
-  commissionOn, dailySalary, extrasAndDeductions, isTrial, monthBounds, monthPayout, proRated,
+  commissionOn, dailySalary, dayPaise, extrasAndDeductions, isTrial, monthBounds, monthPayout, proRated,
   type DayTargets, type PayDay, type PayDayInput, type PayPlan,
 } from "../lib/payroll";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "./payments.service";
@@ -185,6 +185,56 @@ export async function monthPay(emps: PayEmployee[], month: string, today: string
       working_days: sal.working_days, days_so_far: sal.days_so_far, days: sal.days, payments: list,
     };
   });
+}
+
+// ── Targets over a period (rep's dashboard, client 16 Nov 2026) ─────────────────────────────────────────────────
+export type PeriodTargets =
+  | { too_long: true }
+  | {
+    too_long: false; from: string; to: string;
+    /** working days in the period up to today on which the rep was working here (not before joining / after leaving) */
+    working_days: number;
+    /** each target ticked on at least one of those days: met on `met` of `of` days, and one dot per day */
+    targets: { key: "call" | "trial" | "regular"; met: number; of: number; days: { day: string; quarters: number }[] }[];
+    /** daily pay only (every month in the period): salary earned in these days of the most they could have earned */
+    salary: { earned: number; possible: number } | null;
+  };
+
+/**
+ * How often the rep met each ticked target over a period, from the SAME per-day results as the Days list and the
+ * pay (a month that isn't on daily pay is worked out with a preview calendar, nothing saved). Targets are never added
+ * up over the period: pay is per day, so "met on 9 of 12 days" is what matches the salary. Up to 3 months.
+ */
+export async function periodTargets(e: PayEmployee, from: string, to: string, today: string, reuse?: MonthPay): Promise<PeriodTargets> {
+  const last = to < today ? to : today;
+  const months: string[] = [];
+  for (let m = from.slice(0, 7); m <= last.slice(0, 7) && months.length <= 3; m = addDays(`${m}-28`, 7).slice(0, 7)) months.push(m);
+  if (months.length > 3) return { too_long: true };
+  const cal = await payCalendar();
+  const T = { call: { met: 0, of: 0, days: [] as { day: string; quarters: number }[] }, trial: { met: 0, of: 0, days: [] as { day: string; quarters: number }[] }, regular: { met: 0, of: 0, days: [] as { day: string; quarters: number }[] } };
+  let working = 0, earned = 0, possible = 0, allDaily = true;
+  for (const m of months) {
+    const daily = isDailyMonth(cal, m);
+    allDaily &&= daily;
+    const p = reuse && daily && reuse.month === m && reuse.days ? reuse : (await monthPay([e], m, today, daily ? undefined : { ...cal, daily_pay_from: m }))[0];
+    if (!p?.days) continue;
+    for (const d of p.days) {
+      if (d.day < from || d.day > last || d.kind !== "working") continue;
+      working++;
+      earned += d.paise;
+      possible += dayPaise(e.fix_salary, 1, 1, p.working_days ?? 0);
+      for (const part of d.parts) {
+        T[part.key].of++;
+        if (part.quarters === 4) T[part.key].met++;
+        T[part.key].days.push({ day: d.day, quarters: part.quarters });
+      }
+    }
+  }
+  return {
+    too_long: false, from, to: last, working_days: working,
+    targets: (["call", "trial", "regular"] as const).filter((k) => T[k].of > 0).map((k) => ({ key: k, ...T[k] })),
+    salary: allDaily ? { earned: earned / 100, possible: possible / 100 } : null,
+  };
 }
 
 /**

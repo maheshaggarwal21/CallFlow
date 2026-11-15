@@ -113,8 +113,17 @@ Top to bottom (`apps/web/components/users/UserDashboard.tsx`; every amount comes
      payments with yesterday's paid date. Tagged **"Day ended"**, not "Final", because a payment dated yesterday
      that shows up later is still added to it (see Freezing above).
    - A past month reads "Pay · month" and "This month has ended: final".
-2. **Targets** — today live, or a single picked day with its saved targets. The calling ring is **red below 50 %,
-   orange from 50 % and green at 100 %** (the % is rounded down). Step badges show only on working days.
+2. **Targets**
+   - **One day** picked (Today, Yesterday, a custom single day): that day's box — today live, or a finished day with
+     its saved targets. The calling ring is **red below 50 %, orange from 50 % and green at 100 %** (the % is rounded
+     down). Step badges show only on working days.
+   - **A longer period** (Last 7 days, This month, Last month, a custom range; client, 16 Nov 2026): targets are
+     **not** added up over the period, because pay is per day and a "100 % week" could hide ₹0 days. Instead, for
+     each ticked target: **"Met on 9 of 12 working days"**, a bar, and one dot per working day (green met, orange ½
+     or ¾ share, red under 50 %). Under daily pay also **"Salary earned in these days ₹… of ₹… possible"**. Each
+     day uses the targets it had; Sundays, holidays and days before joining or after leaving don't count. Same
+     per-day results as the Days list (`periodTargets` in `pay.service.ts`; a month not on daily pay is worked out
+     with a preview calendar, nothing saved). Up to 3 months; longer asks for a shorter period.
 3. Calls, talk time, real conversations, invalid numbers.
 4. **Conversions** — trial joined · commission and regular joined · commission, then the payments table (each
    payment's fee is in the table; the separate fees total was removed at the client's request).

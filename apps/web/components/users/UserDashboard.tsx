@@ -40,6 +40,8 @@ type Summary = {
     pay: { kind: "working" | "away"; num: number; den: number; salary: number; count_as_full: boolean; parts: { key: "call" | "trial" | "regular"; quarters: number }[] } | null;
   };
   earnings: { today: Earning | null; yesterday: Earning | null };
+  /** a longer period: how often each ticked target was met (null when one day is picked) */
+  period: PeriodTargets | null;
   income: { joinings: number; trial: number; regular: number; total: number; trial_count: number; regular_count: number; fees: number };
   payments: { connected: boolean; error: string | null; list: PaymentRow[] };
   /** The month's pay, as the Employee Tracker works it out (month of the picked period's end). */
@@ -160,6 +162,56 @@ function Ring({ pct }: { pct: number }) {
   );
 }
 
+type PeriodTargets = { too_long: true } | {
+  too_long: false; from: string; to: string; working_days: number;
+  targets: { key: "call" | "trial" | "regular"; met: number; of: number; days: { day: string; quarters: number }[] }[];
+  salary: { earned: number; possible: number } | null;
+};
+const TARGET_NAME = { call: "Calling time", trial: "Trial joining", regular: "Regular joining" } as const;
+const dotColour = (q: number) => (q === 4 ? R.good : q ? R.out : R.bad);
+
+/**
+ * A longer period (client, 16 Nov 2026): not a summed-up target (pay is per day, so a "100 % week" could hide ₹0
+ * days) but how many working days each ticked target was met, one dot per day, and the salary those days earned.
+ */
+function PeriodTargetsBox({ p, label }: { p: PeriodTargets; label: string }) {
+  if (p.too_long) return <p style={{ margin: 0, color: R.mute, fontSize: 13.5 }}>Pick a period of up to 3 months to see how often the targets were met.</p>;
+  if (p.working_days === 0) return <p style={{ margin: 0, color: R.mute, fontSize: 13.5 }}>No working days in {label}.</p>;
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      {p.targets.length === 0 && <p style={{ margin: 0, color: R.mute, fontSize: 13.5 }}>No targets were ticked on these {p.working_days} working days: each counts as a full day.</p>}
+      {p.targets.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap: 12 }}>
+        {p.targets.map((t) => {
+          const pct = Math.floor((t.met * 100) / t.of);
+          return (
+            <div key={t.key} style={{ background: "#faf7f2", border: "1px solid #f1e8da", borderRadius: 12, padding: "12px 14px", display: "grid", gap: 8 }}>
+              <div style={capLabel}>{TARGET_NAME[t.key]}</div>
+              <div style={{ fontSize: 14 }}>Met on <b style={{ fontSize: 24 }}>{t.met}</b> <span style={{ color: R.mute }}>of {t.of} working day{t.of === 1 ? "" : "s"}</span></div>
+              <div style={{ height: 8, borderRadius: 4, background: "#efe4d3", overflow: "hidden" }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: ringColour(pct), borderRadius: 4 }} />
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }} aria-label={`${TARGET_NAME[t.key]} day by day`}>
+                {t.days.map((d) => (
+                  <span key={d.day} title={`${dayLabel(d.day)}: ${d.quarters === 4 ? "met" : d.quarters ? `${STEP[d.quarters]}` : "under 50 %"}`}
+                    style={{ width: 11, height: 11, borderRadius: "50%", background: dotColour(d.quarters) }} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>}
+      {p.salary && (
+        <div style={{ paddingTop: 12, borderTop: "1px solid #f1e8da", fontSize: 13.5 }}>
+          Salary earned in these days <b>{inr(p.salary.earned)}</b> <span style={{ color: R.mute }}>of {inr(p.salary.possible)} possible</span></div>
+      )}
+      {p.targets.length > 0 && <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: R.mute }}>
+        <span><b style={{ color: R.good }}>●</b> met</span><span><b style={{ color: R.out }}>●</b> ½ or ¾ share</span><span><b style={{ color: R.bad }}>●</b> under 50 %</span>
+        <span>Each day uses the targets it had · Sundays and holidays don&apos;t count</span>
+      </div>}
+    </div>
+  );
+}
+
 /** Yesterday, inside the brown earnings card (client, 15 Nov 2026): that day's salary (daily pay) and the commission on fees paid that day. Final. */
 function Yesterday({ e, daily }: { e: Earning | null; daily: boolean }) {
   const line = (label: string, value: string) => (
@@ -213,7 +265,8 @@ export default function UserDashboard({ id }: { id?: string }) {
   const inactive = s.status === "inactive";
   // inactive: the targets box only for one picked day on or before the leaving day
   const oneDay = !!range.date_from && range.date_from === range.date_to;
-  const showTargets = !inactive || (oneDay && (!s.left_on || (range.date_to ?? "") <= s.left_on));
+  // one day picked → that day's targets box; a longer period → how often the targets were met (client, 16 Nov 2026)
+  const showTargets = oneDay && (!inactive || !s.left_on || (range.date_to ?? "") <= s.left_on);
   const payClosed = inactive || s.pay.month < istToday().slice(0, 7);
   const dayTitle = s.today.is_today ? "Today's targets" : `Targets · ${fmtDay(s.today.date)}`;
 
@@ -306,6 +359,11 @@ export default function UserDashboard({ id }: { id?: string }) {
       </section>
 
       {/* ── 2. Targets: today live, or a closed day with its saved targets ── */}
+      {!oneDay && s.period && (
+        <Panel title={`Targets · ${period === "all" ? "all time" : rep?.period ?? "the period picked"}`} sub="How many working days each target was met (each day is paid on its own)">
+          <PeriodTargetsBox p={s.period} label="this period" />
+        </Panel>
+      )}
       {showTargets && <Panel title={dayTitle} sub={s.today.final ? "This day has closed: its targets and results are final" : "Updates live through the day"}>
         <div className="me-tg">
           <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>

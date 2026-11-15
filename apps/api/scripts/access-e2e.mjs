@@ -447,6 +447,16 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok(mine?.earnings?.yesterday?.date === "2026-11-20" && mine.earnings.yesterday.salary === 333.33 && mine.earnings.yesterday.commission === 102 && mine.earnings.yesterday.fees === 102, "dashboard: Yesterday card = ₹333.33 salary + ₹102 commission on 102 fees", JSON.stringify(mine?.earnings?.yesterday));
   const d9 = (await get(repTok, `/employees/me/summary?date_from=2026-11-09&date_to=2026-11-09&${AS}`)).data?.today;
   ok(d9?.final === true && d9.targets.call_secs === 7200 && d9.targets.tick_trial === false && d9.pay?.salary === 500, "dashboard: a closed day shows its SAVED targets (2 h, only calling) and is final", JSON.stringify(d9 && { f: d9.final, t: d9.targets, p: d9.pay?.salary }));
+  // a longer period: how often each ticked target was met (client, 16 Nov 2026), worked by hand for 2–10 Nov
+  // (8 working days; the 9th was saved with only calling ticked): calling met 2, 7, 10 → 3 of 8; trial met 3 Nov → 1 of 7;
+  // regular never fully met → 0 of 7; salary = the Days rows 2–10 = ₹3,583.33 of 8 × ₹1,000
+  const per = (await get(repTok, `/employees/me/summary?date_from=2026-11-02&date_to=2026-11-10&${AS}`)).data?.period;
+  const pk = (k) => per?.targets?.find((t) => t.key === k);
+  ok(per?.too_long === false && per.working_days === 8 && pk("call")?.met === 3 && pk("call")?.of === 8 && pk("trial")?.met === 1 && pk("trial")?.of === 7
+     && pk("regular")?.met === 0 && pk("regular")?.of === 7 && per.salary?.earned === 3583.33 && per.salary?.possible === 8000,
+     "period targets: calling met 3 of 8 days, trial 1 of 7, regular 0 of 7; salary ₹3,583.33 of ₹8,000", JSON.stringify(per && { w: per.working_days, t: per.targets?.map((t) => `${t.key}:${t.met}/${t.of}`), s: per.salary }));
+  ok((await get(repTok, `/employees/me/summary?date_from=2026-11-09&date_to=2026-11-09&${AS}`)).data?.period === null, "period targets: not for a single day (that day's box instead)");
+  ok((await get(repTok, `/employees/me/summary?date_from=2026-06-01&date_to=2026-11-10&${AS}`)).data?.period?.too_long === true, "period targets: more than 3 months asks for a shorter period");
   ok((await get(repTok, `/pay/days?employee_id=${nehaId}&month=2026-11&${AS}`)).status === 403, "a rep can't open someone else's days");
   ok((await get(repTok, "/pay/settings")).status === 403, "a rep can't open the Working days panel");
   await call(owner, "PATCH", `/employees/${rid}`, { permissions: ["recordings", "working_days"] });

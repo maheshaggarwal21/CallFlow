@@ -9,7 +9,7 @@ import { open as unsealPassword, seal as sealPassword, vaultConfigured } from ".
 import { resolveRange, istDateKey } from "../lib/dateRange";
 import { commissionOn, feeCommission, isTrial, monthBounds, monthPayout, proRated, type PayPlan } from "../lib/payroll";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "../services/payments.service";
-import { addDays, monthPay, PAY_COLS, requestToday, type PayEmployee } from "../services/pay.service";
+import { addDays, monthPay, PAY_COLS, periodTargets, requestToday, type PayEmployee } from "../services/pay.service";
 
 // The Users tab (client, 12 Nov 2026): one account per person with rank, tabs, salary rule, line and targets.
 const router = Router();
@@ -186,9 +186,12 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
       commission: c.commission, fees: c.trial.count + c.regular.count };
   };
   const dayRow = payDays?.find((x) => x.day === targetDay) ?? null;
+  // a longer period: how often each ticked target was met, day by day (client, 16 Nov 2026), instead of today's box
+  const period = istDateKey(start) === lastDay ? null : await periodTargets(payRow.rows[0] as PayEmployee, istDateKey(start), lastDay, today, p);
   const t0 = saved.rows[0] ?? u;
   return res.json({
     ...u,
+    period,
     today: {
       date: targetDay, is_today: targetDay === today, final: targetDay < today, call_secs: talk.rows[0].secs, trial: t.trial.count, regular: t.regular.count,
       // the day's targets: saved ones for a closed day, the current ones for today
