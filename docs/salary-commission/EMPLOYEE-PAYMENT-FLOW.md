@@ -60,15 +60,26 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
   created, correctable) → ₹0.
 - Days **after the day the rep was switched off** → ₹0. The day itself still counts. Days a rep was switched off
   and then back on are not paid.
-- **"Count as full"**: in the Days view the Super Admin can mark a day as full (e.g. the PBX or power was down and
-  calls were not recorded). It is shown as "Full (set by Super Admin)" and can be undone.
+- **How the on/off history is kept**: every night just after midnight the day is closed and one row is saved for each
+  rep who was working that day (`day_targets`). A rep switched off on the 12th and back on the 16th has no rows for
+  13–15, so those days stay unpaid even though the record now just says "active" (checked by the end-to-end test).
+  Known gap: if the server is down over those nights, the missed days are closed from the rep's status when it
+  comes back. A full log of every switch would close it (offered, not built).
+- **"Count as full"**: Employee Tracker → **Days** on the rep's row → orange **Count as full** button at the end of
+  each working day's row (e.g. the PBX or power was down and calls were not recorded). Shown as "Full · set by Super
+  Admin"; the same button then reads **Undo**. Super Admin only; not on Sundays, holidays or future days. **It only
+  appears once daily pay is switched on**: while it is Off the Days view says "Daily pay is not on for this month".
 
 ### Freezing and recalculating
 - Each day's **targets and ticks are saved when the day closes** (just after midnight IST), so changing a target on
   the 15th leaves days 1–14 on their old targets. A change during a day applies to that whole day.
-- The **results** (calls, payments) are **recalculated until month end**, so a late-recorded payment, a call moved by
-  the hourly PBX clock fix, or calls given to a rep from a free line still count. *(Client's question 7 — whether a
-  closed day should ever change — is still open; this is the current behaviour.)*
+- The **results** (calls, payments) are **recalculated until month end**, so a call moved by the hourly PBX clock
+  fix, calls given to a rep from a free line, or a payment that shows up late still count.
+- A payment always counts on its **paid date** (the only date on the Payments tab). If a payment dated the 14th only
+  appears on the Payments tab on the 15th, it is added to the **14th**, not to the 15th. The month's total counts
+  it once either way.
+- *(Question 7, still open: should a finished day be locked at midnight instead? Then such a late payment would earn
+  nothing for that day's salary share. Commission is counted for the month either way.)*
 - Adding a holiday later in the month changes the month's working days, so "earned so far" can shift a little.
 
 ### Extra commissions and deductions
@@ -87,24 +98,53 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
 | Screen | Who | What |
 |---|---|---|
 | Employee Tracker | Super Admin | Per rep: salary earned so far ("₹5,280 · 11 of 25 days"), commission, extras, deductions, **total earned so far** |
-| Days view (tracker → Days) | Super Admin | The month day by day: calling / trials / regular against target, share, ₹; **Count as full** / Undo |
+| Days view (tracker → Days) | Super Admin | The month day by day: calling / trials / regular against target, share, ₹; **Count as full** / Undo (daily pay on only) |
 | My Dashboard → Pay card + My days | The rep (and the Super Admin through the eye) | The same totals and the same day-by-day list, read-only |
 
 ## 5b. The rep's dashboard (client, 15 Nov 2026)
 
-Top to bottom: one live **Earned so far** card for the month (the total in bold, then each part by name: fixed
-salary, trial commission, regular commission, each extra and each deduction, and today's share) beside a
-**Yesterday** (final) card: that day's salary plus the commission on fees paid that day → **targets** (today live, or a closed day with its saved targets, marked final) → calls,
-talk time, real conversations, invalid numbers → **conversions** (trial and regular joinings with the fees) →
-busiest hours and the call funnel side by side → the **Days** list. Profile and salary plan sit behind **Details ▾**.
-A switched-off rep shows a grey **Inactive** badge, and their dashboard is frozen at the day they left: it opens on
-the leaving month up to that day (the **final payout**), only earlier dates can be picked, there is no Yesterday card,
-and the targets box shows only when one day on or before the leaving day is picked. The calling ring is red below
-50 %, orange from 50 % and green at 100 %. Every amount comes from `monthPay`.
+Top to bottom (`apps/web/components/users/UserDashboard.tsx`; every amount comes from `monthPay`):
+
+1. **Earnings card** (brown, one card):
+   - left: **Earned so far** for the month with a **● Live** tag, the total in bold, then each part listed by name:
+     fixed salary ("12 of 25 working days" under daily pay), trial commission · joinings, regular commission ·
+     joinings, each extra commission (green), each deduction (red), then "Today so far" (today's share of the total);
+   - right, inside the card: **Yesterday** — yesterday's total, its salary (daily pay only) and the commission on
+     payments with yesterday's paid date. Tagged **"Day ended"**, not "Final", because a payment dated yesterday
+     that shows up later is still added to it (see Freezing above).
+   - A past month reads "Pay · month" and "This month has ended: final".
+2. **Targets** — today live, or a single picked day with its saved targets. The calling ring is **red below 50 %,
+   orange from 50 % and green at 100 %** (the % is rounded down). Step badges show only on working days.
+3. Calls, talk time, real conversations, invalid numbers.
+4. **Conversions** — trial joined · commission and regular joined · commission, then the payments table (each
+   payment's fee is in the table; the separate fees total was removed at the client's request).
+5. Busiest hours and the call funnel side by side.
+6. The **Days** list (daily pay only).
+
+**Details ▾** opens two lists side by side: **Profile** (Reg No., designation, contact, email, line · intercom,
+calling number) and **Salary plan** (fixed salary, trial and regular commission, each running extra and deduction;
+a % deduction reads "10% of salary + commission").
+
+**A switched-off rep** shows a grey **Inactive** badge, and the dashboard is frozen at the day they left: it opens on
+the leaving month up to that day and the card reads **"Final payout"** with "Left on …"; only a custom range up to the
+leaving day can be picked; there is no Yesterday panel; the targets box shows only when one day on or before the
+leaving day is picked.
+
+The whole site works on a phone: below 900 px the sidebar becomes a ☰ menu, cards stack, and wide tables scroll
+sideways inside their own card.
+
+## 5c. Switched-off staff elsewhere (client, 15 Nov 2026)
+
+- **Employee Tracker**: greyed, at the bottom, tagged "Left 10 Nov", only for the months they worked.
+- **Users**: at the bottom; the **All users / Active only / Inactive (n)** dropdown narrows the list.
+- Everyday dropdowns (agents, reports) list active people only.
 
 ## 6. Still open
 
-1. Start month (1 Nov or 1 Dec 2026).
-2. Question 7: should a closed day ever change after it closes?
-3. Leave for one rep.
-4. Redesign of the rep's dashboard (later; the numbers stay from the same calculation).
+1. **Start month** for daily pay (1 Nov or 1 Dec 2026). Until it is set nothing daily shows, including Count as full.
+2. **Question 7**: lock a finished day at midnight, or keep counting late results until month end (current)?
+3. **Leave for one rep** (today holidays apply to everyone).
+4. A full **log of every switch on/off** (only matters if the server is down over a night; see "Who is paid which days").
+
+Decided on 15 Nov 2026: % deduction = % of salary + commission (extras left out); inactive staff as in 5c; dashboard
+as in 5b.
