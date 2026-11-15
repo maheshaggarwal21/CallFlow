@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { C } from "@/lib/colors";
 import { fetcher } from "@/lib/api";
 import AssignIntercomModal from "@/components/modals/AssignIntercomModal";
+import SwapLinesModal from "@/components/modals/SwapLinesModal";
 import type { Intercom, Line } from "@callflow/shared-types";
 
 const COLS = "90px minmax(130px,1fr) 80px minmax(160px,1.3fr) minmax(130px,1fr) 90px";
@@ -15,6 +16,9 @@ export default function IntercomsPage() {
   const { data: intercoms, isLoading } = useSWR<Intercom[]>("/intercoms", fetcher);
   const { data: lines } = useSWR<Line[]>("/lines", fetcher);
   const [editing, setEditing] = useState<Intercom | null>(null);
+  const [swapping, setSwapping] = useState(false);
+  // calls that came in on a free line count for nobody until they are given to its agent
+  const gaps = (lines ?? []).filter((l) => l.gap_calls > 0);
 
   const lineOf = (no: string | null) => (lines ?? []).find((l) => l.line_number === no);
   const maxCalls = Math.max(...(lines ?? []).map((l) => l.call_count_today), 1);
@@ -27,13 +31,28 @@ export default function IntercomsPage() {
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: C.text, letterSpacing: -0.5 }}>Intercoms</h1>
           <p style={{ margin: "5px 0 0", fontSize: 15, color: C.muted }}>Each intercom&apos;s calling number, its line, and the person whose calls that line records</p>
         </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+        {(lines ?? []).filter((l) => l.employee_id).length >= 2 && (
+          <button type="button" onClick={() => setSwapping(true)} style={{ padding: "9px 16px", border: `1px solid ${C.border}`, borderRadius: 10, background: C.card, color: C.textSub, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>⇄ Swap agents</button>
+        )}
         <div style={{ textAlign: "right" }}>
           <p style={{ margin: 0, fontSize: 28, fontWeight: 700, color: C.text, letterSpacing: -0.5 }}>
             {linked}<span style={{ fontSize: 16, color: C.muted, fontWeight: 500 }}> / {(intercoms ?? []).length}</span>
           </p>
           <p style={{ margin: 0, fontSize: 13, color: C.muted }}>on a line</p>
         </div>
+        </div>
       </div>
+
+      {gaps.length > 0 && (
+        <div role="status" style={{ padding: "12px 16px", background: C.orangeLight, border: `1px solid ${C.orangeBdr}`, borderRadius: 12, fontSize: 13.5, color: C.text }}>
+          {gaps.map((l) => (
+            <div key={l.id}>⚠ <b>Line {l.line_number}</b>: {l.gap_calls} call{l.gap_calls === 1 ? "" : "s"}
+              {l.freed_at ? ` since ${new Date(l.freed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""} have no agent, so they count for nobody.</div>
+          ))}
+          <div style={{ marginTop: 4, color: C.textSub }}>Edit an intercom, pick that line and its agent, and tick the box to give them those calls.</div>
+        </div>
+      )}
 
       {isLoading ? <p style={{ color: C.muted, fontSize: 14 }}>Loading…</p> : (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflowX: "auto" }}>
@@ -78,6 +97,7 @@ export default function IntercomsPage() {
       )}
 
       {editing && <AssignIntercomModal intercom={editing} onClose={() => setEditing(null)} />}
+      {swapping && <SwapLinesModal lines={lines ?? []} onClose={() => setSwapping(false)} />}
     </div>
   );
 }

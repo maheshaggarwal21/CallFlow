@@ -45,6 +45,7 @@ export default function UsersPage() {
     mutate((list) => list?.map((x) => (x.id === u.id ? { ...x, status: to } : x)), { revalidate: false });
     try {
       await api.patch(`/employees/${u.id}`, { status: to });
+      if (!active) { globalMutate("/lines"); globalMutate("/intercoms"); } // their line and intercom were freed
     } catch (e) {
       setError((e as Error).message);
       mutate();
@@ -158,6 +159,10 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
   // picking the line brings its intercom; picking an intercom or number brings its line, and an
   // intercom not on any line yet is put on the picked line when the form is saved.
   const lineNo = (id: string) => (lines ?? []).find((l) => l.id === id)?.line_number;
+  // one person per line, one intercom per line: only free ones are offered, plus what this user already has
+  const lineChoices = (lines ?? []).filter((l) => !l.employee_id || l.employee_id === user?.id);
+  const pickedLine = lineNo(f.line_id);
+  const icChoices = (intercoms ?? []).filter((i) => !i.line_number || i.line_number === pickedLine || i.id === f.intercom_id);
   const intercom = (intercoms ?? []).find((i) => i.id === f.intercom_id);
   const pickLine = (id: string) => {
     const onIt = (intercoms ?? []).find((i) => i.line_number && i.line_number === lineNo(id));
@@ -317,21 +322,19 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
                 <Field label="Line">
                   <select value={f.line_id} onChange={(e) => pickLine(e.target.value)} style={input}>
                     <option value="">— No line —</option>
-                    {(lines ?? []).map((l) => (
-                      <option key={l.id} value={l.id}>{l.line_number}{l.employee_id && l.employee_id !== user?.id ? ` · now with ${l.employee_name}` : ""}</option>
-                    ))}
+                    {lineChoices.map((l) => <option key={l.id} value={l.id}>{l.line_number}</option>)}
                   </select>
                 </Field>
                 <Field label="Intercom">
                   <select value={f.intercom_id} onChange={(e) => pickIntercom(e.target.value)} style={input}>
                     <option value="">—</option>
-                    {(intercoms ?? []).map((i) => <option key={i.id} value={i.id}>{i.intercom_code}{i.line_number ? ` · line ${i.line_number}` : " · no line yet"}</option>)}
+                    {icChoices.map((i) => <option key={i.id} value={i.id}>{i.intercom_code}{i.line_number ? ` · line ${i.line_number}` : " · no line yet"}</option>)}
                   </select>
                 </Field>
                 <Field label="Calling Number">
                   <select value={intercom?.phone_number ? intercom.id : ""} onChange={(e) => pickIntercom(e.target.value)} style={input}>
                     <option value="">—</option>
-                    {(intercoms ?? []).filter((i) => i.phone_number).map((i) => <option key={i.id} value={i.id}>{i.phone_number}</option>)}
+                    {icChoices.filter((i) => i.phone_number).map((i) => <option key={i.id} value={i.id}>{i.phone_number}</option>)}
                   </select>
                 </Field>
                 <p style={{ margin: 0, fontSize: 12.5, color: C.muted }}>Pick any one and the others fill in. An intercom with no line yet goes on this line when you save.</p>

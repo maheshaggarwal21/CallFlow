@@ -227,6 +227,9 @@ router.get("/:id", async (req, res) => {
   return res.json(result.rows[0]);
 });
 
+/** The statement that takes a person off their lines (`$ID` is their id parameter); callers add RETURNING / chain the intercoms. */
+const FREE_LINES = `UPDATE lines SET employee_id = NULL, assigned_at = NULL, freed_at = NOW() WHERE employee_id = $ID::uuid`;
+
 /** Columns, ticked tabs and line in one transaction; `id` null = a new user. */
 async function saveUser(id: string | null, d: z.infer<typeof patchSchema>): Promise<string | null> {
   const cols = COLUMNS.filter((c) => d[c] !== undefined);
@@ -244,7 +247,15 @@ async function saveUser(id: string | null, d: z.infer<typeof patchSchema>): Prom
   // database costs ~110 ms, so BEGIN / COMMIT around a single UPDATE was a fifth of the wait.
   if (id && d.permissions === undefined && d.line_id === undefined && d.intercom_id === undefined && d.employee_code === undefined) {
     if (!cols.length) return id;
-    const r = await pool.query(`UPDATE employees SET ${sets.join(", ")} WHERE id = $${cols.length + 1} RETURNING id`, [...values, id]);
+    const n = cols.length + 1;
+    // switching someone off frees their line (no agent) and takes their intercom off it; the intercom keeps its number
+    const sql = d.status === "inactive"
+      ? `WITH me AS (UPDATE employees SET ${sets.join(", ")} WHERE id = $${n} RETURNING id),
+              freed AS (${FREE_LINES.replace("$ID", `$${n}`)} RETURNING line_number),
+              ic AS (UPDATE intercoms SET line_number = NULL WHERE line_number IN (SELECT line_number FROM freed))
+         SELECT id FROM me`
+      : `UPDATE employees SET ${sets.join(", ")} WHERE id = $${n} RETURNING id`;
+    const r = await pool.query(sql, [...values, id]);
     forgetAuthCache();
     return r.rows.length ? id : null;
   }
@@ -269,15 +280,33 @@ async function saveUser(id: string | null, d: z.infer<typeof patchSchema>): Prom
         `WITH gone AS (DELETE FROM employee_permissions WHERE employee_id = $1 AND permission <> ALL($2::text[]))
          INSERT INTO employee_permissions (employee_id, permission) SELECT $1, unnest($2::text[]) ON CONFLICT DO NOTHING`, [id, d.permissions]);
     }
-    if (d.line_id !== undefined) {
+    const leaving = d.status === "inactive";
+    if (leaving) {
+      // switched off: their line is freed and their intercom leaves it (keeping its calling number); nothing new is given
+      await client.query(
+        `WITH freed AS (${FREE_LINES.replace("$ID", "$1")} RETURNING line_number)
+         UPDATE intercoms SET line_number = NULL WHERE line_number IN (SELECT line_number FROM freed)`, [id]);
+    } else if (d.line_id) {
+      // one person per line (client, 15 Nov): a line another person holds can't be taken, and a switched-off person can't hold one
+      const h = (await client.query(
+        `SELECT l.line_number, l.employee_id AS holder, e.name AS holder_name, (SELECT status FROM employees WHERE id = $2) AS status
+         FROM lines l LEFT JOIN employees e ON e.id = l.employee_id WHERE l.id = $1`, [d.line_id, id])).rows[0];
+      if (!h) throw Object.assign(new Error("That line doesn't exist"), { status: 400 });
+      if (h.status === "inactive") throw Object.assign(new Error("A switched-off person can't hold a line"), { status: 400 });
+      if (h.holder && h.holder !== id) {
+        throw Object.assign(new Error(`Line ${h.line_number} is with ${h.holder_name}. Free it first, or use Swap agents on the Intercoms tab.`), { status: 400 });
+      }
+    }
+    if (d.line_id !== undefined && !leaving) {
       // one line per user in the form: the picked line moves to them, their earlier line is freed
       // in one statement: the picked line is theirs (keeping its date if it already was), their other lines are freed
       await client.query(
         `UPDATE lines SET employee_id = CASE WHEN id = $2::uuid THEN $1::uuid END,
-                          assigned_at = CASE WHEN id = $2::uuid THEN COALESCE(CASE WHEN employee_id = $1::uuid THEN assigned_at END, NOW()) END
+                          assigned_at = CASE WHEN id = $2::uuid THEN COALESCE(CASE WHEN employee_id = $1::uuid THEN assigned_at END, NOW()) END,
+                          freed_at = CASE WHEN id = $2::uuid THEN freed_at ELSE NOW() END
          WHERE employee_id = $1::uuid OR id = $2::uuid`, [id, d.line_id || null]);
     }
-    if (d.intercom_id !== undefined) {
+    if (d.intercom_id !== undefined && !leaving) {
       const line = (await client.query("SELECT line_number FROM lines WHERE employee_id = $1 ORDER BY line_number LIMIT 1", [id])).rows[0]?.line_number;
       if (d.intercom_id && !line) throw Object.assign(new Error("Pick a line for the intercom"), { status: 400 });
       if (line) {

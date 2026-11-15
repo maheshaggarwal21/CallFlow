@@ -93,6 +93,10 @@ export type Line = {
   /** The agent's Reg No. */
   employee_code: number | null;
   call_count_today: number;
+  /** When the line last lost its agent (null = never). */
+  freed_at: string | null;
+  /** Calls that came in on this line with no agent since it was freed: they count for nobody until given to an agent. */
+  gap_calls: number;
 };
 
 export type Intercom = {

@@ -82,7 +82,23 @@ Deeper detail on pay: `docs/salary-commission/CURRENT-STATE.md`. Architecture an
 
 **Migrations live in prod:** 016 access, 017 calls index, 018 teams, 019 extra deductions,
 020 Lines→Intercoms permission move, 021 `payment_status`, 022 `employees.left_on` (earlier leavers
-back-filled with their last call day). Migrations are re-runnable and never edited after shipping.
+back-filled with their last call day), 023 `lines.freed_at` + frees lines of switched-off people. Migrations are re-runnable and never edited after shipping.
+
+## 4a. Line, intercom and agent rules (client, 15 Nov 2026; migration 023)
+
+- **One person per line, one line per person, one intercom per line.** The recording's agent is stamped from
+  `lines.employee_id` **when the recording arrives** (FTP ingest) and is never re-tagged by itself.
+- **Switching a rep off frees their line** (no agent, `lines.freed_at` = now) **and takes their intercom off the
+  line; the intercom keeps its calling number.** Switching back on does NOT re-attach anything. Migration 023
+  also freed lines held by people already switched off (that was Jiya's line 01).
+- **Dropdowns:** Intercoms popup: Line = lines with no other intercom; Agent = active people (any rank) who hold no
+  other line. Users form: only free lines and intercoms (plus the user's own). The API enforces the same
+  (409/400 with a readable message): `PATCH /lines/:id`, `saveUser`.
+- **Calls on a free line have no agent** and count for nobody. `GET /lines` returns `gap_calls` (calls on the line
+  with no agent since `freed_at`); the Intercoms page shows a warning, and the Intercoms popup has a checkbox
+  "give them the N calls" (`PATCH /lines/:id` with `claim_gap`).
+- **Swap agents:** `POST /lines/swap {a, b, with_intercoms}` (Intercoms tab button): the two lines trade agents in
+  one step; optionally the two intercoms trade lines too. Past calls are not touched.
 
 ## 4b. Speed (15 Nov): the database is far from the server
 

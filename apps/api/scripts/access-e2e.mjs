@@ -252,6 +252,59 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
 ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_days_299", values: { name: "Test" } })).data?.mode === "dry-run", "WATI: local send is dry-run only");
 
 
+// ── line rules (client, 15 Nov 2026): one person per line; switching off frees the line; gap calls; swap ──
+{
+  const mk = async (tag) => (await call(owner, "POST", "/employees", { name: `LR ${tag}`, email: `lr${tag}${stamp}@crm-demo.local`, password: "Lr@123456", permissions: ["recordings"] })).data;
+  const [ua, ub] = [await mk("a"), await mk("b")];
+  const L = {};
+  for (const n of ["97", "98"]) L[n] = (await pool.query("INSERT INTO lines (line_number) VALUES ($1) ON CONFLICT (line_number) DO UPDATE SET employee_id = NULL, freed_at = NULL RETURNING id", [n])).rows[0].id;
+  const spare = (await call(owner, "GET", "/intercoms")).data.filter((i) => !i.line_number && i.phone_number).slice(0, 1)[0];
+  const lineOf = async (n) => (await call(owner, "GET", "/lines")).data.find((l) => l.line_number === n);
+
+  ok((await call(owner, "PATCH", `/lines/${L["97"]}`, { employee_id: ua.id })).status === 200, "line rules: an active person is put on a free line");
+  const two = await call(owner, "PATCH", `/lines/${L["98"]}`, { employee_id: ua.id });
+  ok(two.status === 409 && /already has line 97/.test(two.msg), "line rules: one line per person", `${two.status} ${two.msg}`);
+  const taken = await call(owner, "PATCH", `/employees/${ub.id}`, { line_id: L["97"] });
+  ok(taken.status === 400 && /is with LR a/.test(taken.msg), "line rules: a line another person holds can't be taken (Users form)", `${taken.status} ${taken.msg}`);
+
+  // swap: needs two lines with agents; past calls are not touched
+  await call(owner, "PATCH", `/lines/${L["98"]}`, { employee_id: ub.id });
+  const sw = await call(owner, "POST", "/lines/swap", { a: L["97"], b: L["98"] });
+  ok(sw.status === 200 && (await lineOf("97")).employee_id === ub.id && (await lineOf("98")).employee_id === ua.id, "swap: the two lines trade agents", `${sw.status} ${sw.msg}`);
+  ok((await call(owner, "POST", "/lines/swap", { a: L["97"], b: L["97"] })).status === 400, "swap: the same line twice is refused");
+  const nn = await call(neha, "POST", "/lines/swap", { a: L["97"], b: L["98"] });
+  ok(nn.status === 403, "swap: needs the Intercoms tab", `${nn.status}`);
+
+  // an intercom on line 97, then its person is switched off: line free, intercom off the line, number kept
+  if (spare) {
+    await call(owner, "PATCH", `/intercoms/${spare.id}`, { phone_number: spare.phone_number, line_number: "97" });
+    await call(owner, "PATCH", `/employees/${ub.id}`, { status: "inactive" });
+    const l97 = await lineOf("97");
+    const icAfter = (await call(owner, "GET", "/intercoms")).data.find((i) => i.id === spare.id);
+    ok(l97.employee_id === null && l97.freed_at !== null, "switching a person off frees their line");
+    ok(icAfter.line_number === null && icAfter.phone_number === spare.phone_number, "…the intercom leaves the line but keeps its calling number");
+  }
+
+  // calls that arrive on a free line have no agent; the next agent can be given them
+  const t0 = (await lineOf("97")).freed_at;
+  await pool.query("INSERT INTO calls (source_file_key, line_number, called_at, duration_secs, call_direction, caller_phone) VALUES ($1, '97', NOW(), 30, 'outbound', '9876500000'), ($2, '97', NOW(), 5, 'outbound', '9876500001')",
+    [`e2e/${stamp}/a.wav`, `e2e/${stamp}/b.wav`]);
+  ok((await lineOf("97")).gap_calls === 2, "a free line counts the calls that came with no agent (short ones too)", String((await lineOf("97")).gap_calls));
+  const none = await call(owner, "PATCH", `/employees/${ua.id}`, { status: "inactive" });
+  const sick = await call(owner, "PATCH", `/lines/${L["97"]}`, { employee_id: ua.id });
+  ok(sick.status === 400 && /switched off/.test(sick.msg), "a switched-off person can't be put on a line", `${sick.status} ${sick.msg}`);
+  await call(owner, "PATCH", `/employees/${ua.id}`, { status: "active" });
+  ok((await lineOf("98")).employee_id === null, "…and her line 98 was freed when she was switched off (back on does not re-attach)");
+  const give = await call(owner, "PATCH", `/lines/${L["97"]}`, { employee_id: ua.id, claim_gap: true });
+  ok(give.status === 200 && give.data.claimed === 2, "giving the free line to an agent can give her the gap calls", JSON.stringify(give.data));
+  ok((await pool.query("SELECT COUNT(*)::int n FROM calls WHERE source_file_key LIKE $1 AND employee_id = $2", [`e2e/${stamp}/%`, ua.id])).rows[0].n === 2 && (await lineOf("97")).gap_calls === 0, "…and the warning count goes to 0");
+
+  await pool.query("DELETE FROM calls WHERE source_file_key LIKE $1", [`e2e/${stamp}/%`]);
+  await pool.query("DELETE FROM lines WHERE id = ANY($1)", [Object.values(L)]);
+  await pool.query("DELETE FROM employees WHERE id = ANY($1)", [[ua.id, ub.id]]);
+  if (spare) await pool.query("UPDATE intercoms SET line_number = NULL WHERE id = $1", [spare.id]);
+}
+
 mock.server.close();
 
 // ── clean up: test users, line 99, intercom links as they were ──
