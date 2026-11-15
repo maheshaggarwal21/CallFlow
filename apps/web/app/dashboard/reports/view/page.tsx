@@ -117,12 +117,12 @@ export default function ReportViewPage() {
                 <button style={sectionBtn(current === "overview")} onClick={() => setSection("overview")} aria-current={current === "overview"}>Overview</button>
                 {showTeam && <button style={sectionBtn(current === "team")} onClick={() => setSection("team")} aria-current={current === "team"}>Team</button>}
                 {/* One People dropdown instead of a button per agent (client, 13 Nov) */}
-                {(people.length > 0 || data.idle.length > 0) && (
+                {people.length > 0 && (
                   <select aria-label="Pick an agent" value={person ? person.code : ""} onChange={(e) => e.target.value && setSection(e.target.value)}
                     style={{ ...sectionBtn(!!person), appearance: "auto", flex: "none", maxWidth: 260 }}>
                     <option value="" disabled>People</option>
                     {people.map((p) => <option key={p.code} value={p.code}>{p.name} · {p.calls} calls</option>)}
-                    {data.idle.map((n) => <option key={n} value="" disabled>{n} · no calls</option>)}
+                    {/* people with no calls in the period are not listed (client, 15 Nov 2026) */}
                   </select>
                 )}
               </nav>
