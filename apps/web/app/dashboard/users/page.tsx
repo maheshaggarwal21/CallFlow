@@ -13,6 +13,7 @@ import Tag from "@/components/ui/Tag";
 import { Icon } from "@/components/crm/icons";
 import ExtraCommissions, { extraProblem } from "@/components/users/ExtraCommissions";
 import type { Employee, Intercom, Line, TeamsResponse, UserRole } from "@callflow/shared-types";
+import { istToday } from "@/lib/period";
 
 // Fits a 1280px laptop without sideways scrolling, Edit included (the minimums); on wider screens the spare
 // room is shared out so Access, Status and Edit get space too, not just Designation. Email gets the most.
@@ -177,7 +178,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
     target_trial: String(user?.target_trial ?? ""), target_regular: String(user?.target_regular ?? ""),
     // daily salary (15 Nov 2026): which targets count, and the first day paid (a new user: today, filled by the server)
     tick_call: user?.tick_call ?? false, tick_trial: user?.tick_trial ?? false, tick_regular: user?.tick_regular ?? false,
-    join_date: user?.join_date ?? "",
+    join_date: user ? user.join_date ?? "" : istToday(), // new user: today (IST), editable
     line_id: user?.line_id ?? "", intercom_id: user?.intercom_id ?? "", permissions: user?.permissions ?? [],
     extras: user?.extra_commissions ?? [], deductions: user?.extra_deductions ?? [], team_id: user?.team_id ?? "",
   });
