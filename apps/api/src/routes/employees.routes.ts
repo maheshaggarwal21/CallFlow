@@ -5,6 +5,7 @@ import pool from "../db/pool";
 import { requireAuth, forgetAuthCache } from "../middleware/auth";
 import { requirePermission } from "../middleware/requirePermission";
 import { requireOwner } from "../middleware/requireOwner";
+import { open as unsealPassword, seal as sealPassword, vaultConfigured } from "../lib/passwordVault";
 import { resolveRange, istDateKey } from "../lib/dateRange";
 import { commissionOn, feeCommission, isTrial, monthBounds, monthPayout, proRated, type PayPlan } from "../lib/payroll";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "../services/payments.service";
@@ -209,6 +210,21 @@ router.get("/payroll", requireOwner, async (req, res) => {
   return res.json({ month, from: b.from, to: b.to, connected, people });
 });
 
+/**
+ * The saved password of a User or Admin, for the Super Admin only (client, 15 Nov 2026; not logged). Super Admins'
+ * own passwords are never shown. A password set before this existed has no copy: type a new one and save.
+ */
+router.get("/:id/password", requireOwner, async (req, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return bad(res, 404, "Not found");
+  res.set("Cache-Control", "no-store");
+  if (!vaultConfigured()) return res.json({ status: "not_set_up", password: null });
+  const { rows: [r] } = await pool.query("SELECT role, password_enc FROM employees WHERE id = $1", [req.params.id]);
+  if (!r) return bad(res, 404, "Not found");
+  if (r.role === "owner") return bad(res, 403, "A Super Admin's password can't be shown");
+  const password = r.password_enc ? unsealPassword(r.password_enc) : null;
+  return res.json({ status: password ? "ok" : "not_saved", password });
+});
+
 router.get("/:id", async (req, res) => {
   const id = req.params.id;
   if (!req.user) {
@@ -237,6 +253,9 @@ async function saveUser(id: string | null, d: z.infer<typeof patchSchema>): Prom
   if (d.password !== undefined) {
     cols.push("password_hash" as any);
     values.push(await bcrypt.hash(d.password, 12));
+    // the Super Admin's "Show saved password" copy: encrypted, or null when the key isn't set up (never a stale one)
+    cols.push("password_enc" as any);
+    values.push(sealPassword(d.password));
   }
   // the day someone is switched off, for the Employee Tracker; kept on later saves, cleared when switched back on
   const sets = cols.map((c, i) => `${c} = $${i + 1}`);

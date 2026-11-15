@@ -151,6 +151,13 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
     extras: user?.extra_commissions ?? [], deductions: user?.extra_deductions ?? [], team_id: user?.team_id ?? "",
   });
   const [showPw, setShowPw] = useState(false);
+  // "Show saved password" (client, 15 Nov 2026): the Super Admin reads a User's or Admin's password; nothing is logged
+  const [savedPw, setSavedPw] = useState<{ status: string; password: string | null } | null>(null);
+  const [pwBusy, setPwBusy] = useState(false);
+  const showSaved = async () => {
+    setPwBusy(true);
+    try { setSavedPw(await api.get(`/employees/${user!.id}/password`)); } catch (e) { setError((e as Error).message); } finally { setPwBusy(false); }
+  };
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
@@ -282,6 +289,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
               <Field label="Email Id"><input type="email" value={f.email} maxLength={100} onChange={(e) => set({ email: e.target.value })} style={input} /></Field>
               <Field label="Reg No."><input type="number" min={1} value={f.employee_code} placeholder="Automatic" onChange={(e) => set({ employee_code: e.target.value })} style={input} /></Field>
               <Field label="Designation Name"><input value={f.designation} maxLength={60} placeholder="e.g. Call Rep." onChange={(e) => set({ designation: e.target.value })} style={input} /></Field>
+              <div style={{ minWidth: 0 }}>
               <Field label="Password" sub={user ? "blank = no change" : "min 8 letters"}>
                 <span style={{ position: "relative", display: "block" }}>
                   <input type={showPw ? "text" : "password"} value={f.password} maxLength={72} autoComplete="new-password"
@@ -291,6 +299,23 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
                     <Icon name="eye" size={17} /></button>
                 </span>
               </Field>
+              {isOwner && user && user.role !== "owner" && (
+                <div style={{ marginTop: 6, fontSize: 12.5, color: C.textSub }}>
+                  {!savedPw ? (
+                    <button type="button" onClick={showSaved} disabled={pwBusy}
+                      style={{ border: "none", background: "none", padding: 0, color: C.orange, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>{pwBusy ? "Loading…" : "Show saved password"}</button>
+                  ) : (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      {savedPw.status === "ok" ? <>Saved: <b style={{ fontFamily: "ui-monospace, monospace", fontSize: 13.5, color: C.text, userSelect: "all", overflowWrap: "anywhere" }}>{savedPw.password}</b>
+                          <button type="button" onClick={() => navigator.clipboard?.writeText(savedPw.password ?? "")} style={{ border: "none", background: "none", padding: 0, color: C.orange, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>Copy</button></>
+                        : savedPw.status === "not_saved" ? "No saved copy yet. Type a new password above and Save to keep one here."
+                        : "Viewing saved passwords isn't switched on yet."}
+                      <button type="button" onClick={() => setSavedPw(null)} style={{ border: "none", background: "none", padding: 0, color: C.muted, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>Hide</button>
+                    </span>
+                  )}
+                </div>
+              )}
+              </div>
               {teamsData && (
                 <Field label="Team">
                   <select value={f.team_id} onChange={(e) => (e.target.value === NEW_TEAM ? setNewTeam({ name: "", location: "", err: "", busy: false }) : set({ team_id: e.target.value }))} style={input}>

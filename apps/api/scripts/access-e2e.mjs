@@ -256,6 +256,22 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
 {
   const mk = async (tag) => (await call(owner, "POST", "/employees", { name: `LR ${tag}`, email: `lr${tag}${stamp}@crm-demo.local`, password: "Lr@123456", permissions: ["recordings"] })).data;
   const [ua, ub] = [await mk("a"), await mk("b")];
+  // "Show saved password" (client, 15 Nov 2026): encrypted copy, Super Admin only, Users and Admins only
+  const reveal = (tok, id) => call(tok, "GET", `/employees/${id}/password`);
+  const adminU = (await call(owner, "POST", "/employees", { name: "LR admin", email: `lrx${stamp}@crm-demo.local`, password: "Lr@123456", role: "admin", permissions: ["users"] })).data;
+  const admTok = (await login(`lrx${stamp}@crm-demo.local`, "Lr@123456")).token;
+  const r1 = await reveal(owner, ua.id);
+  ok(r1.status === 200 && r1.data.status === "ok" && r1.data.password === "Lr@123456", "saved password: the Super Admin sees a new user's password", JSON.stringify(r1.data));
+  const row = (await pool.query("SELECT password_enc, password_hash FROM employees WHERE id = $1", [ua.id])).rows[0];
+  ok(row.password_enc.startsWith("v1:") && !row.password_enc.includes("Lr@123456") && row.password_hash.startsWith("$2"), "saved password: stored encrypted (not plain text), login hash unchanged");
+  ok(!JSON.stringify((await call(owner, "GET", "/employees")).data).includes("password"), "saved password: no password field in the user list");
+  ok((await reveal(neha, ua.id)).status === 403 && (await reveal(admTok, ua.id)).status === 403, "saved password: only the Super Admin (a User and an Admin are refused)");
+  const oid = (await call(owner, "GET", "/auth/me")).data.id;
+  ok((await reveal(owner, oid)).status === 403, "saved password: a Super Admin's own password is never shown");
+  await call(owner, "PATCH", `/employees/${ub.id}`, { password: "Changed@12345" });
+  ok((await reveal(owner, ub.id)).data.password === "Changed@12345" && (await login(`lrb${stamp}@crm-demo.local`, "Changed@12345")).status === 200, "saved password: a changed password shows the new one and logs in");
+  await pool.query("UPDATE employees SET password_enc = NULL WHERE id = $1", [ub.id]);
+  ok((await reveal(owner, ub.id)).data.status === "not_saved", "saved password: no copy yet → says so");
   const L = {};
   for (const n of ["97", "98"]) L[n] = (await pool.query("INSERT INTO lines (line_number) VALUES ($1) ON CONFLICT (line_number) DO UPDATE SET employee_id = NULL, freed_at = NULL RETURNING id", [n])).rows[0].id;
   const spare = (await call(owner, "GET", "/intercoms")).data.filter((i) => !i.line_number && i.phone_number).slice(0, 1)[0];
@@ -305,7 +321,7 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
 
   await pool.query("DELETE FROM calls WHERE source_file_key LIKE $1", [`e2e/${stamp}/%`]);
   await pool.query("DELETE FROM lines WHERE id = ANY($1)", [Object.values(L)]);
-  await pool.query("DELETE FROM employees WHERE id = ANY($1)", [[ua.id, ub.id]]);
+  await pool.query("DELETE FROM employees WHERE id = ANY($1)", [[ua.id, ub.id, adminU.id]]);
   if (spare) await pool.query("UPDATE intercoms SET line_number = NULL WHERE id = $1", [spare.id]);
 }
 

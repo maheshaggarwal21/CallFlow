@@ -26,9 +26,14 @@ Deeper detail on pay: `docs/salary-commission/CURRENT-STATE.md`. Architecture an
 - **Auto mode blocks Claude from writing to the prod database** (and from writing server secrets). Read-only
   prod queries over ssh work. For a prod write, put it in `~/Downloads/callflow/deploy-crm/<name>.sh` and ask
   the user to run `! bash ~/Downloads/callflow/deploy-crm/<name>.sh`.
-- Passwords are bcrypt hashes: they can't be read. To give someone a password, the Super Admin types a new
-  one on the Users form (blank = no change). You may `bcrypt.compare` a password the user gives you,
-  read-only, to check whether it matches.
+- **Saved passwords (client decision, 15 Nov 2026: "internal system, they forget"):** login still uses the
+  bcrypt hash (`password_hash`). Next to it is `password_enc`, an AES-256-GCM copy (`lib/passwordVault.ts`, key
+  `PASSWORD_VIEW_KEY` in the server's `.env` only; set up on prod with `deploy-crm/enable-password-view.sh`). The
+  Super Admin sees it with "Show saved password" on the Users form (`GET /employees/:id/password`, owner only,
+  Users and Admins only, never a Super Admin's, `Cache-Control: no-store`, deliberately NOT logged). Passwords
+  set before this shipped have no copy: type a new one and Save. Without the key nothing is stored (and a changed
+  password clears any old copy), login is unaffected. Chosen over plain text so a copy of the database or a
+  backup alone shows no password. If the key is lost the copies are unreadable; people just get new passwords.
 - Keep secrets out of chat, logs and the browser: the payments key (`PAYMENTS_API_KEY`) and WATI token
   live only in `apps/api/.env` (local, git-ignored) and the droplet's `.env`. The user's email is private.
 
@@ -82,7 +87,8 @@ Deeper detail on pay: `docs/salary-commission/CURRENT-STATE.md`. Architecture an
 
 **Migrations live in prod:** 016 access, 017 calls index, 018 teams, 019 extra deductions,
 020 Lines→Intercoms permission move, 021 `payment_status`, 022 `employees.left_on` (earlier leavers
-back-filled with their last call day), 023 `lines.freed_at` + frees lines of switched-off people. Migrations are re-runnable and never edited after shipping.
+back-filled with their last call day), 023 `lines.freed_at` + frees lines of switched-off people,
+024 `employees.password_enc`. Migrations are re-runnable and never edited after shipping.
 
 ## 4a. Line, intercom and agent rules (client, 15 Nov 2026; migration 023)
 
