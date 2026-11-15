@@ -90,11 +90,15 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
 
 ## 5b. The rep's dashboard (client, 15 Nov 2026)
 
-Top to bottom: **Earned so far** this month (salary, commission, extras, deductions) with **Today** (live) and
-**Yesterday** (final) cards → **targets** (today live, or a closed day with its saved targets, marked final) → calls,
+Top to bottom: one live **Earned so far** card for the month (the total in bold, then each part by name: fixed
+salary, trial commission, regular commission, each extra and each deduction, and today's share) beside a
+**Yesterday** (final) card: that day's salary plus the commission on fees paid that day → **targets** (today live, or a closed day with its saved targets, marked final) → calls,
 talk time, real conversations, invalid numbers → **conversions** (trial and regular joinings with the fees) →
 busiest hours and the call funnel side by side → the **Days** list. Profile and salary plan sit behind **Details ▾**.
-A switched-off rep shows a grey **Inactive** badge. Every amount comes from `monthPay`.
+A switched-off rep shows a grey **Inactive** badge, and their dashboard is frozen at the day they left: it opens on
+the leaving month up to that day (the **final payout**), only earlier dates can be picked, there is no Yesterday card,
+and the targets box shows only when one day on or before the leaving day is picked. The calling ring is red below
+50 %, orange from 50 % and green at 100 %. Every amount comes from `monthPay`.
 
 ## 6. Still open
 
