@@ -299,7 +299,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
                     <Icon name="eye" size={17} /></button>
                 </span>
               </Field>
-              {isOwner && user && user.role !== "owner" && (
+              {isOwner && user && (user.role !== "owner" || isSelf) && (
                 <div style={{ marginTop: 6, fontSize: 12.5, color: C.textSub }}>
                   {!savedPw ? (
                     <button type="button" onClick={showSaved} disabled={pwBusy}

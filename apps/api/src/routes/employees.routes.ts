@@ -211,8 +211,8 @@ router.get("/payroll", requireOwner, async (req, res) => {
 });
 
 /**
- * The saved password of a User or Admin, for the Super Admin only (client, 15 Nov 2026; not logged). Super Admins'
- * own passwords are never shown. A password set before this existed has no copy: type a new one and save.
+ * The saved password of a User or Admin, for the Super Admin only (client, 15 Nov 2026; not logged). A Super Admin
+ * sees only their OWN password, never another Super Admin's. A password set before this existed has no copy: type a new one and save.
  */
 router.get("/:id/password", requireOwner, async (req, res) => {
   if (!z.string().uuid().safeParse(req.params.id).success) return bad(res, 404, "Not found");
@@ -220,7 +220,7 @@ router.get("/:id/password", requireOwner, async (req, res) => {
   if (!vaultConfigured()) return res.json({ status: "not_set_up", password: null });
   const { rows: [r] } = await pool.query("SELECT role, password_enc FROM employees WHERE id = $1", [req.params.id]);
   if (!r) return bad(res, 404, "Not found");
-  if (r.role === "owner") return bad(res, 403, "A Super Admin's password can't be shown");
+  if (r.role === "owner" && req.params.id !== req.user!.sub) return bad(res, 403, "Another Super Admin's password can't be shown");
   const password = r.password_enc ? unsealPassword(r.password_enc) : null;
   return res.json({ status: password ? "ok" : "not_saved", password });
 });

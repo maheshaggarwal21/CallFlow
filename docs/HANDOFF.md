@@ -30,7 +30,7 @@ Deeper detail on pay: `docs/salary-commission/CURRENT-STATE.md`. Architecture an
   bcrypt hash (`password_hash`). Next to it is `password_enc`, an AES-256-GCM copy (`lib/passwordVault.ts`, key
   `PASSWORD_VIEW_KEY` in the server's `.env` only; set up on prod with `deploy-crm/enable-password-view.sh`). The
   Super Admin sees it with "Show saved password" on the Users form (`GET /employees/:id/password`, owner only,
-  Users and Admins only, never a Super Admin's, `Cache-Control: no-store`, deliberately NOT logged). Passwords
+  Users and Admins, plus each Super Admin's OWN only (never another Super Admin's), `Cache-Control: no-store`, deliberately NOT logged). Passwords
   set before this shipped have no copy: type a new one and Save. Without the key nothing is stored (and a changed
   password clears any old copy), login is unaffected. Chosen over plain text so a copy of the database or a
   backup alone shows no password. If the key is lost the copies are unreadable; people just get new passwords.

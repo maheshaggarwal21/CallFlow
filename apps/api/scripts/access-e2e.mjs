@@ -267,7 +267,13 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok(!JSON.stringify((await call(owner, "GET", "/employees")).data).includes("password"), "saved password: no password field in the user list");
   ok((await reveal(neha, ua.id)).status === 403 && (await reveal(admTok, ua.id)).status === 403, "saved password: only the Super Admin (a User and an Admin are refused)");
   const oid = (await call(owner, "GET", "/auth/me")).data.id;
-  ok((await reveal(owner, oid)).status === 403, "saved password: a Super Admin's own password is never shown");
+  const own = await reveal(owner, oid);
+  ok(own.status === 200 && ["ok", "not_saved"].includes(own.data.status), "saved password: a Super Admin can ask for their own", JSON.stringify(own.data && { s: own.data.status }));
+  const other = (await call(owner, "POST", "/employees", { name: "LR owner", email: `lro${stamp}@crm-demo.local`, password: "Lr@123456", role: "owner" })).data;
+  const otherTok = (await login(`lro${stamp}@crm-demo.local`, "Lr@123456")).token;
+  ok((await reveal(owner, other.id)).status === 403, "saved password: …but not another Super Admin's");
+  const mine = await reveal(otherTok, other.id);
+  ok(mine.status === 200 && mine.data.password === "Lr@123456", "saved password: …and that Super Admin sees their own", JSON.stringify(mine.data));
   await call(owner, "PATCH", `/employees/${ub.id}`, { password: "Changed@12345" });
   ok((await reveal(owner, ub.id)).data.password === "Changed@12345" && (await login(`lrb${stamp}@crm-demo.local`, "Changed@12345")).status === 200, "saved password: a changed password shows the new one and logs in");
   await pool.query("UPDATE employees SET password_enc = NULL WHERE id = $1", [ub.id]);
@@ -321,7 +327,7 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
 
   await pool.query("DELETE FROM calls WHERE source_file_key LIKE $1", [`e2e/${stamp}/%`]);
   await pool.query("DELETE FROM lines WHERE id = ANY($1)", [Object.values(L)]);
-  await pool.query("DELETE FROM employees WHERE id = ANY($1)", [[ua.id, ub.id, adminU.id]]);
+  await pool.query("DELETE FROM employees WHERE id = ANY($1)", [[ua.id, ub.id, adminU.id, other.id]]);
   if (spare) await pool.query("UPDATE intercoms SET line_number = NULL WHERE id = $1", [spare.id]);
 }
 
