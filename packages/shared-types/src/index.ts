@@ -46,6 +46,11 @@ export type Employee = {
   target_call_secs?: number;
   target_trial?: number;
   target_regular?: number;
+  /** Daily salary (15 Nov 2026): which targets count for the day's salary, and the first day paid. */
+  tick_call?: boolean;
+  tick_trial?: boolean;
+  tick_regular?: boolean;
+  join_date?: string | null;
   permissions?: string[];
   line_id?: string | null;
   intercom_id?: string | null;

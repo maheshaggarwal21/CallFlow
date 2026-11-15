@@ -80,3 +80,119 @@ export function monthBounds(month: string): { from: string; to: string } | null 
   const last = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).getUTCDate();
   return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}` };
 }
+
+// ── Daily salary from targets (client, 15 Nov 2026; docs/salary-commission/EMPLOYEE-PAYMENT-FLOW.md) ──────────────
+
+export type DayTargets = {
+  target_call_secs: number; target_trial: number; target_regular: number;
+  tick_call: boolean; tick_trial: boolean; tick_regular: boolean;
+};
+export type DayDone = { call_secs: number; trial: number; regular: number };
+export type TargetKey = "call" | "trial" | "regular";
+/** One ticked target on one day: what was done, the target, and the share paid in quarters (0, 2, 3 or 4). */
+export type DayPart = { key: TargetKey; done: number; target: number; quarters: 0 | 2 | 3 | 4 };
+
+/**
+ * The share of one target that is paid, in quarters: below 50 % → 0, 50 % → 2 (½), 75 % → 3 (¾), 100 % or more → 4
+ * (full; nothing extra above 100 %). Whole-number maths, so 74.999… % can never be read as 75 %.
+ */
+export function stepQuarters(done: number, target: number): 0 | 2 | 3 | 4 {
+  if (done >= target) return 4;
+  if (4 * done >= 3 * target) return 3;
+  if (2 * done >= target) return 2;
+  return 0;
+}
+
+/**
+ * How much of the day salary a working day earns. Each ticked target with a value above 0 is an equal share;
+ * no such target → the full day. "Count as full" → the full day. Returned as a fraction num / den in quarters
+ * (num = sum of the shares' quarters, den = 4 × number of ticked targets) so money is rounded only once.
+ */
+export function dayShare(t: DayTargets, d: DayDone, countAsFull = false): { num: number; den: number; parts: DayPart[] } {
+  const parts: DayPart[] = [];
+  if (t.tick_call && t.target_call_secs > 0) parts.push({ key: "call", done: d.call_secs, target: t.target_call_secs, quarters: stepQuarters(d.call_secs, t.target_call_secs) });
+  if (t.tick_trial && t.target_trial > 0) parts.push({ key: "trial", done: d.trial, target: t.target_trial, quarters: stepQuarters(d.trial, t.target_trial) });
+  if (t.tick_regular && t.target_regular > 0) parts.push({ key: "regular", done: d.regular, target: t.target_regular, quarters: stepQuarters(d.regular, t.target_regular) });
+  if (countAsFull || parts.length === 0) return { num: 1, den: 1, parts };
+  return { num: parts.reduce((s, p) => s + p.quarters, 0), den: 4 * parts.length, parts };
+}
+
+/** The salary a day earns, in paise: fix salary × share ÷ working days, rounded once to the paisa. */
+export function dayPaise(fixSalary: number, num: number, den: number, workingDays: number): number {
+  if (workingDays <= 0 || den <= 0) return 0;
+  return Math.round((fixSalary * 100 * num) / (den * workingDays));
+}
+
+/** ISO weekday of an IST date "YYYY-MM-DD": 1 = Monday … 7 = Sunday. */
+export function isoWeekday(day: string): number {
+  const w = new Date(`${day}T00:00:00Z`).getUTCDay();
+  return w === 0 ? 7 : w;
+}
+
+/** Every date of a `YYYY-MM` month. */
+export function monthDays(month: string): string[] {
+  const b = monthBounds(month);
+  if (!b) return [];
+  const n = Number(b.to.slice(8));
+  return Array.from({ length: n }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`);
+}
+
+/** The month's working days: a ticked weekday that is not a holiday. */
+export function workingDaysOf(month: string, weekdays: number[], holidays: { has(day: string): boolean }): string[] {
+  const on = new Set(weekdays);
+  return monthDays(month).filter((d) => on.has(isoWeekday(d)) && !holidays.has(d));
+}
+
+/** Extras and deductions paid in a month up to `cutoff` (once, in the month their start date falls in); a % deduction is a % of the full fixed salary. */
+export function extrasAndDeductions(plan: PayPlan, from: string, cutoff: string) {
+  const startsIn = (x: { from: string }) => x.from >= from && x.from <= cutoff;
+  const extras = (plan.extra_commissions ?? []).filter(startsIn).map((x) => ({ name: x.name, amount: Math.round(x.amount) }));
+  const deductions = (plan.extra_deductions ?? []).filter(startsIn).map((x) => ({
+    name: x.name, amount: Math.round(x.type === "pct" ? (plan.fix_salary * x.amount) / 100 : x.amount),
+  }));
+  return { extras, deductions };
+}
+
+export type PayDayInput = {
+  day: string;
+  /** null = not working here that day (before joining, after leaving, switched off) */
+  targets: DayTargets | null;
+  done: DayDone;
+  countAsFull: boolean;
+};
+export type PayDay = {
+  day: string; weekday: number;
+  /** "working" a counted working day · "off" not a working weekday · "holiday" · "future" after today · "away" before joining / after leaving / switched off */
+  kind: "working" | "off" | "holiday" | "future" | "away";
+  holiday: string | null;
+  done: DayDone | null; parts: DayPart[]; noTargets: boolean; countAsFull: boolean;
+  num: number; den: number; paise: number;
+};
+
+/**
+ * The salary part of a month under daily pay, up to and including `cutoff` (today for the running month).
+ * Days are listed for the whole month so the Days view can show them; only working days up to `cutoff` earn.
+ */
+export function dailySalary(plan: PayPlan, month: string, cutoff: string, weekdays: number[], holidays: Map<string, string>, input: Map<string, PayDayInput>) {
+  const working = workingDaysOf(month, weekdays, holidays);
+  const W = working.length;
+  const workSet = new Set(working);
+  const days: PayDay[] = monthDays(month).map((day) => {
+    const base = { day, weekday: isoWeekday(day), holiday: holidays.get(day) ?? null, done: null, parts: [], noTargets: false, countAsFull: false, num: 0, den: 1, paise: 0 };
+    if (holidays.has(day)) return { ...base, kind: "holiday" as const };
+    if (!workSet.has(day)) return { ...base, kind: "off" as const };
+    if (day > cutoff) return { ...base, kind: "future" as const };
+    const i = input.get(day);
+    if (!i || !i.targets) return { ...base, kind: "away" as const, done: i?.done ?? null };
+    const s = dayShare(i.targets, i.done, i.countAsFull);
+    return { ...base, kind: "working" as const, done: i.done, parts: s.parts, noTargets: s.parts.length === 0, countAsFull: i.countAsFull,
+      num: s.num, den: s.den, paise: dayPaise(plan.fix_salary, s.num, s.den, W) };
+  });
+  const paise = days.reduce((t, d) => t + d.paise, 0);
+  return {
+    days, working_days: W,
+    /** working days up to the cutoff (whether or not anything was earned on them) */
+    days_so_far: days.filter((d) => d.kind === "working" || d.kind === "away").length,
+    salary_paise: paise,
+  };
+}

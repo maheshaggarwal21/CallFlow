@@ -4,6 +4,7 @@
 // Super Admin's eye on that user's dashboard (Employee Tracker → View). Left: who they are
 // and their salary plan, as a clean card. Right: today's targets (what is done, what is left), their
 // calls for the picked period, and what they earned in it. Figures are their own only (the API forces it).
+import DaysView from "@/components/salary/DaysView";
 import Link from "next/link";
 import useSWR from "swr";
 import { useState, type CSSProperties, type ReactNode } from "react";
@@ -33,6 +34,8 @@ type Summary = {
   /** The month's pay, as the Employee Tracker works it out (month of the picked period's end). */
   pay: {
     month: string; base: number; total: number;
+    /** daily salary (15 Nov 2026): "daily" = salary earned on working days so far; same numbers as the tracker and Days */
+    mode: "monthly" | "daily"; working_days: number | null; days_so_far: number | null;
     trial: { count: number; commission: number }; regular: { count: number; commission: number };
     extras: { name: string; amount: number }[]; deductions: { name: string; amount: number }[];
   };
@@ -225,22 +228,30 @@ export default function UserDashboard({ id }: { id?: string }) {
               display: "grid", alignContent: "space-between", gap: 14, boxShadow: "0 14px 30px -18px rgba(43,33,24,.7)" }}>
               <div>
                 <div style={{ ...capLabel, color: "#e3b778" }}>{my("Pay")} · {monthName(s.pay.month)}</div>
-                <div style={{ fontSize: 13, color: "#d9c8b4", marginTop: 2 }}>Salary + commission + extras − deductions</div>
+                <div style={{ fontSize: 13, color: "#d9c8b4", marginTop: 2 }}>
+                  {s.pay.mode === "daily" ? "Earned so far: salary for working days + commission + extras − deductions" : "Salary + commission + extras − deductions"}</div>
               </div>
               <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1 }}>{inr(s.pay.total)}</div>
               <div style={{ display: "grid", gap: 8, fontSize: 13.5, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,.14)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Fix salary</span><b style={{ color: "#fff" }}>{inr(s.pay.base)}</b></div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>{s.pay.mode === "daily" ? `Salary · ${s.pay.days_so_far} of ${s.pay.working_days} working days` : "Fix salary"}</span><b style={{ color: "#fff" }}>{inr(s.pay.base)}</b></div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Trial commission · {s.pay.trial.count}</span><b style={{ color: "#fff" }}>{inr(s.pay.trial.commission)}</b></div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>Regular commission · {s.pay.regular.count}</span><b style={{ color: "#fff" }}>{inr(s.pay.regular.commission)}</b></div>
                 {s.pay.extras.map((x, i) => <div key={`b${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>+ {x.name}</span><b style={{ color: "#9fd18b" }}>+{inr(x.amount)}</b></div>)}
                 {s.pay.deductions.map((x, i) => <div key={`d${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e9dccb" }}><span>− {x.name}</span><b style={{ color: "#f2a69c" }}>−{inr(x.amount)}</b></div>)}
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,.14)", fontWeight: 800 }}>
-                  <span>Total pay</span><span style={{ color: "#e3b778" }}>{inr(s.pay.total)}</span></div>
+                  <span>{s.pay.mode === "daily" ? "Earned so far" : "Total pay"}</span><span style={{ color: "#e3b778" }}>{inr(s.pay.total)}</span></div>
               </div>
               <div style={{ fontSize: 12.5, color: "#d9c8b4" }}>
                 In the period picked above: {inr(s.income.total)} commission on {s.income.joinings} fee{s.income.joinings === 1 ? "" : "s"} ({inr(s.income.fees)})</div>
             </section>
           </div>
+
+          {/* ── Daily pay: the month day by day (same numbers as the Pay card and the Employee Tracker) ── */}
+          {s.pay.mode === "daily" && (
+            <Panel title={my("Days")} sub={`${monthName(s.pay.month)} · what each working day earned`}>
+              <DaysView employeeId={id} month={s.pay.month} />
+            </Panel>
+          )}
 
           {/* ── Fees collected in the picked period, from the school site ── */}
           <Panel title={my("Fees collected")} sub="From the school's payments · the commission each one earned">

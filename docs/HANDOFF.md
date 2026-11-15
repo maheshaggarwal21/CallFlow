@@ -88,7 +88,7 @@ Deeper detail on pay: `docs/salary-commission/CURRENT-STATE.md`. Architecture an
 **Migrations live in prod:** 016 access, 017 calls index, 018 teams, 019 extra deductions,
 020 Lines→Intercoms permission move, 021 `payment_status`, 022 `employees.left_on` (earlier leavers
 back-filled with their last call day), 023 `lines.freed_at` + frees lines of switched-off people,
-024 `employees.password_enc`. Migrations are re-runnable and never edited after shipping.
+024 `employees.password_enc`, 025 daily pay (ticks, join_date, pay_settings, holidays, day_targets, day_overrides). Migrations are re-runnable and never edited after shipping.
 
 ## 4a. Line, intercom and agent rules (client, 15 Nov 2026; migration 023)
 
@@ -123,7 +123,15 @@ of queries per request small.
 found"). A number that never chatted has no conversation: the inbox opens and the number is copied so the user
 can press + (New chat).
 
-## 5. Pay rules (code: `apps/api/src/lib/payroll.ts`, tests `payroll.test.ts`)
+## 5. Pay rules (code: `apps/api/src/lib/payroll.ts`, tests `payroll.test.ts`, `dailyPay.test.ts`)
+
+**Daily salary from targets (15 Nov 2026): read `docs/salary-commission/EMPLOYEE-PAYMENT-FLOW.md`.** Every pay
+number on every screen comes from ONE function, `monthPay` in `apps/api/src/services/pay.service.ts` (Employee
+Tracker, the rep's dashboard and the eye, the Days view). Never compute pay anywhere else. It is Off on prod until
+"Daily pay starts from" is set (Working days panel); Off = the monthly rule below, unchanged. Migration 025;
+days close via `closeDays` (prod, every 10 min; `pay_settings` closed_from / closed_through); tests pin "today"
+with `?as_of=` (ignored in production).
+
 
 Confirmed by the client (14–15 Nov 2026):
 - **Commission goes to the rep the payment is filed under** on the school site (by CallFlow ID).

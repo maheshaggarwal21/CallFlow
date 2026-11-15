@@ -331,6 +331,148 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   if (spare) await pool.query("UPDATE intercoms SET line_number = NULL WHERE id = $1", [spare.id]);
 }
 
+// ── Daily salary from targets (docs/salary-commission/EMPLOYEE-PAYMENT-FLOW.md) ──────────────────────────────────
+// A fixed, hand-worked month: November 2026, "today" pinned to Sat 21 Nov (as_of works only outside production).
+// Mon–Sat working, 11 Nov a holiday → 24 working days; ₹24,000 salary → ₹1,000 a day. Targets: 1 h calling, 1 trial,
+// 2 regular, all ticked → each is ⅓ of the day. Mock payments: 3 Nov Trial ₹500 · 5 Nov ₹2,999.50 · 10 Nov ₹4,000 ·
+// 20 Nov 102 × ₹10 (regular).
+{
+  const t0 = new Date().toISOString();
+  const AS = "as_of=2026-11-21";
+  const settingsBefore = (await call(owner, "GET", "/pay/settings")).data;
+  const get = (tok, path) => call(tok, "GET", path);
+
+  // ── settings and holidays: validation and rights ──
+  ok((await call(owner, "PUT", "/pay/settings", { weekdays: [], daily_pay_from: null })).status === 400, "daily pay: at least one working day");
+  ok((await call(owner, "PUT", "/pay/settings", { weekdays: [1, 1], daily_pay_from: null })).status === 400, "daily pay: a weekday twice is refused");
+  ok((await call(owner, "PUT", "/pay/settings", { weekdays: [1, 2, 3, 4, 5, 6], daily_pay_from: "2026-13" })).status === 400, "daily pay: a bad start month is refused");
+  ok((await call(neha, "PUT", "/pay/settings", { weekdays: [1, 2, 3, 4, 5, 6], daily_pay_from: null })).status === 403, "daily pay: only the Super Admin changes working days");
+  ok((await call(owner, "PUT", "/pay/settings", { weekdays: [1, 2, 3, 4, 5, 6], daily_pay_from: null })).status === 200, "daily pay: working days Mon–Sat saved, daily pay Off");
+  await pool.query("DELETE FROM holidays WHERE day = '2026-11-11'");
+  ok((await call(owner, "POST", "/pay/holidays", { day: "2026-02-30", name: "x" })).status === 400, "holiday: an impossible date is refused");
+  ok((await call(owner, "POST", "/pay/holidays", { day: "2026-11-11", name: " " })).status === 400, "holiday: needs a name");
+  ok((await call(neha, "POST", "/pay/holidays", { day: "2026-11-11", name: "Test holiday" })).status === 403, "holiday: only the Super Admin adds one");
+  ok((await call(owner, "POST", "/pay/holidays", { day: "2026-11-11", name: "Test holiday" })).status === 201, "holiday: 11 Nov added");
+  ok((await call(owner, "POST", "/pay/holidays", { day: "2026-11-11", name: "Again" })).status === 409, "holiday: the same date twice is refused");
+  const st = (await get(owner, "/pay/settings?month=2026-11")).data;
+  ok(st.working_days === 24 && st.daily === false, "working days: November 2026 = 30 − 5 Sundays − 1 holiday = 24", JSON.stringify({ w: st.working_days, d: st.daily }));
+
+  // ── the rep: salary, commission, targets with ticks, joining date, extras and deductions ──
+  const dp = await call(owner, "POST", "/employees", { name: "DP Rep", email: `dp${stamp}@crm-demo.local`, password: "Dp@123456", permissions: ["recordings"],
+    fix_salary: 24000, trial_commission: 100, trial_commission_type: "fix", regular_commission: 10, regular_commission_type: "pct",
+    target_call_secs: 3600, target_trial: 1, target_regular: 2, tick_call: true, tick_trial: true, tick_regular: true, join_date: "2026-11-02",
+    extra_commissions: [{ name: "Bonus", amount: 500, from: "2026-11-10", to: "2026-11-10" }, { name: "Later bonus", amount: 700, from: "2026-11-25", to: "2026-11-25" }],
+    extra_deductions: [{ name: "Late", type: "pct", amount: 5, from: "2026-11-04", to: "2026-11-04" }, { name: "Later fine", type: "fix", amount: 300, from: "2026-11-22", to: "2026-11-22" }] });
+  ok(dp.status === 201 && dp.data.tick_call === true && dp.data.tick_trial === true && dp.data.join_date === "2026-11-02", "Users form: target ticks and joining date saved", `${dp.status} ${dp.msg}`);
+  ok((await call(owner, "PATCH", `/employees/${dp.data.id}`, { join_date: "2026-11-31" })).status === 400, "Users form: an impossible joining date is refused");
+  const rid = dp.data.id;
+  const repTok = (await login(`dp${stamp}@crm-demo.local`, "Dp@123456")).token;
+  // calls (IST): 2 Nov 1 h · 3 Nov 30 min · 4 Nov 45 min · 7 Nov 1 h · 9 Nov 1 h · 10 Nov 1 h · 11 Nov (holiday) 1 h · 21 Nov (today) 1 h
+  const C = [["2026-11-02", 3600], ["2026-11-03", 1800], ["2026-11-04", 2700], ["2026-11-07", 3600], ["2026-11-09", 3600], ["2026-11-10", 3600], ["2026-11-11", 3600], ["2026-11-21", 3600]];
+  for (const [d, secs] of C) {
+    await pool.query("INSERT INTO calls (source_file_key, called_at, duration_secs, call_direction, caller_phone, employee_id) VALUES ($1, $2, $3, 'outbound', '9876500100', $4)",
+      [`e2e/${stamp}/dp-${d}.wav`, `${d} 10:00:00+05:30`, secs, rid]);
+  }
+  // days close in order, as in production (the closer runs every few minutes): up to 8 Nov first
+  await pool.query("DELETE FROM day_targets WHERE day >= '2026-10-01'");
+  await pool.query("DELETE FROM pay_settings WHERE key IN ('closed_from', 'closed_through')");
+  ok((await call(owner, "POST", "/pay/dev/close-days", { today: "2026-11-01" })).status === 200 && (await call(owner, "POST", "/pay/dev/close-days", { today: "2026-11-09" })).data.closed > 0, "closing days: 31 Oct – 8 Nov saved");
+  ok((await pool.query("SELECT COUNT(*)::int n FROM day_targets WHERE employee_id = $1 AND day BETWEEN '2026-11-01' AND '2026-11-08'", [rid])).rows[0].n === 7, "closing days: the rep has 2–8 Nov saved (not 1 Nov, before her joining date)");
+  // 9 Nov was closed with a 2 h calling target and only calling ticked (the target was changed after): it keeps those
+  await pool.query("INSERT INTO day_targets (employee_id, day, target_call_secs, target_trial, target_regular, tick_call, tick_trial, tick_regular) VALUES ($1, '2026-11-09', 7200, 1, 2, true, false, false)", [rid]);
+
+  // ── daily pay Off: the old rule (full fixed salary for the month) ──
+  const off = (await get(owner, `/employees/payroll?month=2026-11&${AS}`)).data.people.find((x) => x.id === rid);
+  ok(off?.mode === "monthly" && off.base === 24000, "daily pay Off: November keeps the full-month rule", JSON.stringify(off && { m: off.mode, b: off.base }));
+
+  ok((await call(owner, "PUT", "/pay/settings", { weekdays: [1, 2, 3, 4, 5, 6], daily_pay_from: "2026-11" })).status === 200, "daily pay switched on from November 2026");
+  ok((await call(owner, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-06", full: true })).status === 200, "count as full: 6 Nov (no calls recorded)");
+  ok((await call(owner, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-25", full: true })).status === 400, "count as full: not a day that hasn't happened");
+  ok((await call(owner, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-08", full: true })).status === 400, "count as full: not a Sunday");
+  ok((await call(owner, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-11", full: true })).status === 400, "count as full: not a holiday");
+  ok((await call(repTok, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-12", full: true })).status === 403, "count as full: only the Super Admin");
+
+  // expected, worked by hand (paise; ₹1,000 a day = 100000):
+  const want = {
+    "2026-11-02": 33333,  // calling 100 %, trial 0, regular 0 → ⅓
+    "2026-11-03": 50000,  // calling 50 % (½ of ⅓) + trial 1/1 (⅓) → ½
+    "2026-11-04": 25000,  // calling 75 % → ¾ of ⅓ = ¼
+    "2026-11-05": 16667,  // regular 1 of 2 = 50 % → ½ of ⅓ = ⅙
+    "2026-11-06": 100000, // counted as full
+    "2026-11-07": 33333,  // calling 100 % → ⅓
+    "2026-11-09": 50000,  // its saved targets: only calling, 1 h of 2 h = 50 % → ½
+    "2026-11-10": 50000,  // calling 100 % (⅓) + regular 1 of 2 (½ of ⅓) → ½
+    "2026-11-20": 33333,  // 102 regular payments → regular 100 % → ⅓
+    "2026-11-21": 33333,  // today, live: calling 1 h → ⅓
+  };
+  const salaryPaise = Object.values(want).reduce((a, b) => a + b, 0);   // 424999 = ₹4,249.99
+  // commission: 1 trial × ₹100 + 10 % of (2,999.50 + 4,000 + 1,020) = ₹801.95 → ₹802; extras ₹500 (10 Nov); deduction 5 % of ₹24,000 = ₹1,200
+  const total = (salaryPaise + 100 * (100 + 802 + 500 - 1200)) / 100;    // ₹4,451.99
+
+  const days = await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`);
+  const D = days.data;
+  ok(days.status === 200 && D.mode === "daily" && D.working_days === 24 && D.days_so_far === 17, "Days view: daily rule, 24 working days, 17 so far (2–21 Nov without 2 Sundays and the holiday)", JSON.stringify({ s: days.status, m: D?.mode, w: D?.working_days, n: D?.days_so_far }));
+  const kind = (d) => D.days.find((x) => x.day === d);
+  const wrong = Object.entries(want).filter(([d, p]) => kind(d)?.paise !== p).map(([d, p]) => `${d}: got ${kind(d)?.paise} want ${p}`);
+  ok(wrong.length === 0, "Days view: every day's ₹ matches the hand-worked figure", wrong.join("; "));
+  const zero = D.days.filter((x) => x.kind === "working" && !(x.day in want) && x.paise !== 0).map((x) => x.day);
+  ok(zero.length === 0 && ["2026-11-12", "2026-11-19"].every((d) => kind(d).kind === "working" && kind(d).paise === 0), "Days view: working days with nothing done earn ₹0", zero.join(","));
+  ok(kind("2026-11-08").kind === "off" && kind("2026-11-11").kind === "holiday" && kind("2026-11-11").holiday === "Test holiday" && kind("2026-11-11").paise === 0, "Days view: Sunday off; the holiday earns nothing even with calls on it");
+  ok(kind("2026-11-01").kind === "off" && kind("2026-11-23").kind === "future", "Days view: days after today are not counted yet");
+  ok(kind("2026-11-06").countAsFull === true && kind("2026-11-09").parts.length === 1 && kind("2026-11-09").parts[0].target === 7200, "Days view: count-as-full shown; 9 Nov kept its saved 2 h target and ticks");
+  ok(D.base === salaryPaise / 100 && D.days.reduce((t, x) => t + x.paise, 0) === salaryPaise, "Days view: salary = the sum of the days shown, to the paisa (₹4,249.99)", `${D.base}`);
+  ok(D.commission === 902 && D.trial.count === 1 && D.regular.count === 104, "commission so far: 1 trial × ₹100 + 10 % of ₹8,019.50 = ₹902", JSON.stringify({ c: D.commission, t: D.trial.count, r: D.regular.count }));
+  ok(JSON.stringify(D.extras) === JSON.stringify([{ name: "Bonus", amount: 500 }]) && JSON.stringify(D.deductions) === JSON.stringify([{ name: "Late", amount: 1200 }]), "extras and deductions so far: only those started by today; 5 % of the full ₹24,000", JSON.stringify({ e: D.extras, d: D.deductions }));
+  ok(D.total === total, "earned so far: ₹4,249.99 + ₹902 + ₹500 − ₹1,200 = ₹4,451.99", `${D.total}`);
+
+  // the same numbers everywhere: Employee Tracker, the Super Admin's eye, the rep's own dashboard, the rep's own days
+  const row = (await get(owner, `/employees/payroll?month=2026-11&${AS}`)).data.people.find((x) => x.id === rid);
+  const eye = (await get(owner, `/employees/${rid}/summary?date_from=2026-11-21&date_to=2026-11-21&${AS}`)).data;
+  const mine = (await get(repTok, `/employees/me/summary?date_from=2026-11-21&date_to=2026-11-21&${AS}`)).data;
+  const myDays = (await get(repTok, `/pay/days?month=2026-11&${AS}`)).data;
+  const sig = (x) => x && [x.mode, x.base, x.commission, x.total, x.working_days, x.days_so_far].join("|");
+  const expect = ["daily", salaryPaise / 100, 902, total, 24, 17].join("|");
+  ok(sig(row) === expect, "Employee Tracker row = the hand-worked numbers", sig(row));
+  ok(sig(eye?.pay) === expect, "Super Admin's eye (rep's dashboard) = the same numbers", sig(eye?.pay));
+  ok(sig(mine?.pay) === expect, "the rep's own dashboard = the same numbers", sig(mine?.pay));
+  ok(sig(myDays) === expect && myDays.days.length === 30, "the rep's own Days list = the same numbers", sig(myDays));
+  ok(mine?.today?.call_secs === kind("2026-11-21").done.call_secs && mine.today.call_secs === 3600, "today's targets box and today's row agree (1 h)", `${mine?.today?.call_secs}`);
+  ok((await get(repTok, `/pay/days?employee_id=${nehaId}&month=2026-11&${AS}`)).status === 403, "a rep can't open someone else's days");
+  ok((await get(repTok, "/pay/settings")).status === 403, "a rep can't open the Working days panel");
+
+  // joining later, and switching off, take days away
+  await call(owner, "PATCH", `/employees/${rid}`, { join_date: "2026-11-04" });
+  ok((await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data.base === (salaryPaise - 33333 - 50000) / 100, "joining on 4 Nov: 2 and 3 Nov are not paid");
+  await call(owner, "PATCH", `/employees/${rid}`, { join_date: "2026-11-02" });
+  await pool.query("UPDATE employees SET status = 'inactive', left_on = '2026-11-10' WHERE id = $1", [rid]);
+  const left = (await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data;
+  ok(left.base === (33333 + 50000 + 25000 + 16667 + 100000 + 33333 + 50000 + 50000) / 100 && left.days.find((x) => x.day === "2026-11-12").kind === "away", "switched off on 10 Nov: paid up to and including 10 Nov only", `${left.base}`);
+  const leftRow = (await get(owner, `/employees/payroll?month=2026-11&${AS}`)).data.people.find((x) => x.id === rid);
+  ok(leftRow?.base === left.base && leftRow.left_on === "2026-11-10", "…and the tracker shows the same for the leaver");
+  await pool.query("UPDATE employees SET status = 'active', left_on = NULL WHERE id = $1", [rid]);
+
+  // closing days saves the targets: closing up to 22 Nov leaves the money unchanged; a later target change only moves today
+  const closed = (await call(owner, "POST", "/pay/dev/close-days", { today: "2026-11-23" })).data;
+  ok(closed?.closed > 0, "closing days saves targets for the days that ended", JSON.stringify(closed));
+  ok((await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data.total === total, "closing days doesn't change what was earned");
+  await call(owner, "PATCH", `/employees/${rid}`, { target_call_secs: 7200 });
+  const after = (await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data;
+  const changed = after.days.filter((x) => x.paise !== (D.days.find((y) => y.day === x.day)?.paise)).map((x) => x.day);
+  ok(changed.join(",") === "2026-11-21" && after.days.find((x) => x.day === "2026-11-21").paise === 16667, "a target changed later: closed days keep their old target; only today (live) moves", changed.join(","));
+
+  // count as full can be undone
+  await call(owner, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-06", full: false });
+  ok((await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data.days.find((x) => x.day === "2026-11-06").paise === 0, "count as full undone: 6 Nov back to ₹0");
+
+  // clean up: the rep (with her calls, saved days and overrides), the test holiday, the days closed here, the settings
+  await pool.query("DELETE FROM calls WHERE source_file_key LIKE $1", [`e2e/${stamp}/dp-%`]);
+  await pool.query("DELETE FROM employees WHERE id = $1", [rid]);
+  await pool.query("DELETE FROM holidays WHERE day = '2026-11-11'");
+  await pool.query("DELETE FROM day_targets WHERE closed_at >= $1 OR day >= '2026-10-01'", [t0]);
+  await pool.query("DELETE FROM pay_settings WHERE key IN ('closed_from', 'closed_through')");
+  await call(owner, "PUT", "/pay/settings", { weekdays: settingsBefore.weekdays, daily_pay_from: settingsBefore.daily_pay_from });
+}
+
 mock.server.close();
 
 // ── clean up: test users, line 99, intercom links as they were ──

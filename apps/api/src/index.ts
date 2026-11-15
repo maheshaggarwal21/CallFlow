@@ -20,6 +20,8 @@ import devRoutes from "./routes/dev.routes";
 import crmRoutes from "./routes/crm.routes";
 import { DEV_UPLOADS_DIR } from "./services/storage.service";
 import { startReportScheduler } from "./services/report.service";
+import { startDayCloser } from "./services/pay.service";
+import payRoutes from "./routes/pay.routes";
 
 dotenv.config();
 
@@ -86,6 +88,7 @@ app.use("/api/v1/students", studentsRoutes);
 app.use("/api/v1/payments", paymentsRoutes);
 app.use("/api/v1/reports", reportsRoutes);
 app.use("/api/v1/teams", teamsRoutes);
+app.use("/api/v1/pay", payRoutes);
 
 // CRM (lead follow-up) is off unless switched on per environment, so merging the
 // code exposes nothing until its migrations have run.
@@ -114,4 +117,6 @@ const port = Number(process.env.PORT || 4000);
 app.listen(port, () => {
   console.log(`API listening on port ${port}`);
   startReportScheduler();
+  // daily salary: save each day's targets just after it ends (production only; tests close days on request)
+  if (process.env.NODE_ENV === "production") startDayCloser();
 });

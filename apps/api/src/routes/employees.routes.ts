@@ -9,13 +9,16 @@ import { open as unsealPassword, seal as sealPassword, vaultConfigured } from ".
 import { resolveRange, istDateKey } from "../lib/dateRange";
 import { commissionOn, feeCommission, isTrial, monthBounds, monthPayout, proRated, type PayPlan } from "../lib/payroll";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "../services/payments.service";
+import { monthPay, PAY_COLS, requestToday, type PayEmployee } from "../services/pay.service";
 
 // The Users tab (client, 12 Nov 2026): one account per person with rank, tabs, salary rule, line and targets.
 const router = Router();
 const usersTab = requirePermission("users");
 
 const money = z.number().min(0).max(10_000_000);
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Dates must be YYYY-MM-DD");
+// a real calendar date: "2026-11-31" matches the pattern but would crash the database, so it is refused here
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Dates must be YYYY-MM-DD")
+  .refine((d) => !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().startsWith(d), "That date doesn't exist");
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Times must be HH:MM");
 /** One flat bonus from the Users form ("Extra Commission"): name, ₹ amount, active dates. Old rule fields are stripped. */
 export const extraSchema = z.object({
@@ -48,6 +51,11 @@ const fields = {
   target_call_secs: z.number().int().min(0).max(86_400),
   target_trial: z.number().int().min(0).max(1000),
   target_regular: z.number().int().min(0).max(1000),
+  // daily salary (client, 15 Nov 2026): which targets count for the day's salary, and the first day paid
+  tick_call: z.boolean(),
+  tick_trial: z.boolean(),
+  tick_regular: z.boolean(),
+  join_date: day,
   extra_commissions: z.array(extraSchema).max(20),
   extra_deductions: z.array(deductionSchema).max(20),
   team_id: z.string().uuid().nullable(),
@@ -68,6 +76,7 @@ const SELECT =
   `SELECT e.id, e.name, e.email, e.phone, e.role, e.status, e.color_index, e.employee_code, e.designation,
           e.fix_salary, e.trial_commission::float, e.trial_commission_type, e.regular_commission::float, e.regular_commission_type,
           e.target_call_secs, e.target_trial, e.target_regular, e.extra_commissions, e.extra_deductions, e.team_id, e.created_at,
+          e.tick_call, e.tick_trial, e.tick_regular, to_char(e.join_date, 'YYYY-MM-DD') AS join_date,
           ARRAY(SELECT permission FROM employee_permissions p WHERE p.employee_id = e.id) AS permissions,
           (SELECT l.id FROM lines l WHERE l.employee_id = e.id ORDER BY l.line_number LIMIT 1) AS line_id,
           (SELECT i.id FROM intercoms i JOIN lines l ON l.line_number = i.line_number WHERE l.employee_id = e.id ORDER BY l.line_number LIMIT 1) AS intercom_id
@@ -121,12 +130,12 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
     typeof req.query.date_from === "string" ? req.query.date_from : null,
     typeof req.query.date_to === "string" ? req.query.date_to : null
   );
-  const today = istDateKey(new Date());
+  const today = requestToday(req.query);
   const lastDay = istDateKey(new Date(end.getTime() - 1));
   // the targets box shows the day picked (Today, Yesterday or one custom day); a longer period shows today
   // (client, 15 Nov 2026: after midnight "Today's targets" read 0 while the cards showed yesterday)
   const targetDay = istDateKey(start) === lastDay ? lastDay : today;
-  const [me, talk] = await Promise.all([
+  const [me, talk, payRow] = await Promise.all([
     pool.query(
       `SELECT e.name, e.phone, e.email, e.employee_code, e.designation, e.role, e.color_index, ${PLAN_COLS},
               e.target_call_secs, e.target_trial, e.target_regular, l.line_number, i.intercom_code, i.phone_number AS calling_number
@@ -139,20 +148,18 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
       `SELECT COALESCE(SUM(duration_secs), 0)::int AS secs FROM calls
        WHERE employee_id = $1 AND called_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Kolkata')
          AND called_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`, [id, targetDay]),
+    pool.query(`SELECT ${PAY_COLS} FROM employees e WHERE e.id = $1`, [id]),
   ]);
   const u = me.rows[0];
   if (!u) return bad(res, 404, "Not found");
 
   // Joinings and commission come from the school's payments; if that service is down the rest of the page still loads
-  // the pay shown is for the month the picked period ends in, worked out exactly as the Employee Tracker does
-  const pay = monthBounds(lastDay.slice(0, 7))!;
-  let list: Payment[] = [], todays: Payment[] = [], monthList: Payment[] = [], error: string | null = null;
+  let list: Payment[] = [], todays: Payment[] = [], error: string | null = null;
   if (paymentsConfigured()) {
     try {
-      [list, todays, monthList] = await Promise.all([
+      [list, todays] = await Promise.all([
         paymentsFor(id, istDateKey(start), lastDay),
         paymentsFor(id, targetDay, targetDay),
-        paymentsFor(id, pay.from, pay.to),
       ]);
     } catch (e) {
       if (!(e instanceof PaymentsError)) throw e;
@@ -161,13 +168,17 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
   }
   const c = commissionOn(u, list);
   const t = commissionOn(u, todays);
+  // the pay shown is for the month the picked period ends in, from the same calculation as the Employee Tracker
+  // and the Days view (services/pay.service.ts), so the three can never disagree
+  const [p] = await monthPay([payRow.rows[0] as PayEmployee], lastDay.slice(0, 7), today);
+  const { payments: _pl, days: _pd, ...payOut } = p;
   return res.json({
     ...u,
     today: { date: targetDay, is_today: targetDay === today, call_secs: talk.rows[0].secs, trial: t.trial.count, regular: t.regular.count },
     income: { joinings: c.trial.count + c.regular.count, trial: c.trial.commission, regular: c.regular.commission, total: c.commission,
       trial_count: c.trial.count, regular_count: c.regular.count, fees: c.trial.fees + c.regular.fees },
     payments: { connected: paymentsConfigured() && !error, error, list: list.map(paymentRow(u)) },
-    pay: { month: lastDay.slice(0, 7), ...monthPayout(u, monthList, pay.from, pay.to) },
+    pay: payOut,
   });
 });
 
@@ -176,38 +187,22 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
 // Someone switched off during that month is listed too (client, 14 Nov 2026): salary for the days worked,
 // payments up to the day they left. Before that month they show as usual; after it, not at all.
 router.get("/payroll", requireOwner, async (req, res) => {
-  const month = typeof req.query.month === "string" ? req.query.month : istDateKey(new Date()).slice(0, 7);
+  const today = requestToday(req.query);
+  const month = typeof req.query.month === "string" ? req.query.month : today.slice(0, 7);
   const b = monthBounds(month);
   if (!b) return bad(res, 400, "month must be YYYY-MM");
   const { rows } = await pool.query(
-    `SELECT e.id, e.name, e.role, e.employee_code, e.color_index, ${PLAN_COLS},
-            CASE WHEN e.status = 'inactive' THEN to_char(e.left_on, 'YYYY-MM-DD') END AS left_on
-     FROM employees e WHERE (e.status = 'active' OR e.left_on >= $1::date) ORDER BY e.name`, [b.from]);
-  const connected = paymentsConfigured();
-  // a few reps at a time, so a large team doesn't flood the school's server
-  const out: unknown[] = [];
-  for (let i = 0; i < rows.length; i += 4) {
-    out.push(...await Promise.all(rows.slice(i, i + 4).map(async (e) => {
-      // left during this month: paid up to and including the day they left
-      const last: string = e.left_on && e.left_on < b.to ? e.left_on : b.to;
-      const monthDays = Number(b.to.slice(8)), days = Number(last.slice(8));
-      let list: Payment[] = [], error: string | null = null;
-      if (connected) {
-        try { list = await paymentsFor(e.id, b.from, last); } catch (err) {
-          if (!(err instanceof PaymentsError)) throw err;
-          error = err.message;
-        }
-      }
-      const { extra_commissions: _x, extra_deductions: _d, role: _r, ...who } = e;
-      const plan = last < b.to ? proRated(e, days, monthDays) : e;
-      // an Owner account is a person on the school site (Varinder Max): show the name payments are filed under
-      const name = e.role === "owner" && list[0]?.representativeName ? list[0].representativeName : e.name;
-      return { ...who, name, isOwner: e.role === "owner", left_on: e.left_on && e.left_on <= b.to ? e.left_on : null, days_paid: days, month_days: monthDays, error, ...monthPayout(plan, list, b.from, last) };
-    })));
-  }
+    `SELECT ${PAY_COLS} FROM employees e WHERE (e.status = 'active' OR e.left_on >= $1::date) ORDER BY e.name`, [b.from]);
+  const pays = await monthPay(rows as PayEmployee[], month, today);
+  const out = rows.map((e, i) => {
+    const { payments, days: _d, id: _id, ...p } = pays[i];
+    // an Owner account is a person on the school site (Varinder Max): show the name payments are filed under
+    const name = e.role === "owner" && payments[0]?.representativeName ? payments[0].representativeName : e.name;
+    return { id: e.id, name, employee_code: e.employee_code, color_index: e.color_index, fix_salary: e.fix_salary, isOwner: e.role === "owner", ...p };
+  });
   // owner accounts that aren't someone on the school site (the system "WATI LINE", a second owner) have no pay to show
-  const people = (out as { isOwner: boolean; error: string | null }[]).filter((p) => !(p.isOwner && p.error));
-  return res.json({ month, from: b.from, to: b.to, connected, people });
+  const people = out.filter((p) => !(p.isOwner && p.error));
+  return res.json({ month, from: b.from, to: b.to, connected: paymentsConfigured(), mode: pays[0]?.mode ?? null, people });
 });
 
 /**
@@ -282,6 +277,7 @@ async function saveUser(id: string | null, d: z.infer<typeof patchSchema>): Prom
   try {
     await client.query("BEGIN");
     if (!id) {
+      if (d.join_date === undefined) { cols.push("join_date" as any); values.push(istDateKey(new Date())); }
       cols.push("color_index" as any);
       values.push(Number((await client.query("SELECT COALESCE(MAX(color_index), -1) + 1 AS n FROM employees")).rows[0].n));
       id = (await client.query(

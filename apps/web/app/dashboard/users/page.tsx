@@ -120,6 +120,16 @@ function Section({ title, icon, right, children, style }: { title: string; icon:
   );
 }
 
+/** "Counts for daily salary" under a target. */
+function Tick({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: -6, fontSize: 12.5, color: on ? C.green : C.textSub, fontWeight: 600, cursor: "pointer" }}>
+      <input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked)} aria-label={`${label} counts for daily salary`} style={{ accentColor: C.green, width: 15, height: 15 }} />
+      Counts for daily salary
+    </label>
+  );
+}
+
 function Field({ label, sub, children }: { label: string; sub?: string; children: ReactNode }) {
   return <label style={{ display: "block", minWidth: 0 }}><span style={fieldLabel}>{label}{sub && <span style={hint}> · {sub}</span>}</span>{children}</label>;
 }
@@ -147,6 +157,9 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
     regular_commission: String(user?.regular_commission ?? ""), regular_commission_type: user?.regular_commission_type ?? "fix",
     duration: toHms(user?.target_call_secs ?? 0),
     target_trial: String(user?.target_trial ?? ""), target_regular: String(user?.target_regular ?? ""),
+    // daily salary (15 Nov 2026): which targets count, and the first day paid (a new user: today, filled by the server)
+    tick_call: user?.tick_call ?? false, tick_trial: user?.tick_trial ?? false, tick_regular: user?.tick_regular ?? false,
+    join_date: user?.join_date ?? "",
     line_id: user?.line_id ?? "", intercom_id: user?.intercom_id ?? "", permissions: user?.permissions ?? [],
     extras: user?.extra_commissions ?? [], deductions: user?.extra_deductions ?? [], team_id: user?.team_id ?? "",
   });
@@ -230,6 +243,8 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
       fix_salary: num(f.fix_salary), trial_commission: num(f.trial_commission), trial_commission_type: f.trial_commission_type,
       regular_commission: num(f.regular_commission), regular_commission_type: f.regular_commission_type,
       target_call_secs: secs, target_trial: num(f.target_trial), target_regular: num(f.target_regular),
+      tick_call: f.tick_call, tick_trial: f.tick_trial, tick_regular: f.tick_regular,
+      ...(f.join_date ? { join_date: f.join_date } : {}),
       permissions: all ? [] : f.permissions, line_id: f.line_id || null, intercom_id: f.intercom_id || null,
       extra_commissions: f.extras, extra_deductions: f.deductions,
       ...(teamsData ? { team_id: f.team_id || null } : {}),
@@ -369,8 +384,14 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
             <Section title="Target" icon="◎">
               <div style={{ display: "grid", gap: 12 }}>
                 <Field label="Daily Calling Duration" sub="HH:MM:SS"><input value={f.duration} placeholder="06:00:00" onChange={(e) => set({ duration: e.target.value })} style={input} /></Field>
+                <Tick on={f.tick_call} onChange={(v) => set({ tick_call: v })} label="Calling duration" />
                 <Field label="Daily Trial Joining"><input type="number" min={0} value={f.target_trial} onChange={(e) => set({ target_trial: e.target.value })} style={input} /></Field>
-                <Field label="Daily Regular Joining"><input type="number" min={0} value={f.target_regular} onChange={(e) => set({ target_regular: e.target.value })} style={input} /></Field>
+                <Tick on={f.tick_trial} onChange={(v) => set({ tick_trial: v })} label="Trial joining" />
+                <Field label="Daily Regular Joining" sub="new and renewals"><input type="number" min={0} value={f.target_regular} onChange={(e) => set({ target_regular: e.target.value })} style={input} /></Field>
+                <Tick on={f.tick_regular} onChange={(v) => set({ tick_regular: v })} label="Regular joining" />
+                <Field label="Joining date" sub="first day paid">
+                  <input type="date" value={f.join_date} onChange={(e) => set({ join_date: e.target.value })} style={input} /></Field>
+                <p style={{ margin: 0, fontSize: 12, color: C.muted }}>Ticked targets decide each working day&apos;s salary (each is an equal share: under 50 % ₹0, 50 % half, 75 % three quarters, 100 % full). None ticked: the full day.</p>
               </div>
             </Section>
           </div>
