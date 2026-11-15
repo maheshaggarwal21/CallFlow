@@ -278,6 +278,10 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   // an intercom on line 97, then its person is switched off: line free, intercom off the line, number kept
   if (spare) {
     await call(owner, "PATCH", `/intercoms/${spare.id}`, { phone_number: spare.phone_number, line_number: "97" });
+    // the call details show the intercom and calling number on the call's line when the file name has none
+    const cid = (await pool.query("INSERT INTO calls (source_file_key, line_number, called_at, duration_secs, call_direction, caller_phone, employee_id) VALUES ($1, '97', NOW(), 20, 'outbound', '9876500002', $2) RETURNING id", [`e2e/${stamp}/d.wav`, ub.id])).rows[0].id;
+    const det = (await call(owner, "GET", `/calls/${cid}`)).data;
+    ok(det?.intercom_code === spare.intercom_code && det?.intercom_phone_number === spare.phone_number, "call details: the line's intercom and calling number are shown", JSON.stringify(det && { c: det.intercom_code, p: det.intercom_phone_number }));
     await call(owner, "PATCH", `/employees/${ub.id}`, { status: "inactive" });
     const l97 = await lineOf("97");
     const icAfter = (await call(owner, "GET", "/intercoms")).data.find((i) => i.id === spare.id);

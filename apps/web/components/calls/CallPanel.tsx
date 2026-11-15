@@ -206,7 +206,7 @@ export default function CallPanel({ callId, onClose }: Props) {
                     ["Time",      dt ? fmtTime(dt) : "—"],
                     ["Line",      call.line_number ?? "—"],
                     ["Intercom",  call.intercom_code ?? "—"],
-                    ["Intercom Phone", call.intercom_phone_number ?? "—"],
+                    ["Calling number", call.intercom_phone_number ?? "—"],
                     ["Agent",     call.employee_name ?? "Unassigned"],
                     ["Direction", isIn ? "Inbound" : "Outbound"],
                     ["Duration",  fmtL(call.duration_secs)],
