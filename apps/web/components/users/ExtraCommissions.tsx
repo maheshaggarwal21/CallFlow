@@ -1,7 +1,7 @@
 "use client";
 
 // Extra commission (+) and extra deduction (−) for one user, on the Users form (client, 13 Nov 2026):
-// just a name, an amount and the dates it is active. A deduction's amount is ₹ or % of the fix salary.
+// just a name, an amount and the dates it is active. A deduction's amount is ₹, or a % of the month's total pay (salary + commission + extras).
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { C } from "@/lib/colors";
 import { istToday } from "@/lib/period";
@@ -15,10 +15,8 @@ const plusDays = (n: number) => istToday(new Date(Date.now() + n * 86_400_000));
 
 /** Active today (IST), so it shows on the user's dashboard. */
 export const isActive = (x: Item) => { const t = istToday(); return x.from <= t && t <= x.to; };
-/** "₹500" or "10% of salary". */
-export const amountText = (x: Item) => (x.type === "pct" ? `${x.amount}% of salary` : inr(x.amount));
-/** The ₹ a deduction takes off a fix salary. */
-export const deductionValue = (x: ExtraDeduction, salary: number) => Math.round(x.type === "pct" ? (salary * x.amount) / 100 : x.amount);
+/** "₹500" or "10% of total pay". */
+export const amountText = (x: Item) => (x.type === "pct" ? `${x.amount}% of total pay` : inr(x.amount));
 /** "₹500 · 13 Nov – 19 Nov 2026". */
 export const extraText = (x: Item) => `${amountText(x)} · ${fmtD(x.from)} – ${fmtD(x.to)}`;
 
@@ -107,7 +105,7 @@ function Builder<T extends Item>({ initial, deduction, onDone, onCancel, input, 
           <input autoFocus value={x.name} maxLength={60} placeholder={deduction ? "e.g. Late coming" : "e.g. Diwali bonus"} onChange={(e) => set({ name: e.target.value })} style={input} /></F>
         {deduction && <F label={label} text="Deduct as" w={150}>
           <select value={x.type} onChange={(e) => set({ type: e.target.value as ExtraDeduction["type"] })} style={input}>
-            <option value="fix">Fixed amount (₹)</option><option value="pct">% of salary</option>
+            <option value="fix">Fixed amount (₹)</option><option value="pct">% of total pay</option>
           </select></F>}
         <F label={label} text={x.type === "pct" ? "Percent" : "Amount (₹)"} w={130}>
           <input type="number" min={0} max={x.type === "pct" ? 100 : undefined} value={x.amount || ""} onChange={(e) => set({ amount: Number(e.target.value) })} style={input} /></F>

@@ -12,7 +12,7 @@ import { fetcher } from "@/lib/api";
 import { usePeriodRange } from "@/hooks/usePeriodRange";
 import PeriodSelect from "@/components/ui/PeriodSelect";
 import { Funnel, HourLine, Panel, R, dur, initials } from "@/components/report/kit";
-import { deductionValue, extraText, isActive } from "@/components/users/ExtraCommissions";
+import { extraText, isActive } from "@/components/users/ExtraCommissions";
 import { inr } from "@/lib/money";
 import { istToday } from "@/lib/period";
 import type { ExtraCommission, ExtraDeduction, ReportData } from "@callflow/shared-types";
@@ -56,7 +56,9 @@ const CSS = `
   .me{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;align-items:start}
   .me-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
   .me-2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}
-  .me-earn{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:12px}
+  .me-earn{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:24px;align-items:start}
+  .me-det{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 40px}
+  @media (max-width:800px){.me-det{grid-template-columns:minmax(0,1fr)}}
   @media (max-width:900px){.me-earn{grid-template-columns:minmax(0,1fr)}}
   @media (max-width:1150px){.me{grid-template-columns:minmax(0,1fr)}.me-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media (max-width:700px){.me-2{grid-template-columns:minmax(0,1fr)}}
@@ -76,12 +78,12 @@ const STEP: Record<number, string> = { 0: "₹0 share", 2: "½ share", 3: "¾ sh
 const dayLabel = (d: string) => new Date(`${d}T00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
 /** One line of the profile card: label on the left, value on the right (the client's reference). */
-function Row({ label, children, accent, minus, wide }: { label: string; children: ReactNode; accent?: boolean; minus?: boolean; wide?: boolean }) {
+/** One line of a Details list: label on the left, value on the right, a hairline between lines. */
+function Line({ label, children, tone }: { label: string; children: ReactNode; tone?: "good" | "bad" }) {
   return (
-    <div style={{ gridColumn: wide ? "1 / -1" : undefined, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12,
-      background: minus ? "#fbeceb" : accent ? "#e8f3e2" : "#faf7f2", border: `1px solid ${minus ? "#f0c9c5" : accent ? "#bfdcb3" : "#f1e8da"}` }}>
-      <span style={{ ...capLabel, fontSize: 10.5 }}>{label}</span>
-      <b style={{ fontSize: 13.5, color: minus ? R.bad : accent ? R.good : R.ink, textAlign: "right", ...(wide ? { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } : { overflowWrap: "anywhere" }) }}>{children}</b>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 16, padding: "10px 0", borderBottom: "1px solid #f1e8da", minWidth: 0 }}>
+      <span style={{ fontSize: 13, color: R.mute, whiteSpace: "nowrap" }}>{label}</span>
+      <b style={{ fontSize: 14, color: tone === "bad" ? R.bad : tone === "good" ? R.good : R.ink, textAlign: "right", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{children}</b>
     </div>
   );
 }
@@ -156,24 +158,26 @@ function Ring({ pct }: { pct: number }) {
   );
 }
 
-/** One earning card at the top: a day's salary (daily pay) and the commission on that day's fees. */
-function EarningCard({ title, tag, e, daily }: { title: string; tag: string; e: Earning | null; daily: boolean }) {
+/** Yesterday, inside the brown earnings card (client, 15 Nov 2026): that day's salary (daily pay) and the commission on fees paid that day. Final. */
+function Yesterday({ e, daily }: { e: Earning | null; daily: boolean }) {
+  const line = (label: string, value: string) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13.5, color: "#e9dccb" }}><span>{label}</span><b style={{ color: "#fff", whiteSpace: "nowrap" }}>{value}</b></div>
+  );
+  const paid = e && (e.kind === "working" || e.kind === "away");
   return (
-    <section style={{ background: "#fff", border: `1px solid ${R.line}`, borderRadius: 14, padding: "14px 16px", display: "grid", gap: 6, alignContent: "start", minWidth: 0 }}>
+    <div style={{ background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "14px 16px", display: "grid", gap: 10, alignContent: "start", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <span style={capLabel}>{title}</span>
-        <span style={{ fontSize: 11, fontWeight: 800, color: tag === "Live" ? R.out : R.mute }}>{tag}</span>
+        <span style={{ ...capLabel, color: "#e3b778" }}>Yesterday{e ? ` · ${dayLabel(e.date)}` : ""}</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: "#d9c8b4" }}>Final</span>
       </div>
-      {!e ? <div style={{ fontSize: 13.5, color: R.mute }}>Not in this month</div> : (
+      {!e ? <div style={{ fontSize: 13.5, color: "#d9c8b4" }}>Not in this month</div> : (
         <>
-          <div style={{ fontSize: 13, color: R.mute }}>{dayLabel(e.date)}</div>
-          {daily && <div style={{ fontSize: 26, fontWeight: 800 }}>{e.kind === "working" || e.kind === "away" ? inr(e.salary ?? 0) : "—"}
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: R.mute }}> salary{e.kind === "off" ? " · not a working day" : e.kind === "holiday" ? " · holiday" : ""}</span></div>}
-          <div style={{ fontSize: daily ? 13.5 : 26, fontWeight: daily ? 600 : 800, color: daily ? R.ink : R.ink }}>{inr(e.commission)}
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: R.mute }}> commission on {e.fees} fee{e.fees === 1 ? "" : "s"}</span></div>
+          <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1 }}>{inr((paid ? e.salary ?? 0 : 0) + e.commission)}</div>
+          {daily && line("Salary", paid ? inr(e.salary ?? 0) : e.kind === "holiday" ? "holiday" : "not a working day")}
+          {line(`Commission · ${e.fees} fee${e.fees === 1 ? "" : "s"}`, inr(e.commission))}
         </>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -202,7 +206,7 @@ export default function UserDashboard({ id }: { id?: string }) {
   const stepOf = (key: "call" | "trial" | "regular") => s.today.pay?.parts.find((x) => x.key === key)?.quarters;
   // only what is running today shows (client): ended and scheduled ones stay on the Users form
   const bonuses = (s.extra_commissions ?? []).filter(isActive);
-  const cuts = (s.extra_deductions ?? []).map((x) => ({ ...x, value: deductionValue(x, s.fix_salary) })).filter(isActive);
+  const cuts = (s.extra_deductions ?? []).filter(isActive);
   const my = (t: string) => (id ? t : `My ${t.toLowerCase()}`);
   const inactive = s.status === "inactive";
   // inactive: the targets box only for one picked day on or before the leaving day
@@ -245,32 +249,38 @@ export default function UserDashboard({ id }: { id?: string }) {
       {/* ── Details (click to open): profile and salary plan ── */}
       {details && (
         <Panel title={my("Details")} sub="Profile and salary plan">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
-            <Row label="Reg No.">{s.employee_code}</Row>
-            <Row label="Designation">{s.designation || "—"}</Row>
-            <Row label="Contact">{s.phone || "—"}</Row>
-            <Row label="Email" wide><span title={s.email}>{s.email}</span></Row>
-            <Row label="Line · Intercom">{s.line_number ? `${s.line_number} · ${s.intercom_code ?? "—"}` : "—"}</Row>
-            <Row label="Calling number">{s.calling_number || "—"}</Row>
-            <Row label="Fix salary">{inr(s.fix_salary)} / month</Row>
-            <Row label="Trial commission">{rate(s.trial_commission, s.trial_commission_type)}</Row>
-            <Row label="Regular commission">{rate(s.regular_commission, s.regular_commission_type)}</Row>
-            {bonuses.map((x, i) => <Row key={`b${i}`} label={`+ ${x.name}`} accent><span title={extraText(x)}>{inr(x.amount)} · till {fmtTill(x.to)}</span></Row>)}
-            {cuts.map((x, i) => <Row key={`d${i}`} label={`− ${x.name}`} minus><span title={extraText(x)}>−{inr(x.value)}{x.type === "pct" ? ` (${x.amount}%)` : ""} · till {fmtTill(x.to)}</span></Row>)}
+          <div className="me-det">
+            <div>
+              <div style={capLabel}>Profile</div>
+              <Line label="Reg No.">{s.employee_code}</Line>
+              <Line label="Designation">{s.designation || "—"}</Line>
+              <Line label="Contact">{s.phone || "—"}</Line>
+              <Line label="Email"><span title={s.email}>{s.email}</span></Line>
+              <Line label="Line · Intercom">{s.line_number ? `${s.line_number} · ${s.intercom_code ?? "—"}` : "—"}</Line>
+              <Line label="Calling number">{s.calling_number || "—"}</Line>
+            </div>
+            <div>
+              <div style={capLabel}>Salary plan</div>
+              <Line label="Fixed salary">{inr(s.fix_salary)} / month</Line>
+              <Line label="Trial commission">{rate(s.trial_commission, s.trial_commission_type)}</Line>
+              <Line label="Regular commission">{rate(s.regular_commission, s.regular_commission_type)}</Line>
+              {bonuses.map((x, i) => <Line key={`b${i}`} label={x.name} tone="good"><span title={extraText(x)}>+{inr(x.amount)} · till {fmtTill(x.to)}</span></Line>)}
+              {cuts.map((x, i) => <Line key={`d${i}`} label={x.name} tone="bad"><span title={extraText(x)}>−{x.type === "pct" ? `${x.amount}% of total pay` : inr(x.amount)} · till {fmtTill(x.to)}</span></Line>)}
+            </div>
           </div>
         </Panel>
       )}
 
       {/* ── 1. Earnings at the top (client, 15 Nov 2026): one live card, the total in bold, then each part by name; and yesterday (final) ── */}
-      <div className={inactive ? undefined : "me-earn"}>
-        <section aria-label={my("Earnings")} style={{ background: `linear-gradient(160deg, #4a3527, ${R.espresso})`, color: "#fff", borderRadius: 14, padding: "16px 20px",
-          display: "grid", gap: 12, boxShadow: "0 14px 30px -18px rgba(43,33,24,.7)" }}>
+      <section aria-label={my("Earnings")} className={inactive ? undefined : "me-earn"} style={{ background: `linear-gradient(160deg, #4a3527, ${R.espresso})`, color: "#fff", borderRadius: 14,
+        padding: "18px 20px", boxShadow: "0 14px 30px -18px rgba(43,33,24,.7)" }}>
+        <div style={{ display: "grid", gap: 12, alignContent: "start", minWidth: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
             <span style={{ ...capLabel, color: "#e3b778" }}>{inactive ? "Final payout" : payClosed ? "Pay" : "Earned so far"} · {monthName(s.pay.month)}</span>
             {!inactive && !payClosed && <span style={{ fontSize: 11, fontWeight: 800, color: "#f4a36b" }}>● Live</span>}
           </div>
           <div style={{ fontSize: 38, fontWeight: 800, lineHeight: 1 }}>{inr(s.pay.total)}</div>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 6, fontSize: 13.5, color: "#e9dccb", maxWidth: 520 }}>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 6, fontSize: 13.5, color: "#e9dccb" }}>
             {[
               { name: `Fixed salary${daily && !inactive && !payClosed ? ` · ${s.pay.days_so_far} of ${s.pay.working_days} working days` : ""}`, amount: inr(s.pay.base), color: "#fff" },
               { name: `Trial commission · ${s.pay.trial.count} joining${s.pay.trial.count === 1 ? "" : "s"}`, amount: inr(s.pay.trial.commission), color: "#fff" },
@@ -289,9 +299,9 @@ export default function UserDashboard({ id }: { id?: string }) {
           )}
           <div style={{ fontSize: 12, color: "#d9c8b4" }}>{inactive ? `Left on ${s.left_on ? fmtDay(s.left_on) : "—"} · nothing more is added`
             : payClosed ? "This month has ended: final" : `Paid at the end of the month${daily ? " · grows every working day" : ""}`}</div>
-        </section>
-        {!inactive && <EarningCard title="Yesterday" tag="Final" e={s.earnings.yesterday} daily={daily} />}
-      </div>
+        </div>
+        {!inactive && <Yesterday e={s.earnings.yesterday} daily={daily} />}
+      </section>
 
       {/* ── 2. Targets: today live, or a closed day with its saved targets ── */}
       {showTargets && <Panel title={dayTitle} sub={s.today.final ? "This day has closed: its targets and results are final" : "Updates live through the day"}>

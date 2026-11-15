@@ -41,9 +41,10 @@ test("an extra or deduction counts once, in the month it starts (client, 14 Nov 
   const r = monthPayout(p, fees, "2026-11-01", "2026-11-30");
   // "In" runs 25 Oct – 2 Nov: it started in October, so November doesn't pay it again
   assert.deepEqual(r.extras, []);
-  assert.deepEqual(r.deductions, [{ name: "Late", amount: 2000 }, { name: "Fine", amount: 250 }]);
-  // 20000 + 1500 − 2250
-  assert.equal(r.total, 19250);
+  // the % deduction is 10 % of the total pay (20000 salary + 1500 commission), not of the fixed salary (client, 15 Nov 2026)
+  assert.deepEqual(r.deductions, [{ name: "Late", amount: 2150 }, { name: "Fine", amount: 250 }]);
+  // 21500 − 2150 − 250
+  assert.equal(r.total, 19100);
   assert.deepEqual(monthPayout(p, [], "2026-10-01", "2026-10-31").extras, [{ name: "In", amount: 500 }, { name: "Before", amount: 900 }]);
   assert.deepEqual(monthPayout(p, [], "2026-12-01", "2026-12-31").deductions, [{ name: "After", amount: 999 }]);
 });
@@ -68,13 +69,13 @@ test("a single fee's commission keeps paise, so the fees table adds up to the to
   assert.equal(Math.round(rows), commissionOn(plan, fees).commission);
 });
 
-test("someone who left mid-month gets salary for the days worked; % deduction on that salary", () => {
+test("someone who left mid-month gets salary for the days worked; % deduction on that month's total", () => {
   const p: PayPlan = { ...plan, extra_deductions: [{ name: "Late", type: "pct", amount: 10, from: "2026-11-01", to: "2026-11-30" }] };
   const half = proRated(p, 15, 30);
   assert.equal(half.fix_salary, 10000);
   const r = monthPayout(half, fees, "2026-11-01", "2026-11-30");
-  // 10000 + 1500 commission − 10 % of 10000
-  assert.equal(r.total, 10500);
+  // 10000 + 1500 commission − 10 % of 11500
+  assert.equal(r.total, 10350);
   assert.equal(proRated(p, 30, 30).fix_salary, 20000);
   assert.equal(proRated(p, 0, 30).fix_salary, 0);
 });

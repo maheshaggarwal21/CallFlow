@@ -174,7 +174,7 @@ export async function monthPay(emps: PayEmployee[], month: string, today: string
     }
     const sal = dailySalary(e, month, cutoff, cal.weekdays, holidays, input);
     const c = commissionOn(e, list);
-    const { extras, deductions } = extrasAndDeductions(e, b.from, end);
+    const { extras, deductions } = extrasAndDeductions(e, b.from, end, sal.salary_paise / 100 + c.commission);
     const plus = extras.reduce((t, x) => t + x.amount, 0), minus = deductions.reduce((t, x) => t + x.amount, 0);
     // salary is in paise (it can have paise); commission, extras and deductions are whole rupees
     const totalPaise = Math.max(0, sal.salary_paise + 100 * (c.commission + plus - minus));

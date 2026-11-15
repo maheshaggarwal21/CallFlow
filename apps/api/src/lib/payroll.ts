@@ -54,19 +54,17 @@ export function monthPayout(plan: PayPlan, payments: PaidFee[], from: string, to
   const startsIn = (x: { from: string }) => x.from >= from && x.from <= to;
   const c = commissionOn(plan, payments);
   const extras = (plan.extra_commissions ?? []).filter(startsIn).map((x) => ({ name: x.name, amount: Math.round(x.amount) }));
-  const deductions = (plan.extra_deductions ?? []).filter(startsIn).map((x) => ({
-    name: x.name, amount: Math.round(x.type === "pct" ? (plan.fix_salary * x.amount) / 100 : x.amount),
-  }));
   const plus = extras.reduce((t, x) => t + x.amount, 0);
-  const minus = deductions.reduce((t, x) => t + x.amount, 0);
   const gross = plan.fix_salary + c.commission + plus;
+  const deductions = deductionsOn(plan, startsIn, gross);
+  const minus = deductions.reduce((t, x) => t + x.amount, 0);
   // a payout never goes below zero, whatever the deductions add up to
   return { ...c, base: plan.fix_salary, extras, deductions, total: Math.max(0, gross - minus) };
 }
 
 /**
  * The plan for someone who left during the month (client, 14 Nov 2026): fix salary for
- * the days worked, `days` of `monthDays` (option A, pro-rated). A % deduction is then a % of that salary.
+ * the days worked, `days` of `monthDays` (option A, pro-rated). A % deduction is then a % of that month's total pay.
  */
 export function proRated(plan: PayPlan, days: number, monthDays: number): PayPlan {
   const part = Math.min(Math.max(days, 0), monthDays) / monthDays;
@@ -144,12 +142,21 @@ export function workingDaysOf(month: string, weekdays: number[], holidays: { has
 }
 
 /** Extras and deductions paid in a month up to `cutoff` (once, in the month their start date falls in); a % deduction is a % of the full fixed salary. */
-export function extrasAndDeductions(plan: PayPlan, from: string, cutoff: string) {
+/**
+ * Deductions (client, 15 Nov 2026): a % deduction is a % of the TOTAL pay before deductions (salary + commission +
+ * extra commissions), not of the fixed salary; a ₹ one is taken as written.
+ */
+function deductionsOn(plan: PayPlan, startsIn: (x: { from: string }) => boolean, gross: number) {
+  return (plan.extra_deductions ?? []).filter(startsIn).map((x) => ({
+    name: x.name, amount: Math.round(x.type === "pct" ? (Math.max(0, gross) * x.amount) / 100 : x.amount),
+  }));
+}
+
+/** Daily pay: extras and deductions for the month so far. `earned` = salary earned so far + commission (₹). */
+export function extrasAndDeductions(plan: PayPlan, from: string, cutoff: string, earned: number) {
   const startsIn = (x: { from: string }) => x.from >= from && x.from <= cutoff;
   const extras = (plan.extra_commissions ?? []).filter(startsIn).map((x) => ({ name: x.name, amount: Math.round(x.amount) }));
-  const deductions = (plan.extra_deductions ?? []).filter(startsIn).map((x) => ({
-    name: x.name, amount: Math.round(x.type === "pct" ? (plan.fix_salary * x.amount) / 100 : x.amount),
-  }));
+  const deductions = deductionsOn(plan, startsIn, earned + extras.reduce((t, x) => t + x.amount, 0));
   return { extras, deductions };
 }
 

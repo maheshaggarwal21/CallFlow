@@ -73,7 +73,9 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
 
 ### Extra commissions and deductions
 - Paid **once, in the month their start date falls in** (the form fills the start with the day it is added).
-- A **% deduction is a % of the full fixed monthly salary**; a ₹ one is taken as written.
+- A **% deduction is a % of the total pay before deductions** (salary + commission + extra commissions; client,
+  15 Nov 2026), not of the fixed salary. Under daily pay that is the total earned so far, so it grows with the month.
+  A ₹ one is taken as written.
 
 ## 4. Switching it on
 

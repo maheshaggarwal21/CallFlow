@@ -407,7 +407,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
           </Section>
 
           <Section title="Extra Deduction" icon="−">
-            <p style={{ margin: "-4px 0 12px", fontSize: 13, color: C.muted }}>Cuts from the salary, a fixed amount or a % of the fix salary, for a set time.</p>
+            <p style={{ margin: "-4px 0 12px", fontSize: 13, color: C.muted }}>Cuts from the pay, a fixed amount or a % of the total pay (salary + commission + extras), for a set time.</p>
             <ExtraCommissions deduction value={f.deductions} onChange={(deductions) => set({ deductions })} input={input} label={fieldLabel} />
           </Section>
 
