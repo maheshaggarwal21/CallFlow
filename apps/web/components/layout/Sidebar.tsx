@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
 import { HOME, TABS, rankLabel } from "@/lib/tabs";
 
-export default function Sidebar() {
+export default function Sidebar({ open = false }: { open?: boolean }) {
   const router   = useRouter();
   const pathname = usePathname();
   const { name, role, color_index, isOwner, isUser, can } = useAuth();
@@ -92,9 +92,9 @@ export default function Sidebar() {
   };
 
   return (
-    <aside style={{
+    <aside className={`cf-side${open ? " open" : ""}`} style={{
       width: 240, minWidth: 240,
-      height: "100vh",
+      height: "100dvh",
       background: C.sidebar,
       borderRight: `1px solid ${C.border}`,
       display: "flex", flexDirection: "column",

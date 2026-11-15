@@ -33,7 +33,10 @@ function Switch({ on, onChange, label, disabled }: { on: boolean; onChange: (v: 
 export default function UsersPage() {
   const { data: all, isLoading, mutate } = useSWR<Employee[]>("/employees", fetcher);
   // active people on top, switched-off ones at the bottom (client, 14 Nov); sort() keeps the API order within each group
-  const users = all && [...all].sort((a, b) => Number(a.status !== "active") - Number(b.status !== "active"));
+  const [show, setShow] = useState<"all" | "active" | "inactive">("all");
+  const users = all && [...all].sort((a, b) => Number(a.status !== "active") - Number(b.status !== "active"))
+    .filter((u) => show === "all" || u.status === show);
+  const inactiveCount = (all ?? []).filter((u) => u.status !== "active").length;
   const { id: myId } = useAuth();
   const [editing, setEditing] = useState<Employee | "new" | null>(null);
   const [error, setError] = useState("");
@@ -59,7 +62,16 @@ export default function UsersPage() {
           <h1 style={S.h1}>Users</h1>
           <p style={S.sub}>Everyone who can sign in, what they see, and their salary, line and targets</p>
         </div>
-        <button onClick={() => setEditing("new")} style={S.btnPrimary}><span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add User</button>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {/* switched-off people stay at the bottom; this narrows the list (client, 15 Nov 2026) */}
+          <select value={show} onChange={(e) => setShow(e.target.value as typeof show)} aria-label="Show"
+            style={{ ...S.input, width: "auto", background: C.card, fontSize: 14, padding: "9px 12px" }}>
+            <option value="all">All users</option>
+            <option value="active">Active only</option>
+            <option value="inactive">Inactive ({inactiveCount})</option>
+          </select>
+          <button onClick={() => setEditing("new")} style={S.btnPrimary}><span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add User</button>
+        </div>
       </div>
       {error && <p role="alert" style={{ margin: 0, color: C.red, fontSize: 14 }}>{error}</p>}
 
@@ -70,6 +82,7 @@ export default function UsersPage() {
               borderBottom: `2px solid ${C.border}`, background: C.bgDeep }}>
               {["Name", "Contact", "Email Id", "Reg No.", "Designation Name", "Access", "Status", "Edit"].map((h) => <span key={h} style={S.th}>{h}</span>)}
             </div>
+            {users?.length === 0 && <p style={{ margin: 0, padding: "18px 20px", color: C.muted, fontSize: 14 }}>No {show === "inactive" ? "inactive" : "active"} users.</p>}
             {(users ?? []).map((u, i) => (
               <div key={u.id} style={{ display: "grid", gridTemplateColumns: COLS, alignItems: "center", gap: 16, padding: "14px 20px",
                 borderBottom: i === users!.length - 1 ? "none" : `1px solid ${C.borderLight}`, opacity: u.status === "active" ? 1 : 0.6 }}>
@@ -353,7 +366,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
             </div>
           </Section>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(290px, 100%), 1fr))", gap: 16 }}>
             <Section title="Salary" icon="₹">
               <div style={{ display: "grid", gap: 12 }}>
                 <Field label="Fix Salary" sub="in rupees, per month"><input type="number" min={0} value={f.fix_salary} onChange={(e) => set({ fix_salary: e.target.value })} style={input} /></Field>
@@ -407,7 +420,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
           </Section>
 
           <Section title="Extra Deduction" icon="−">
-            <p style={{ margin: "-4px 0 12px", fontSize: 13, color: C.muted }}>Cuts from the pay, a fixed amount or a % of the total pay (salary + commission + extras), for a set time.</p>
+            <p style={{ margin: "-4px 0 12px", fontSize: 13, color: C.muted }}>Cuts from the pay, a fixed amount or a % of salary + commission, for a set time.</p>
             <ExtraCommissions deduction value={f.deductions} onChange={(deductions) => set({ deductions })} input={input} label={fieldLabel} />
           </Section>
 

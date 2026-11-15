@@ -41,7 +41,7 @@ test("an extra or deduction counts once, in the month it starts (client, 14 Nov 
   const r = monthPayout(p, fees, "2026-11-01", "2026-11-30");
   // "In" runs 25 Oct – 2 Nov: it started in October, so November doesn't pay it again
   assert.deepEqual(r.extras, []);
-  // the % deduction is 10 % of the total pay (20000 salary + 1500 commission), not of the fixed salary (client, 15 Nov 2026)
+  // the % deduction is 10 % of salary + commission (20000 + 1500), not of the fixed salary alone (client, 15 Nov 2026)
   assert.deepEqual(r.deductions, [{ name: "Late", amount: 2150 }, { name: "Fine", amount: 250 }]);
   // 21500 − 2150 − 250
   assert.equal(r.total, 19100);

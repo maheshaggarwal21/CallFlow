@@ -131,8 +131,8 @@ if (!ps?.payments?.connected) {
   ok(ps.payments.list.length === 105, "all pages of payments read (105 across 2 pages)", `got ${ps.payments.list.length}`);
   ok(ps.income.trial === 100 && ps.income.trial_count === 1, "trial commission = 20 % of ₹500", JSON.stringify(ps.income));
   ok(ps.income.regular === 52000 && ps.income.regular_count === 104, "regular commission = 104 × ₹500", JSON.stringify(ps.income));
-  // the dashboard's pay is the tracker's number: 12000 + 52100 + 200 − (10 % of that 64300 total + ₹500) = 57370
-  ok(ps.pay?.month === "2026-11" && ps.pay.total === 57370, "dashboard month pay = tracker payout (extras added, deductions taken off)", JSON.stringify(ps.pay));
+  // the dashboard's pay is the tracker's number: 12000 + 52100 + 200 − (10 % of salary + commission 64100 + ₹500) = 57390
+  ok(ps.pay?.month === "2026-11" && ps.pay.total === 57390, "dashboard month pay = tracker payout (extras added, deductions taken off)", JSON.stringify(ps.pay));
   ok(ps.payments.list.find((x) => x.id === "p2")?.receipt_url === null, "a javascript: receipt link is dropped");
   ok(ps.payments.list.find((x) => x.id === "p3")?.receipt_url?.startsWith("https://"), "an https receipt link is kept");
   ok(!JSON.stringify(ps.payments).includes("9000000000"), "student phone numbers are not passed to the browser");
@@ -174,8 +174,8 @@ if (!ps?.payments?.connected) {
   ok(ob.status === 200 && ob.data.payments.connected === false && /unexpected shape/.test(ob.data.payments.error), "a broken payments answer shows an error, the page still loads", JSON.stringify(ob.data?.payments));
   const pr = await call(owner, "GET", "/employees/payroll?month=2026-11");
   const mine = pr.data?.people?.find((x) => x.id === u.id);
-  // 12000 + (100 + 52000) + 2 extras × ₹100 = 64300 − (10 % of 64300 + ₹500) (a % deduction is of the total pay, 15 Nov 2026)
-  ok(pr.status === 200 && mine?.total === 57370, "month payout = base + commission + extras − deductions", JSON.stringify(mine));
+  // 12000 + (100 + 52000) + 2 extras × ₹100 = 64300 − (10 % of salary + commission 64100 + ₹500) (client, 15 Nov 2026)
+  ok(pr.status === 200 && mine?.total === 57390, "month payout = base + commission + extras − deductions", JSON.stringify(mine));
   ok(mine && !("extra_commissions" in mine) && mine.deductions.length === 2 && mine.extras.length === 2, "payroll row lists the extras and deductions applied");
   ok((await call(owner, "GET", "/employees/payroll?month=2026-13")).status === 400, "payroll: bad month → 400");
   const ownerId = (await call(owner, "GET", "/auth/me")).data.id;
@@ -409,8 +409,8 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   };
   const salaryPaise = Object.values(want).reduce((a, b) => a + b, 0);   // 424999 = ₹4,249.99
   // commission: 1 trial × ₹100 + 10 % of (2,999.50 + 4,000 + 1,020) = ₹801.95 → ₹802; extras ₹500 (10 Nov);
-  // deduction 5 % of the TOTAL pay (client, 15 Nov 2026): 5 % of (4,249.99 + 902 + 500 = 5,651.99) = ₹282.60 → ₹283
-  const total = (salaryPaise + 100 * (100 + 802 + 500 - 283)) / 100;     // ₹5,368.99
+  // deduction 5 % of salary + commission (client, 15 Nov 2026): 5 % of (4,249.99 + 902 = 5,151.99) = ₹257.60 → ₹258
+  const total = (salaryPaise + 100 * (100 + 802 + 500 - 258)) / 100;     // ₹5,393.99
 
   const days = await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`);
   const D = days.data;
@@ -425,8 +425,8 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok(kind("2026-11-06").countAsFull === true && kind("2026-11-09").parts.length === 1 && kind("2026-11-09").parts[0].target === 7200, "Days view: count-as-full shown; 9 Nov kept its saved 2 h target and ticks");
   ok(D.base === salaryPaise / 100 && D.days.reduce((t, x) => t + x.paise, 0) === salaryPaise, "Days view: salary = the sum of the days shown, to the paisa (₹4,249.99)", `${D.base}`);
   ok(D.commission === 902 && D.trial.count === 1 && D.regular.count === 104, "commission so far: 1 trial × ₹100 + 10 % of ₹8,019.50 = ₹902", JSON.stringify({ c: D.commission, t: D.trial.count, r: D.regular.count }));
-  ok(JSON.stringify(D.extras) === JSON.stringify([{ name: "Bonus", amount: 500 }]) && JSON.stringify(D.deductions) === JSON.stringify([{ name: "Late", amount: 283 }]), "extras and deductions so far: only those started by today; 5 % of the total pay ₹5,651.99 = ₹283", JSON.stringify({ e: D.extras, d: D.deductions }));
-  ok(D.total === total, "earned so far: ₹4,249.99 + ₹902 + ₹500 − ₹283 = ₹5,368.99", `${D.total}`);
+  ok(JSON.stringify(D.extras) === JSON.stringify([{ name: "Bonus", amount: 500 }]) && JSON.stringify(D.deductions) === JSON.stringify([{ name: "Late", amount: 258 }]), "extras and deductions so far: only those started by today; 5 % of salary + commission ₹5,151.99 = ₹258", JSON.stringify({ e: D.extras, d: D.deductions }));
+  ok(D.total === total, "earned so far: ₹4,249.99 + ₹902 + ₹500 − ₹258 = ₹5,393.99", `${D.total}`);
 
   // the same numbers everywhere: Employee Tracker, the Super Admin's eye, the rep's own dashboard, the rep's own days
   const row = (await get(owner, `/employees/payroll?month=2026-11&${AS}`)).data.people.find((x) => x.id === rid);

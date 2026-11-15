@@ -58,13 +58,13 @@ test("calendar: ISO weekdays, month days, working days without Sundays and holid
   assert.equal(workingDaysOf("2026-11", [1, 2, 3, 4, 5, 6], new Set(["2026-11-14", "2026-11-15"])).length, 24); // a Sunday holiday changes nothing
 });
 
-test("extras and deductions: once in the start month, up to today; % of the total earned so far", () => {
+test("extras and deductions: once in the start month, up to today; % of salary + commission earned so far", () => {
   const p: PayPlan = { ...plan, extra_commissions: [{ name: "Bonus", amount: 500, from: "2026-11-05", to: "2026-11-30" }, { name: "Later", amount: 900, from: "2026-11-20", to: "2026-11-25" }],
     extra_deductions: [{ name: "Late", type: "pct", amount: 10, from: "2026-11-02", to: "2026-11-02" }] };
   // ₹5,280 salary so far + ₹220 commission
   const so = extrasAndDeductions(p, "2026-11-01", "2026-11-15", 5500);
   assert.deepEqual(so.extras, [{ name: "Bonus", amount: 500 }]);       // "Later" starts after today: not yet
-  assert.deepEqual(so.deductions, [{ name: "Late", amount: 600 }]);    // 10 % of the total ₹6,000 (5,500 + the ₹500 extra), not of the fixed ₹12,000
+  assert.deepEqual(so.deductions, [{ name: "Late", amount: 550 }]);    // 10 % of ₹5,500 (the ₹500 extra left out), not of the fixed ₹12,000
 });
 
 test("a month: working, away (before joining / switched off), holidays, Sundays, future days, count-as-full", () => {

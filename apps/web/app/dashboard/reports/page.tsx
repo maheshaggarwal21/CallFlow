@@ -428,7 +428,7 @@ function ScheduleForm({ employees, initial, onDone }: {
           <input id="rs-subject" value={subject} onChange={(e) => setSubject(e.target.value)} style={fieldInput} maxLength={300} />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16 }}>
           <div>
             <label htmlFor="rs-body" style={fieldLabel}>Email message</label>
             <textarea id="rs-body" ref={bodyRef} value={body} onChange={(e) => setBody(e.target.value)} rows={22}

@@ -57,6 +57,8 @@ const CSS = `
   .me-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
   .me-2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}
   .me-earn{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:24px;align-items:start}
+  .me-tg{display:grid;grid-template-columns:auto minmax(0,1fr);gap:22px;align-items:center}
+  @media (max-width:760px){.me-tg{grid-template-columns:minmax(0,1fr)}}
   .me-det{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 40px}
   @media (max-width:800px){.me-det{grid-template-columns:minmax(0,1fr)}}
   @media (max-width:900px){.me-earn{grid-template-columns:minmax(0,1fr)}}
@@ -168,7 +170,7 @@ function Yesterday({ e, daily }: { e: Earning | null; daily: boolean }) {
     <div style={{ background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "14px 16px", display: "grid", gap: 10, alignContent: "start", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
         <span style={{ ...capLabel, color: "#e3b778" }}>Yesterday{e ? ` · ${dayLabel(e.date)}` : ""}</span>
-        <span style={{ fontSize: 11, fontWeight: 800, color: "#d9c8b4" }}>Final</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: "#d9c8b4" }} title="A payment entered late for this date still adds to it until the month ends">Day ended</span>
       </div>
       {!e ? <div style={{ fontSize: 13.5, color: "#d9c8b4" }}>Not in this month</div> : (
         <>
@@ -265,7 +267,7 @@ export default function UserDashboard({ id }: { id?: string }) {
               <Line label="Trial commission">{rate(s.trial_commission, s.trial_commission_type)}</Line>
               <Line label="Regular commission">{rate(s.regular_commission, s.regular_commission_type)}</Line>
               {bonuses.map((x, i) => <Line key={`b${i}`} label={x.name} tone="good"><span title={extraText(x)}>+{inr(x.amount)} · till {fmtTill(x.to)}</span></Line>)}
-              {cuts.map((x, i) => <Line key={`d${i}`} label={x.name} tone="bad"><span title={extraText(x)}>−{x.type === "pct" ? `${x.amount}% of total pay` : inr(x.amount)} · till {fmtTill(x.to)}</span></Line>)}
+              {cuts.map((x, i) => <Line key={`d${i}`} label={x.name} tone="bad"><span title={extraText(x)}>−{x.type === "pct" ? `${x.amount}% of salary + commission` : inr(x.amount)} · till {fmtTill(x.to)}</span></Line>)}
             </div>
           </div>
         </Panel>
@@ -305,8 +307,8 @@ export default function UserDashboard({ id }: { id?: string }) {
 
       {/* ── 2. Targets: today live, or a closed day with its saved targets ── */}
       {showTargets && <Panel title={dayTitle} sub={s.today.final ? "This day has closed: its targets and results are final" : "Updates live through the day"}>
-        <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: 22, alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+        <div className="me-tg">
+          <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
             {T.call_secs ? <Ring pct={callPct} /> : <div style={{ width: 140, textAlign: "center", color: R.mute, fontSize: 13 }}>No calling target</div>}
             <div style={{ display: "grid", gap: 8, fontSize: 13.5 }}>
               <div style={capLabel}>Calling duration</div>

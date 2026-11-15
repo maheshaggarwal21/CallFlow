@@ -61,7 +61,7 @@ export default function TeamsPage() {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 18, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 18, alignItems: "start" }}>
         {teams.map((t) => <TeamCard key={t.id} team={t} teams={teams} onMove={move} run={run} />)}
       </div>
 
@@ -71,7 +71,7 @@ export default function TeamsPage() {
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: C.text }}>Not in a team yet</h2>
             <Tag label={String(unassigned.length)} color={C.textSub} bg={C.bgDeep} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: "0 24px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(330px, 100%), 1fr))", gap: "0 24px" }}>
             {unassigned.map((a) => <AgentRow key={a.id} agent={a} teams={teams} onMove={move} placeholder="Add to team…" />)}
           </div>
         </section>

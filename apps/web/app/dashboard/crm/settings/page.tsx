@@ -22,7 +22,7 @@ export default function CrmSettingsPage() {
   if (me && !allowed) return <NoAccess what="Codes" />;
 
   return (
-    <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gap: 14 }}>
+    <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 14 }}>
       <style>{CRM_CSS}</style>
       <HeaderBand eyebrow="CRM" title="Codes" sub="Lead and payment status codes, and their colours" />
       {error ? <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p> : !data || !me ? <p style={{ color: R.mute }}>Loading…</p>
