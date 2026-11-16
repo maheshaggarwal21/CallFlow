@@ -1,98 +1,131 @@
-# Employee payment flow — decisions (15 Nov 2026)
+# Employee payment flow — the rules (last updated 17 Nov 2026)
 
-Agreed with the client on 15 Nov 2026. This file is the source of truth for how a rep's monthly pay is worked out.
-Code: `apps/api/src/lib/payroll.ts` (pure rules, unit-tested) and `apps/api/src/services/pay.service.ts` (the one
-place that gathers the data). The Employee Tracker, the Days view and the rep's own dashboard all read the same
-numbers from that one service, so they can never disagree.
+Agreed with the client between 15 and 17 Nov 2026 (dated list in §8). This file is the source of truth for how a rep's
+monthly pay is worked out. Code: `apps/api/src/lib/payroll.ts` (the pure rules, unit-tested) and
+`apps/api/src/services/pay.service.ts` (the one place that gathers the data, `monthPay`). The Employee Tracker, the
+Days view and the rep's own dashboard all read the same numbers from that one service, so they can never disagree.
 
 ## 1. The month's payout
 
-**Payout = salary earned on working days + commission + extra commissions − extra deductions**, never below ₹0.
-Paid at the **end of the month**. The Employee Tracker shows what has been **earned so far** (live, today included).
+**Payout = salary earned on working days + commission + extra commissions − deductions**, never below ₹0.
 
-## 2. Commission (unchanged)
+- Paid **after the month ends**. A month stays **open for 10 days** after it ends (late payments dated in it still
+  count), then it is **final** (§6).
+- The Employee Tracker shows what has been **earned so far** (live, today included) for the running month.
+- **Daily pay is Off on the live site** until the client picks the start month (§5). While it is Off, every month
+  pays the **full fixed salary** + commission + extras − deductions (the rule used before 15 Nov 2026).
 
-- Goes to the **Representative on the school site's payment** ("the name in front of the student").
-- Fee type **Trial** → trial rate; **every other fee type** (Class 1, Class 2, renewals…) → regular rate.
+## 2. What counts
+
+### Calls (client, 17 Nov 2026)
+- **Every call counts**, for the number of calls and for calling time: incoming and outgoing, short ones (under 10 s),
+  and unanswered ones.
+- **Calling time** = the sum of the **recording lengths** of all the rep's calls that day — the same number as the
+  Talk time card. The length is read from the recording file when it arrives (rounded to the second), so an
+  unanswered call counts its ringing time (the PBX records from the moment it dials).
+- A call belongs to **whoever held the line when its recording arrived** (usually a minute or two after the call).
+  Swapping agents never moves earlier calls; calls after the swap go to the new holder.
+
+### Payments (client, 17 Nov 2026)
+- From the school site's payments; the **paid date is the only date** that matters (the only date on the Payments
+  tab). A payment counts on its paid date **however late it shows up**: paid date Friday, shows up Sunday → it counts
+  for Friday (Friday's commission and Friday's trial target).
+- It goes to the **Representative on the school site's payment** ("the name in front of the student").
+
+## 3. Commission
+
+- Fee type **Trial** → the trial rate; **every other fee type** (Class 1, Class 2, renewals…) → the regular rate.
   A renewal earns the **same rate** as a first regular fee.
 - `pct` = % of the amount paid; `fix` = ₹ per payment.
-- Commission does **not** depend on the targets, and payments made on a holiday still earn it.
+- Commission does **not** depend on the targets; a payment dated on a Sunday or holiday still earns it in full.
+- It belongs to the month of the paid date, **only** that month (a payment dated 30 Nov is November's).
 
-## 3. Daily salary (new)
+## 4. Daily salary
 
 ### Working days
-- One **Working Days** tab (its own tab in the Salary section; open to whoever has the tab ticked, the Super Admin always), for everyone:
-  - the **weekly working days** are ticked once (e.g. Mon–Sat) and stay until changed;
-  - **holidays**: click a date in the month calendar and give it a name; click a holiday to remove it.
+- One **Working Days** tab (Salary section; whoever has the tab ticked, the Super Admin always), for everyone:
+  the **weekly working days** are ticked once (e.g. Mon–Sat); **holidays**: click a date in the month calendar and
+  name it; click a holiday to remove it.
 - A non-working weekday or a holiday is **not counted at all**: no salary is owed for it and there are no targets.
 - **Day salary = fixed monthly salary ÷ number of working days in that month.**
-- Leave for one rep only: **not in this version** (later).
+- Leave for one rep only: **not in this version** (§9).
 
-### Targets
-- **Two daily targets per rep** (client, 17 Nov 2026; the regular-joining target was removed): **calling time** and
-  **trial joining**, each with a round **tick beside the target box** on the Users form (✓ = counts for daily
-  salary). Regular joinings still earn commission; they just don't count for the day salary any more.
-- **Calling time** = the sum of the **recording lengths** of **all** the rep's calls that day (short ones too), the same
-  number as the Talk time card. The length is read from the recording file when it arrives (rounded to the second),
-  so an unanswered call counts its ringing time (the PBX records from the moment it dials). Shown to the second;
-  the % shown is rounded DOWN, so it reads 100 % only when the target is really met.
-- **Trial joining** = payments with fee type Trial filed under the rep that day (by the school's paid date).
-- A ticked target set to **0** is treated as not ticked.
+### Targets (client, 17 Nov 2026)
+- **Two daily targets per rep: calling time and trial joining**, each with a round **tick beside the target box** on
+  the Users form (✓ = counts for daily salary). The regular-joining target was removed; regular joinings still earn
+  commission.
+- **Trial joining** = payments with fee type Trial filed under the rep that day (by paid date).
+- A ticked target set to **0** is treated as not ticked. The % shown is rounded **down**, so it reads 100 % only when
+  the target is really met.
 
 ### How a working day is paid (client, 17 Nov 2026)
-- **No target ticked → full day salary.**
-- Otherwise **any one ticked target met (100 %) → the full day salary.** If none is met, the **best** ticked target
-  decides, by steps (the 75 % step was removed):
+- **No target ticked → the full day.**
+- **Any one ticked target met (100 %) → the full day.** If none is met, the **best** one decides:
 
   | Best result against its target | Day salary paid |
   |---|---|
   | below 50 % | ₹0 |
-  | 50 % to under 100 % | ½ |
-  | 100 % or more (any target) | full |
+  | 50 % to under 100 % | ½ day |
+  | 100 % or more (any target) | full day |
 
-- Examples, ₹12,000 salary, 25 working days → ₹480 a day, targets calling 6 h and 2 trials:
-  calling 6 h, 0 trials → **₹480**; calling 1 h, 2 trials → **₹480**; calling 3 h, 1 trial → **₹240** (both 50 %,
-  not added up); calling 5 h, 0 trials → **₹240** (83 % is still ½); calling 2 h, 0 trials → **₹0**.
-- The results are not added together: two targets at 50 % give ½ day, not a full day.
-- Days already saved with the regular target ticked are worked out the same new way (the regular target is ignored).
+- The results are **not added together**: two targets at 50 % give ½ day. There is no 75 % step.
+- Examples — ₹12,000 salary, 25 working days → ₹480 a day; targets calling 6 h and 2 trials:
+
+  | Calling | Trials | Day salary |
+  |---|---|---|
+  | 6 h | 0 | ₹480 (calling met) |
+  | 1 h | 2 | ₹480 (trials met) |
+  | 3 h | 1 | ₹240 (both 50 %) |
+  | 5 h | 0 | ₹240 (83 % is still ½) |
+  | 2 h | 0 | ₹0 |
+
+- Days saved earlier with the old regular target ticked are worked out the same new way (it is ignored).
 
 ### Who is paid which days
-- Days **before the rep's Joining date** (new box on the Users form; existing reps: the day their account was
-  created, correctable) → ₹0.
-- Days **after the day the rep was switched off** → ₹0. The day itself still counts. Days a rep was switched off
-  and then back on are not paid.
-- **How the on/off history is kept**: every night just after midnight the day is closed and one row is saved for each
-  rep who was working that day (`day_targets`). A rep switched off on the 12th and back on the 16th has no rows for
-  13–15, so those days stay unpaid even though the record now just says "active" (checked by the end-to-end test).
-  Known gap: if the server is down over those nights, the missed days are closed from the rep's status when it
-  comes back. A full log of every switch would close it (offered, not built).
-- **A rep added after they started** (client, 17 Nov 2026): set their **Joining date** to the real first day; the days
-  from then until the account was made become working days (₹0 unless their targets were met), and the Super Admin
-  clicks **Count as full** on them.
-- **"Count as full"**: Employee Tracker → **Days** on the rep's row → orange **Count as full** button at the end of
-  each working day's row (e.g. the PBX or power was down and calls were not recorded). Shown as "Full · set by Super
-  Admin"; the same button then reads **Undo**. Super Admin only; not on Sundays, holidays or future days. **It only
-  appears once daily pay is switched on**: while it is Off the Days view says "Daily pay is not on for this month".
+- Days **before the rep's Joining date** → ₹0. New users: the date is **filled with today** on Add User (editable);
+  older reps: the day their account was made, correctable.
+- Days **after the day the rep was switched off** → ₹0; the day itself still counts. Days a rep was switched off and
+  then back on are not paid. The history is kept by the nightly day close: one saved row (`day_targets`) per rep who
+  was working that day, so a rep off 12th–15th and back on the 16th has no rows for 13–15. (Known gap: if the server
+  is down over those nights, the missed days are closed from the rep's status when it comes back; a full switch log
+  would close it — §9.)
+- **A rep added after they started**: set their **Joining date** to the real first day. The days from then until the
+  account was made become working days (₹0 unless targets were met) and the Super Admin clicks **Count as full** on
+  them.
+- **Count as full**: Employee Tracker → **Days** on the rep's row → orange **Count as full** at the end of each
+  working day's row (e.g. the PBX or power was down). Shown as "Full · set by Super Admin"; the button then reads
+  **Undo**. Super Admin only; not on Sundays, holidays, future days or in a final month. It appears **only while daily
+  pay is on**.
 
-### Freezing, recalculating and the month close (client, 17 Nov 2026)
-- Each day's **targets and ticks are saved when the day closes** (just after midnight IST), so changing a target on
-  the 15th leaves days 1–14 on their old targets. A change during a day applies to that whole day.
-- **A day is not locked at midnight.** Its results (calls, payments) keep updating while the month is open: a payment
-  always counts on its **paid date** — the only date on the Payments tab — however late it shows up (paid date
-  Friday, shows up Sunday → Friday's commission and Friday's trial target). Same for a call moved by the hourly PBX
-  clock fix or calls given to a rep from a free line.
-- **Each month stays open for 10 days after it ends**: November takes late payments dated in November until
-  **10 Dec**; from **11 Dec** it is **final**. At that moment each person's month pay is saved as it is
-  (`month_close`), and every screen (tracker, Days, dashboard) shows that saved copy from then on — a later call,
-  target or salary change can't move it; holidays and Count as full are refused in a final month. Months before
-  November 2026 are worked out live as before. A month never closes while someone's payments can't be read (it
-  tries again on the next run, every 10 minutes).
-- **A payment dated in a final month that shows up after it closed** is not added anywhere (it belongs to its paid
-  date's month). Once a day the server looks for them in the last 3 closed months and lists them (`late_payments`):
-  the Employee Tracker row shows "+1 late payment · ₹X commission, not added"; the Super Admin can add it by hand as
-  an extra.
-- The tracker shows the month's state: **"Open until 10 Dec"** or **"Final"**.
-- Adding a holiday later in an open month changes its working days, so "earned so far" can shift a little.
+### Targets saved per day
+- Each day's **targets and ticks are saved when the day closes** (just after midnight IST), so a target changed on
+  the 15th leaves days 1–14 on their old targets; a change during a day applies to that whole day.
+- A day's **results are not locked at midnight**: calls and payments keep updating while the month is open (late
+  payments, calls moved by the hourly PBX clock fix, calls given to a rep from a free line).
+
+## 5. Switching daily pay on
+
+- **"Daily pay starts from"** on the Working Days tab. Months before it, and every month while it is **Off**, pay the
+  full fixed salary. **Start month: still to be decided by the client** (§9). Until it is set, nothing daily shows
+  (the Days list, Count as full, the salary line of the targets summary).
+
+## 6. Month close (client, 17 Nov 2026)
+
+- **A month stays open until the 10th of the next month**: November takes late payments dated in November until
+  **10 Dec** (end of day). From **11 Dec** November is **final**.
+- At the close each person's month pay is **saved as it is** (`month_close`); every screen (tracker, Days, dashboard)
+  shows that saved copy from then on. A later call, target or salary change can't move it; holidays and Count as
+  full are refused in a final month.
+- A month **never closes while someone's payments can't be read** (school site down); it tries again on the next run
+  (every 10 minutes). Reps not yet linked on the school site don't block it.
+- **A payment dated in a final month that shows up after it closed** is **not added anywhere** (it belongs to its
+  paid date's month). Once a day the server looks for them in the last 3 closed months and lists them
+  (`late_payments`); the Employee Tracker row shows "+1 late payment · ₹X commission, not added", and the Super Admin
+  can add it by hand as an extra.
+- The tracker shows the state under its title: **"Open until 10 Dec"** or **"Final"**. Months before November 2026 are
+  worked out live as before.
+
+## 7. Salary, extras and deductions
 
 ### Fixed salary
 - The client changes salaries **only on the 1st** of a month, so the fixed salary on the Users form applies to the
@@ -100,75 +133,51 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
 
 ### Extra commissions and deductions
 - Paid **once, in the month their start date falls in** (the form fills the start with the day it is added).
-- A **% deduction is a % of salary + commission** (extra commissions left out; client, 15 Nov 2026), not of the
-  fixed salary alone. Under daily pay that is what has been earned so far, so it grows with the month.
-  A ₹ one is taken as written.
+- A **% deduction is a % of salary + commission** (extra commissions left out), not of the fixed salary alone. Under
+  daily pay that is what has been earned so far, so it grows with the month. A ₹ deduction is taken as written.
+- Example: salary ₹12,000 + commission ₹52,100 + extras ₹200; a 10 % deduction = 10 % of ₹64,100 = ₹6,410.
 
-## 4. Switching it on
-
-- Setting **"Daily pay starts from"** (Working Days tab). Months before it, and every month while it is **Off**,
-  keep the old rule (full fixed salary for the month). **Start month: still to be decided by the client.**
-
-## 5. Where the numbers are shown (all from the same calculation)
+## 8. Where the numbers are shown (all from `monthPay`)
 
 | Screen | Who | What |
 |---|---|---|
-| Employee Tracker | Super Admin | Per rep: salary earned so far ("₹5,280 · 11 of 25 days"), commission, extras, deductions, **total earned so far** |
-| Days view (tracker → Days) | Super Admin | The month day by day: calling / trials / regular against target, share, ₹; **Count as full** / Undo (daily pay on only) |
-| My Dashboard → Pay card + My days | The rep (and the Super Admin through the eye) | The same totals and the same day-by-day list, read-only |
+| Employee Tracker | Super Admin | Per rep: salary ("₹5,280 · 11 of 25 working days"), commission, extras, deductions, total; the month's state (Open until / Final); late payments not added |
+| Days (Tracker → Days) | Super Admin | The month day by day: calling and trials against target, share, ₹; Count as full / Undo (daily pay on, month not final) |
+| My Dashboard (and the Super Admin's eye) | The rep | The same totals and the same day-by-day list, read-only |
 
-## 5b. The rep's dashboard (client, 15 Nov 2026)
+### The rep's dashboard (`apps/web/components/users/UserDashboard.tsx`)
+1. **Earnings card** (brown, one card): the month's total in bold with a **● Live** tag, then each part by name —
+   fixed salary, trial commission · joinings, regular commission · joinings, each extra (green), each deduction
+   (red) — and "Today so far". Inside it on the right: **Yesterday** (that day's salary under daily pay + commission
+   on payments dated yesterday), tagged **"Day ended"** because a payment dated yesterday can still arrive. A past
+   month reads "Open until 10 Dec: late payments dated this month still count", then "This month has ended: final".
+2. **Targets**: one day picked → that day's box (ring red under 50 %, orange from 50 %, green at 100 %; badges
+   "met · full day" / "50 %+ · ½ day" / "under 50 %"). A longer period → **"Met on 9 of 12 working days"** per
+   target with a dot per day (green met, orange 50 %+, red under 50 %) and, under daily pay, "Salary earned in these
+   days ₹… of ₹… possible"; targets are never added up over a period (pay is per day). Up to 3 months.
+3. Calls, talk time, real conversations, invalid numbers. 4. **Conversions** (trial and regular joined, commission,
+   the payments table). 5. Busiest hours and the call funnel. 6. The **Days** list (daily pay only).
+- **Details ▾**: Profile (Reg No., designation, contact, email, line · intercom, calling number) and Salary plan
+  (fixed salary, commissions, running extras and deductions; "10% of salary + commission").
+- **A switched-off rep**: grey **Inactive** badge; frozen at the leaving day ("Final payout", "Left on …"), only a
+  custom range up to that day, no Yesterday panel. Elsewhere they are greyed at the bottom of the Tracker for the
+  months they worked, at the bottom of Users (All / Active only / Inactive filter), and out of everyday dropdowns.
 
-Top to bottom (`apps/web/components/users/UserDashboard.tsx`; every amount comes from `monthPay`):
+## 9. Still open
 
-1. **Earnings card** (brown, one card):
-   - left: **Earned so far** for the month with a **● Live** tag, the total in bold, then each part listed by name:
-     fixed salary ("12 of 25 working days" under daily pay), trial commission · joinings, regular commission ·
-     joinings, each extra commission (green), each deduction (red), then "Today so far" (today's share of the total);
-   - right, inside the card: **Yesterday** — yesterday's total, its salary (daily pay only) and the commission on
-     payments with yesterday's paid date. Tagged **"Day ended"**, not "Final", because a payment dated yesterday
-     that shows up later is still added to it (see Freezing above).
-   - A past month reads "Pay · month" and "This month has ended: final".
-2. **Targets**
-   - **One day** picked (Today, Yesterday, a custom single day): that day's box — today live, or a finished day with
-     its saved targets. The calling ring is **red below 50 %, orange from 50 % and green at 100 %** (the % is rounded
-     down). Step badges show only on working days.
-   - **A longer period** (Last 7 days, This month, Last month, a custom range; client, 16 Nov 2026): targets are
-     **not** added up over the period, because pay is per day and a "100 % week" could hide ₹0 days. Instead, for
-     each ticked target: **"Met on 9 of 12 working days"**, a bar, and one dot per working day (green met, orange
-     50 %+, red under 50 %). Under daily pay also **"Salary earned in these days ₹… of ₹… possible"**. Each
-     day uses the targets it had; Sundays, holidays and days before joining or after leaving don't count. Same
-     per-day results as the Days list (`periodTargets` in `pay.service.ts`; a month not on daily pay is worked out
-     with a preview calendar, nothing saved). Up to 3 months; longer asks for a shorter period.
-3. Calls, talk time, real conversations, invalid numbers.
-4. **Conversions** — trial joined · commission and regular joined · commission, then the payments table (each
-   payment's fee is in the table; the separate fees total was removed at the client's request).
-5. Busiest hours and the call funnel side by side.
-6. The **Days** list (daily pay only).
-
-**Details ▾** opens two lists side by side: **Profile** (Reg No., designation, contact, email, line · intercom,
-calling number) and **Salary plan** (fixed salary, trial and regular commission, each running extra and deduction;
-a % deduction reads "10% of salary + commission").
-
-**A switched-off rep** shows a grey **Inactive** badge, and the dashboard is frozen at the day they left: it opens on
-the leaving month up to that day and the card reads **"Final payout"** with "Left on …"; only a custom range up to the
-leaving day can be picked; there is no Yesterday panel; the targets box shows only when one day on or before the
-leaving day is picked.
-
-The whole site works on a phone: below 900 px the sidebar becomes a ☰ menu, cards stack, and wide tables scroll
-sideways inside their own card.
-
-## 5c. Switched-off staff elsewhere (client, 15 Nov 2026)
-
-- **Employee Tracker**: greyed, at the bottom, tagged "Left 10 Nov", only for the months they worked.
-- **Users**: at the bottom; the **All users / Active only / Inactive (n)** dropdown narrows the list.
-- Everyday dropdowns (agents, reports) list active people only.
-
-## 6. Still open
-
-1. **Start month** for daily pay (1 Nov or 1 Dec 2026). Until it is set nothing daily shows, including Count as full.
+1. **Start month** for daily pay (1 Nov or 1 Dec 2026).
 2. **Leave for one rep** (today holidays apply to everyone).
-3. A full **log of every switch on/off** (only matters if the server is down over a night; see "Who is paid which days").
+3. A full **log of every switch on/off** (only matters if the server is down over a night).
 
-Decided on 15 Nov 2026: % deduction = % of salary + commission (extras left out); inactive staff as in 5c; dashboard
-as in 5b.
+## 10. Decisions, by date
+
+| Date | Decision |
+|---|---|
+| 15 Nov 2026 | Daily salary by working days and ticked targets; Working Days tab; joining date; Count as full; extras paid once in their start month |
+| 15 Nov 2026 | % deduction = % of salary + commission, extras left out |
+| 16 Nov 2026 | A longer period on the dashboard shows "met on X of Y days", never a summed target; new user's joining date = today |
+| 17 Nov 2026 | Two targets (calling, trial); any one met → full day, else the best one (½ from 50 %); 75 % step and regular target removed |
+| 17 Nov 2026 | Every call counts (incoming, outgoing, short, unanswered with its ringing time) |
+| 17 Nov 2026 | Paid date is the only date for a payment; days are not locked at midnight |
+| 17 Nov 2026 | A month stays open until the 10th of the next month, then is final; later payments are listed, not added |
+| 17 Nov 2026 | Fixed salary changes only on the 1st; a rep who started before their account: joining date + Count as full |
