@@ -214,6 +214,43 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
 // from the school's payments (Super Admin only). The Owner account is Varinder Max on the school site (client, 15 Nov 2026).
 // Someone switched off during that month is listed too (client, 14 Nov 2026): salary for the days worked,
 // payments up to the day they left. Before that month they show as usual; after it, not at all.
+/**
+ * "Add to this month" (client, 17 Nov 2026): the commission of the payments dated in a closed `month` that arrived
+ * after it closed, added as ONE extra commission starting today (so it is paid in the current month's payout), and
+ * marked as added so it can't be added twice. Super Admin only.
+ */
+router.post("/:id/late-payments/add", requireOwner, async (req, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return bad(res, 404, "Not found");
+  const month = typeof req.body?.month === "string" && /^\d{4}-\d{2}$/.test(req.body.month) ? req.body.month : null;
+  if (!month) return bad(res, 400, "month must be YYYY-MM");
+  const today = requestToday(req.query);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: [e] } = await client.query("SELECT extra_commissions FROM employees WHERE id = $1 FOR UPDATE", [req.params.id]);
+    if (!e) { await client.query("ROLLBACK"); return bad(res, 404, "Not found"); }
+    const { rows } = await client.query(
+      "SELECT payment_id, commission::float AS commission FROM late_payments WHERE employee_id = $1 AND month = $2 AND added_month IS NULL FOR UPDATE",
+      [req.params.id, month]);
+    if (!rows.length) { await client.query("ROLLBACK"); return bad(res, 400, "Nothing left to add for that month"); }
+    const amount = Math.round(rows.reduce((t, r) => t + r.commission, 0));
+    const label = new Date(`${month}-01T00:00`).toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+    const extra = { name: `Late payment${rows.length === 1 ? "" : "s"} – ${label}`.slice(0, 60), amount, from: today, to: today };
+    await client.query("UPDATE employees SET extra_commissions = COALESCE(extra_commissions, '[]'::jsonb) || $2::jsonb WHERE id = $1",
+      [req.params.id, JSON.stringify([extra])]);
+    await client.query(
+      "UPDATE late_payments SET added_month = $3, added_at = NOW(), added_by = $4 WHERE employee_id = $1 AND month = $2 AND added_month IS NULL",
+      [req.params.id, month, today.slice(0, 7), req.user!.sub]);
+    await client.query("COMMIT");
+    return res.json({ added: extra, payments: rows.length });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
 router.get("/payroll", requireOwner, async (req, res) => {
   const today = requestToday(req.query);
   const month = typeof req.query.month === "string" ? req.query.month : today.slice(0, 7);
@@ -232,8 +269,16 @@ router.get("/payroll", requireOwner, async (req, res) => {
   const people = out.filter((p) => !(p.isOwner && p.error));
   // payments dated in this month that showed up after it closed: listed for the Super Admin, never added (client, 17 Nov 2026)
   const { rows: late } = await pool.query(
-    "SELECT employee_id, COUNT(*)::int AS count, SUM(commission)::float AS commission FROM late_payments WHERE month = $1 GROUP BY 1", [month]);
-  const lateOf = new Map(late.map((r) => [r.employee_id as string, { count: r.count as number, commission: r.commission as number }]));
+    `SELECT employee_id, added_month, COUNT(*)::int AS count, SUM(commission)::float AS commission
+     FROM late_payments WHERE month = $1 GROUP BY 1, 2`, [month]);
+  // still to decide (added_month null) and already added to a later month, per person
+  const lateOf = new Map<string, { count: number; commission: number; added: { count: number; commission: number; month: string }[] }>();
+  for (const r of late) {
+    const x = lateOf.get(r.employee_id) ?? { count: 0, commission: 0, added: [] };
+    if (r.added_month) x.added.push({ count: r.count, commission: r.commission, month: String(r.added_month).trim() });
+    else { x.count += r.count; x.commission += r.commission; }
+    lateOf.set(r.employee_id, x);
+  }
   return res.json({ month, from: b.from, to: b.to, connected: paymentsConfigured(), mode: pays[0]?.mode ?? null,
     final: pays[0]?.final ?? false, open_until: pays[0]?.open_until ?? null,
     people: people.map((p) => ({ ...p, late: lateOf.get(p.id) ?? null })) });

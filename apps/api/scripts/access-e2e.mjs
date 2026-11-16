@@ -568,6 +568,17 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   const afterLate = (await get(owner, `/employees/payroll?month=2026-11&${DEC11}`)).data.people.find((x) => x.id === rid);
   ok(lateRun?.late >= 1 && afterLate?.late?.count === 1 && afterLate.late.commission === 100 && afterLate.total === liveRow.total,
     "late payment: listed for the month (1 payment, ₹100 commission), never added to it", JSON.stringify({ run: lateRun, late: afterLate?.late, t: afterLate?.total }));
+  // "Add to this month" (client, 17 Nov 2026): on 12 Dec it becomes a ₹100 extra commission in December, once
+  const add = await call(owner, "POST", `/employees/${rid}/late-payments/add?as_of=2026-12-12`, { month: "2026-11" });
+  ok(add.status === 200 && add.data.added.amount === 100 && add.data.added.from === "2026-12-12" && add.data.added.name === "Late payment – Nov 2026",
+    "late payment: Add to this month makes a ₹100 extra commission dated 12 Dec", JSON.stringify(add.data));
+  const novAfter = (await get(owner, `/employees/payroll?month=2026-11&${DEC11}`)).data.people.find((x) => x.id === rid);
+  const decRow = (await get(owner, `/employees/payroll?month=2026-12&as_of=2026-12-12`)).data.people.find((x) => x.id === rid);
+  ok(novAfter.late.count === 0 && novAfter.late.added[0]?.month === "2026-12" && novAfter.total === liveRow.total
+     && decRow.extras.some((x) => x.name === "Late payment – Nov 2026" && x.amount === 100),
+    "late payment: November unchanged and marked added; December's pay has the +₹100", JSON.stringify({ late: novAfter.late, ext: decRow.extras }));
+  ok((await call(owner, "POST", `/employees/${rid}/late-payments/add?as_of=2026-12-12`, { month: "2026-11" })).status === 400, "late payment: it can't be added twice");
+  ok((await call(repTok, "POST", `/employees/${rid}/late-payments/add`, { month: "2026-11" })).status === 403, "late payment: only the Super Admin adds it");
   mock.extra.length = 0;
   await pool.query("DELETE FROM late_payments WHERE month = '2026-11'");
   await pool.query("DELETE FROM months_closed WHERE month = '2026-11'");

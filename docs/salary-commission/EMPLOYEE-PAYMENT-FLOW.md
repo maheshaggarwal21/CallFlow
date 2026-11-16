@@ -122,8 +122,11 @@ Days view and the rep's own dashboard all read the same numbers from that one se
   (every 10 minutes). Reps not yet linked on the school site don't block it.
 - **A payment dated in a final month that shows up after it closed** is **not added anywhere** (it belongs to its
   paid date's month). Once a day the server looks for them in the last 3 closed months and lists them
-  (`late_payments`); the Employee Tracker row shows "+1 late payment · ₹X commission, not added", and the Super Admin
-  can add it by hand as an extra.
+  (`late_payments`); the Employee Tracker row (on the closed month) shows "+1 late payment · ₹X commission, not
+  added" with an **"Add to <current month>"** button. One click adds the commission as **one extra commission dated
+  today** ("Late payment – Nov 2026"), so it is paid in the current month's payout; the note then reads "✓ … added to
+  December" and the same payment can't be added twice. The closed month itself never changes. Super Admin only.
+  (Only the last 3 closed months are checked.)
 - The tracker shows the state under its title: **"Open until 10 Dec"** or **"Final"**. Months before November 2026 are
   worked out live as before.
 
@@ -183,3 +186,4 @@ Days view and the rep's own dashboard all read the same numbers from that one se
 | 17 Nov 2026 | Paid date is the only date for a payment; days are not locked at midnight |
 | 17 Nov 2026 | A month stays open until the 10th of the next month, then is final; later payments are listed, not added |
 | 17 Nov 2026 | Fixed salary changes only on the 1st; a rep who started before their account: joining date + Count as full |
+| 17 Nov 2026 | A late payment after the close: one-click "Add to this month" makes it an extra commission in the current month |

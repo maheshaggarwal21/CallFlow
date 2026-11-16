@@ -9,7 +9,7 @@ import useSWR from "swr";
 import DaysView from "@/components/salary/DaysView";
 import { HOME } from "@/lib/tabs";
 import { C } from "@/lib/colors";
-import { fetcher } from "@/lib/api";
+import { api, fetcher } from "@/lib/api";
 import { inr } from "@/lib/money";
 import { istToday } from "@/lib/period";
 import { useAuth } from "@/hooks/useAuth";
@@ -27,7 +27,7 @@ type Row = {
   trial: Bucket; regular: Bucket; commission: number; base: number;
   extras: { name: string; amount: number }[]; deductions: { name: string; amount: number }[]; total: number;
   /** payments dated in this month that showed up after it closed: listed, never added (client, 17 Nov 2026) */
-  late: { count: number; commission: number } | null;
+  late: { count: number; commission: number; added: { count: number; commission: number; month: string }[] } | null;
 };
 type Payroll = { month: string; connected: boolean; mode: "monthly" | "daily" | null; people: Row[]; final: boolean; open_until: string | null };
 // money can have paise under daily pay: add in paise so a total never shows 0.1 + 0.2 = 0.30000000000000004
@@ -52,6 +52,15 @@ function Tracker() {
   const months = lastMonths();
   const [month, setMonth] = useState(months[0]);
   const { data, error, isLoading, mutate } = useSWR<Payroll>(`/employees/payroll?month=${month}`, fetcher, { keepPreviousData: true });
+  // "Add to this month": a late payment's commission becomes an extra commission in the current month (client, 17 Nov 2026)
+  const [adding, setAdding] = useState("");
+  const [addErr, setAddErr] = useState("");
+  const addLate = async (id: string) => {
+    setAdding(id); setAddErr("");
+    try { await api.post(`/employees/${id}/late-payments/add`, { month }); await mutate(); }
+    catch (e) { setAddErr((e as Error).message); }
+    finally { setAdding(""); }
+  };
   const [daysOf, setDaysOf] = useState<{ id: string; name: string } | null>(null);
   const daily = data?.mode === "daily";
   // the running month under daily pay shows what has been earned up to today
@@ -88,6 +97,7 @@ function Tracker() {
       </div>
 
       {error && <p role="alert" style={{ ...S.card, margin: 0, padding: 20, color: C.red }}>{(error as Error).message}</p>}
+      {addErr && <p role="alert" style={{ margin: 0, color: C.red, fontSize: 14 }}>{addErr}</p>}
       {data && !data.connected && (
         <p role="status" style={{ ...S.card, margin: 0, padding: "14px 20px", fontSize: 14, color: C.textSub, borderColor: C.orangeBdr, background: C.orangeLight }}>
           Payments from the school site are not connected yet, so commission shows ₹0. Salary, extras and deductions are already counted.</p>
@@ -134,9 +144,18 @@ function Tracker() {
                       ? <span style={{ display: "block", fontSize: 12, color: C.muted }}>{r.days_so_far} of {r.working_days} working days</span>
                       : r.left_on && r.days_paid < r.month_days && <span style={{ display: "block", fontSize: 12, color: C.muted }}>for {r.days_paid} of {r.month_days} days</span>}</span>
                   <span style={{ fontSize: 17, fontWeight: 700, color: C.text }}>{inr(r.total)}
-                    {r.late && <span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: C.orange }}
-                      title="Dated in this month but it showed up after the month closed. Not added: add it by hand as an extra if you want.">
-                      +{r.late.count} late payment{r.late.count === 1 ? "" : "s"} · {inr(r.late.commission)} commission, not added</span>}</span>
+                    {r.late && r.late.count > 0 && <span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: C.orange }}
+                      title="Dated in this month but it showed up after the month closed, so it isn't in this month.">
+                      +{r.late.count} late payment{r.late.count === 1 ? "" : "s"} · {inr(r.late.commission)} commission, not added
+                      {/* client, 17 Nov 2026: one click adds it as an extra commission in the current month's payout */}
+                      <button type="button" disabled={adding === r.id} onClick={() => addLate(r.id)}
+                        style={{ display: "block", marginTop: 4, marginLeft: "auto", border: `1px solid ${C.orangeBdr}`, background: C.orangeLight, color: C.orange,
+                          borderRadius: 8, padding: "4px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        {adding === r.id ? "Adding…" : `Add to ${monthName(istToday().slice(0, 7)).split(" ")[0]}`}</button></span>}
+                    {r.late?.added.map((a) => (
+                      <span key={a.month} style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: C.green }}>
+                        ✓ {a.count} late payment{a.count === 1 ? "" : "s"} · {inr(a.commission)} added to {monthName(a.month).split(" ")[0]}</span>
+                    ))}</span>
                   <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                     {r.mode === "daily" && <button type="button" onClick={() => setDaysOf({ id: r.id, name: r.name })} title={`${r.name}'s days`}
                       style={{ ...S.btn, padding: "8px 12px", border: `1px solid ${C.orangeBdr}`, color: C.orange }}>Days</button>}
