@@ -301,3 +301,10 @@ against the running local API. (The old Playwright walkthrough and its screensho
   has an amount. Migration 027 applied the rule to the leads already in the CRM (the newest sheet row wins; leads
   that never came from the sheet untouched). Edit Leads holders can still change it (0 = Free).
 - Each sheet row is sent once: an Amount edited in the sheet later does not reach the CRM.
+
+## How many times a number came in (client, 17 Nov 2026)
+
+- Next to every lead's Contact (Leads table and lead form) a round badge shows **times_seen** = the first enquiry
+  + each re-enquiry (`lead_interactions` kind `reenquiry`), with a small "i"; hovering says "This lead number is
+  present X times in the database". Red from 2, grey for 1. `TimesBadge` in `components/crm/kit.tsx`; the count is
+  part of `LEAD_LIST_COLS` and the lead detail query. On 17 Nov: 7,811 numbers once, 307 more than once (max 5).

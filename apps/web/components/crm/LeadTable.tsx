@@ -8,7 +8,7 @@ import { fetcher } from "@/lib/api";
 import { R } from "@/components/report/kit";
 import { amountInput, leadAmount, DUE_WINDOW_MS, groupPhone, openWati, type CodeMeta, type LeadRow, type WatiTemplates } from "@/lib/crm";
 import { WatiIcon, WhatsAppIcon } from "@/components/ui/WABtn";
-import { CodeChip, Tag, tdStyle, thStyle } from "./kit";
+import { TimesBadge, CodeChip, Tag, tdStyle, thStyle } from "./kit";
 import { Icon } from "./icons";
 
 export type SortState = { sort: string; dir: "asc" | "desc" };
@@ -20,7 +20,7 @@ const actBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 
 // #, Received, Name, Contact, Assigned to (representative), Status, Amount, Guitar, Class time, Last contacted, Next follow-up, Follow-up alert, Actions
 // (sums to the table's width on a 1440 px screen; wider screens share out the extra)
 // 1106px in all = fits a 1440px screen beside the sidebar; Actions holds WhatsApp, WATI and Open (28px each)
-const COL_PX = [40, 94, 128, 112, 112, 66, 70, 64, 104, 90, 106, 110, 114];
+const COL_PX = [40, 94, 128, 146, 112, 66, 70, 64, 104, 90, 106, 110, 114];
 // Actions stays visible while the table scrolls sideways; its cell needs the row's own background
 const STICKY_CSS = `
   .crm-sticky{position:sticky;right:0;z-index:1;box-shadow:-8px 0 10px -8px rgba(43,33,24,.18)}
@@ -113,7 +113,8 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                     {l.locked_by_name && l.locked_by !== meId && <Tag title={`${l.locked_by_name} has this lead open`}>🔒 {l.locked_by_name.split(" ")[0]}</Tag>}
                   </div>
                 </td>
-                <td style={td({ fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" })}>{groupPhone(l.phone10)}</td>
+                <td style={td({ fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "visible" })}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>{groupPhone(l.phone10)}<TimesBadge n={l.times_seen ?? 1} size={22} /></span></td>
                 <td className={edit ? "crm-edit" : undefined} style={td({ fontSize: 12.5, overflowWrap: "anywhere" })} onClick={edit && stop}>
                   {l.assigned_to_name ?? <span style={{ color: "#c2b39c" }}>—</span>}
                   {edit && <select aria-label={`Assigned to for ${l.name}`} value={l.assigned_to ?? ""} style={OVERLAY}

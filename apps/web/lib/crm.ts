@@ -75,6 +75,8 @@ export type LeadRow = {
   assigned_to?: string | null; assigned_to_name?: string | null; has_guitar: boolean | null; version: number;
   /** the Meta form's "preferred class time" answer (client, 16 Nov 2026) */
   preferred_class_time: string | null;
+  /** how many times this number came in: first enquiry + re-enquiries (client, 17 Nov 2026) */
+  times_seen: number;
   last_call: LastCall; bucket?: "due_now" | "overdue" | "new" | "retry" | "later";
 };
 export type QueueResponse = {

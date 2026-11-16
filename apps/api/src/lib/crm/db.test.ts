@@ -7,7 +7,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import pool from "../../db/pool";
 import { assertLocalDb } from "./localDb";
-import { claimLock, CrmError, getCodes, ingestRows, queue, updateLeadFields, reapplyCodeRoles, reconcile, saveOutcome } from "../../services/crm.service";
+import { claimLock, CrmError, getCodes, ingestRows, LEAD_LIST_COLS, LEAD_LIST_JOINS, queue, updateLeadFields, reapplyCodeRoles, reconcile, saveOutcome } from "../../services/crm.service";
 import { DEFAULT_CODES, outcomeSchema } from "./rules";
 
 assertLocalDb(process.env.DATABASE_URL, "crm db.test");
@@ -289,4 +289,10 @@ test("sheet import: the Meta form's guitar answer and preferred class time come 
   await ingestRows([{ external_id: "t-m4", phone: "9000020095", source: "test", class_time: "Weekend" }, { external_id: "t-m5", phone: "9000020094", source: "test", class_time: "" }]);
   const again = await pool.query("SELECT preferred_class_time FROM leads WHERE phone10 IN ('9000020094','9000020095') ORDER BY phone10");
   assert.deepEqual(again.rows.map((r) => r.preferred_class_time), ["Morning", "Weekend"]);
+  // the count badge (client, 17 Nov 2026): first enquiry + each re-enquiry
+  const times = async (p10: string) => (await pool.query(`SELECT ${LEAD_LIST_COLS} FROM leads l ${LEAD_LIST_JOINS} WHERE l.phone10 = $1`, [p10])).rows[0].times_seen;
+  assert.equal(await times("9000020093"), 1);
+  assert.equal(await times("9000020095"), 2);
+  await ingestRows([{ external_id: "t-m6", phone: "9000020095", source: "test" }]);
+  assert.equal(await times("9000020095"), 3);
 });

@@ -2,7 +2,7 @@
 
 // CRM building blocks, made from the report theme (R) so the CRM reads as the same product
 // as Reports / View report: espresso header band, cream cards, beige page, DM Sans.
-import { useEffect, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { R } from "@/components/report/kit";
 import { inkOn, type Code } from "@/lib/crm";
 import { useCrmCodes } from "@/hooks/useCrmCodes";
@@ -107,6 +107,34 @@ export function HeaderBand({ eyebrow, title, sub, right, children }: { eyebrow: 
       </div>
       {children}
     </section>
+  );
+}
+
+/**
+ * How many times this lead's number came in (client, 17 Nov 2026): the first enquiry + each re-enquiry. A round count
+ * with a small "i" above it; hovering (or focusing) says "This lead number is present X times in the database".
+ * Red from 2 times, quiet grey for once.
+ */
+export function TimesBadge({ n, size = 26 }: { n: number; size?: number }) {
+  // placed on the screen (fixed), so a scrolling table or the pop-up's edge never cuts it off
+  const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
+  const show = (e: { currentTarget: HTMLElement }) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ x: r.right + 6, y: r.top - 10 }); };
+  const many = n > 1;
+  const text = `This lead number is present ${n} time${n === 1 ? "" : "s"} in the database`;
+  return (
+    <span tabIndex={0} aria-label={text} onMouseEnter={show} onMouseLeave={() => setTip(null)} onFocus={show} onBlur={() => setTip(null)}
+      onClick={(e) => e.stopPropagation()}
+      style={{ position: "relative", display: "inline-grid", placeItems: "center", flex: "none", width: size, height: size, borderRadius: "50%", cursor: "help", outline: "none",
+        background: many ? "#f8dcd7" : "#efe7db", border: `1.5px solid ${many ? R.bad : "#d8cbb8"}`, color: many ? R.bad : R.mute,
+        fontSize: size * 0.5, fontWeight: 800, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+      {n}
+      <span aria-hidden style={{ position: "absolute", top: -7, right: -6, width: 13, height: 13, borderRadius: "50%", background: "#fff", border: `1.5px solid ${many ? R.bad : "#c2b39c"}`,
+        color: many ? R.bad : R.mute, fontSize: 8.5, fontWeight: 800, fontStyle: "italic", fontFamily: "Georgia, serif", display: "grid", placeItems: "center" }}>i</span>
+      {tip && (
+        <span role="tooltip" style={{ position: "fixed", left: tip.x, top: tip.y, transform: "translate(-100%, -100%)", zIndex: 1000, whiteSpace: "nowrap", background: R.ink, color: "#fff",
+          fontSize: 12, fontWeight: 600, fontStyle: "normal", padding: "6px 10px", borderRadius: 8, boxShadow: "0 6px 18px rgba(0,0,0,.2)" }}>{text}</span>
+      )}
+    </span>
   );
 }
 

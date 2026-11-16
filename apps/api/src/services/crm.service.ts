@@ -182,6 +182,7 @@ export async function leadDetail(leadId: string) {
     `SELECT l.id, l.lead_code, l.name, l.email, l.phone_raw, l.phone10, l.source, l.campaign, l.external_id,
             l.status, l.current_code, l.next_followup_at, l.attempts, l.last_contacted_at,
             l.amount, l.has_guitar, l.preferred_class_time, l.tags, l.version, l.created_at, l.updated_at, l.locked_until,
+            (1 + (SELECT COUNT(*) FROM lead_interactions ri WHERE ri.lead_id = l.id AND ri.kind = 'reenquiry'))::int AS times_seen,
             l.locked_by, k.name AS locked_by_name, cb.name AS callback_set_by_name, u.name AS updated_by_name,
             l.assigned_to, a.name AS assigned_to_name
      FROM leads l
@@ -284,6 +285,8 @@ export function leadFilters(f: Filters, values: unknown[], meId?: string): strin
 export const LEAD_LIST_COLS = `
   l.id, l.lead_code, l.version, l.name, l.phone10, l.source, l.campaign, l.status, l.current_code, l.attempts,
   l.last_contacted_at, l.next_followup_at, l.created_at, l.amount, l.tags, l.has_guitar, l.preferred_class_time,
+  -- how many times this number came in: the first enquiry + each re-enquiry (client, 17 Nov 2026)
+  (1 + (SELECT COUNT(*) FROM lead_interactions ri WHERE ri.lead_id = l.id AND ri.kind = 'reenquiry'))::int AS times_seen,
   CASE WHEN l.locked_until > NOW() THEN k.name END AS locked_by_name,
   CASE WHEN l.locked_until > NOW() THEN l.locked_by END AS locked_by,
   cb.name AS callback_set_by_name, l.assigned_to, asg.name AS assigned_to_name,

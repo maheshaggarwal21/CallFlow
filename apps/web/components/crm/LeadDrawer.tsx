@@ -11,7 +11,7 @@ import { useCrmCodes } from "@/hooks/useCrmCodes";
 import { useAuth } from "@/hooks/useAuth";
 import { useCrmMe } from "@/hooks/useCrmMe";
 import { WatiIcon, WhatsAppIcon } from "@/components/ui/WABtn";
-import { Btn, CodeChip, Modal, inputStyle, labelStyle } from "./kit";
+import { Btn, CodeChip, Modal, TimesBadge, inputStyle, labelStyle } from "./kit";
 import { Card, History, Snapshot } from "./History";
 import { Icon } from "./icons";
 
@@ -273,7 +273,7 @@ function WatiSend({ lead, readOnly, onSent }: { lead: LeadDetail["lead"]; readOn
 }
 
 /** Contact field: the number in bold for dialling on KoreCall, with a copy button. */
-function ContactField({ phone10 }: { phone10: string }) {
+function ContactField({ phone10, times }: { phone10: string; times: number }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try { await navigator.clipboard.writeText(phone10); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
@@ -287,6 +287,7 @@ function ContactField({ phone10 }: { phone10: string }) {
           color: copied ? R.good : R.ink, borderRadius: 8, padding: "5px 9px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
         <Icon name={copied ? "check" : "copy"} size={14} />{copied ? "Copied" : "Copy"}
       </button>
+      <TimesBadge n={times} />
       <span role="status" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>{copied ? "Number copied" : ""}</span>
     </div>
   );
@@ -536,8 +537,10 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
               ? <label>{lbl("Name", false)}<input value={det.name} maxLength={150} onChange={(e) => setDet({ ...det, name: e.target.value })} aria-label="Name" style={{ ...inputStyle, minHeight: 42 }} /></label>
               : <div>{lbl("Name", false)}<div style={box}><Icon name="user" size={15} style={{ color: R.mute }} />{l.name || "—"}</div></div>}
             {canEdit
-              ? <label>{lbl("Contact", false)}<input value={det.phone} maxLength={20} inputMode="tel" onChange={(e) => setDet({ ...det, phone: e.target.value })} aria-label="Contact" style={{ ...inputStyle, minHeight: 42, fontWeight: 700 }} /></label>
-              : <div>{lbl("Contact", false)}<ContactField phone10={l.phone10} /></div>}
+              ? <label>{lbl("Contact", false)}<span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <input value={det.phone} maxLength={20} inputMode="tel" onChange={(e) => setDet({ ...det, phone: e.target.value })} aria-label="Contact" style={{ ...inputStyle, minHeight: 42, fontWeight: 700, flex: 1, minWidth: 0 }} />
+                  <TimesBadge n={l.times_seen ?? 1} /></span></label>
+              : <div>{lbl("Contact", false)}<ContactField phone10={l.phone10} times={l.times_seen ?? 1} /></div>}
           </div>
           <div className="lf-2">
             <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
