@@ -39,7 +39,7 @@ What the client approved (after asking to "keep it simple"):
   representative, follow-up date, received date range), **Reset / Export** at the top, a yellow
   "Due in N minutes — moved to top automatically" banner, and three lists:
   **Follow-up due now** → **Upcoming today** → **All leads** (paged). Each row: #, received, name,
-  contact, representative, status (code chip + label), amount, guitar, last contacted, follow-up
+  contact, representative, status (code chip + label), amount, guitar, class time, last contacted, follow-up
   date, time, alert (Due in N min / Overdue / Retry due), actions (WhatsApp, open form).
 - **Lead form** — a compact pop-up: name, the **number in bold with Copy** at the top, **email** from
   the sheet, a WhatsApp button, **Status** (coloured dropdown of the codes in use), **Guitar**, **next follow-up
@@ -119,7 +119,7 @@ The CRM:
 ### 5.1 A lead arrives
 1. Meta writes the lead into the Google Sheet (existing).
 2. `LeadSync.gs` runs every minute (fixed pace; no self-throttling), sends new rows (row ID = Timestamp +
-   Contact, name, phone, **email**, status, rep, guitar, amount) in batches of 50 to
+   Contact, name, phone, **email**, status, rep, guitar, amount, preferred class time) in batches of 50 to
    `POST /api/v1/crm/leads/ingest` with the `X-CRM-Secret` header. Row errors go to a retry list (by ID,
    5 tries); an hourly sweep re-sends rows with a blank CRM Sync cell; a nightly job reconciles
    yesterday and emails `OK n / n` with run-time totals. Details: `scripts/apps-script/README.md`.
@@ -149,7 +149,8 @@ The CRM:
 ### 5.4 Filling the form and Save
 1. **Status** (required; codes marked Not used are hidden). Retry codes pre-fill the follow-up from their
    setting; paid/closed grey it out; callback codes need a date and time.
-2. **Guitar** is required for callback/paid/closed. **Notes** need 15+ characters for callback/paid.
+2. **Guitar** is required for callback/paid/closed **for someone with Edit Leads** (for everyone else Guitar
+   and Amount are read-only and the save keeps the lead's own values). **Notes** need 15+ characters for callback/paid.
 3. **Representative** defaults to the assigned rep, else whoever last worked the lead, else the user.
 4. The **reminder banner** previews "[rep] will be reminded on [date at time]" as the date/time are picked.
 5. **Save** (`POST /crm/leads/:id/outcome`), in one database transaction:
@@ -273,3 +274,21 @@ against the running local API. (The old Playwright walkthrough and its screensho
 - "What's the difference between the Representative and the lock?"
 - "Why can't my laptop accidentally change the live database?"
 - "What has to happen, in order, to put this live — and what could go wrong?"
+
+## Edit Leads and the Meta form's two questions (client, 16 Nov 2026)
+
+- The Meta lead form gained **"Do you have a guitar?"** and **"Select your preferred class time"**. The sheet
+  script (`scripts/apps-script/LeadSync.gs`) finds those headers whatever their spelling (case, spaces and
+  punctuation ignored, or any header mentioning "guitar" / "class time"); the Meta guitar answer wins over the
+  older "Guitar" column, which is still used for rows without it. Answers like `yes_i_have_one` → Yes, `not_yet` →
+  No. Class time is stored as text in `leads.preferred_class_time` (migration 026), shown below Email on the lead
+  form, as a **Class time** column on the Leads table and in the CSV export. A re-enquiry fills a missing class time,
+  never wipes one. **The updated script must be pasted into the sheet's Apps Script editor** (it is not deployed
+  with the site).
+- **Edit Leads** is a tick on the Users form (like Export leads; key `edit_leads`; the Super Admin always has it).
+  With it: Name, Contact (10 digits, not another lead's number), Email, Guitar, Amount and Preferred class time are
+  editable on the lead form and saved with **Save details** (`PATCH /crm/leads/:id`, a history line "Edited: …"), and
+  Amount / Guitar can be changed in the Leads table row. Without it those six are read-only, and the server refuses
+  a change (403) and ignores guitar / amount sent with a status save. Status, representative, next follow-up and
+  notes stay open to every rep (that is the follow-up work itself).
+

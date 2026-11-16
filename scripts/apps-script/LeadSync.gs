@@ -32,9 +32,13 @@ var CONFIG = {
   // Sheet header → intake field (the client's "Lead" tab). It has no id column, so the row ID is
   // Timestamp + Contact (see rowId_); a header that isn't found is sent empty.
   // '#F' means column F by position: the rep column has no header.
+  // A list = the first header found (case, spaces and punctuation ignored, so "Do you have a guitar?" and
+  // "do_you_have_a_guitar?" both match). The Meta form's two questions were added 16 Nov 2026.
   COLUMNS: { external_id: 'id', created_at: 'Timestamp', name: 'Name', phone: 'Contact',
              email: 'Email', campaign: 'Campaign', source: 'Source',
-             status: 'Status', rep: '#F', amount: 'Amount', guitar: 'Guitar' },
+             status: 'Status', rep: '#F', amount: 'Amount',
+             guitar: ['Do you have a guitar?', 'Do you have guitar'], guitar_old: 'Guitar',
+             class_time: ['Select your preferred class time', 'Select your preferred class time.', 'Preferred class time'] },
 };
 var HANDLERS = ['syncLeads', 'sweepUnsynced', 'reconcileYesterday'];
 var TZ = 'Asia/Kolkata';
@@ -317,10 +321,18 @@ function headers_(sheet) {
   var sync = names.indexOf(CONFIG.SYNC_COLUMN);
   if (sync < 0) { sync = names.length; sheet.getRange(1, sync + 1).setValue(CONFIG.SYNC_COLUMN); }
   var cols = {};
+  var norm = function (x) { return String(x).toLowerCase().replace(/[^a-z0-9]/g, ''); };
+  var normed = names.map(norm);
   Object.keys(CONFIG.COLUMNS).forEach(function (k) {
     var n = CONFIG.COLUMNS[k];
-    cols[k] = /^#[A-Z]$/.test(n) ? n.charCodeAt(1) - 65 : names.indexOf(n);
+    if (typeof n === 'string' && /^#[A-Z]$/.test(n)) { cols[k] = n.charCodeAt(1) - 65; return; }
+    var list = typeof n === 'string' ? [n] : n;
+    cols[k] = -1;
+    for (var i = 0; i < list.length && cols[k] < 0; i++) cols[k] = typeof n === 'string' ? names.indexOf(list[i]) : normed.indexOf(norm(list[i]));
   });
+  // the Meta questions under a slightly different wording: any header mentioning "guitar" / "class time"
+  if (cols.guitar < 0) cols.guitar = normed.findIndex(function (x, i) { return x.indexOf('guitar') >= 0 && i !== cols.guitar_old; });
+  if (cols.class_time < 0) cols.class_time = normed.findIndex(function (x) { return x.indexOf('classtime') >= 0; });
   if (cols.phone < 0) throw new Error('Column "' + CONFIG.COLUMNS.phone + '" not found');
   return { cols: cols, sync: sync + 1, width: Math.max(names.length, sync + 1) };
 }
@@ -356,7 +368,8 @@ function toLead_(r, h) {
     // No Timestamp → no ID: leave it out (the server rejects an empty one before checking the phone)
     external_id: rowId_(r, h) || undefined, name: v('name'), phone: v('phone'), email: v('email'),
     campaign: v('campaign'), source: v('source') || 'meta', created_at: t ? t.toISOString() : '',
-    status: v('status'), rep: v('rep'), amount: v('amount'), guitar: v('guitar'),
+    // the Meta answer, else the sheet's older Guitar column
+    status: v('status'), rep: v('rep'), amount: v('amount'), guitar: v('guitar') || v('guitar_old'), class_time: v('class_time'),
   };
 }
 

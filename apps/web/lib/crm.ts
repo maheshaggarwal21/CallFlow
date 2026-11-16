@@ -68,6 +68,8 @@ export type LeadRow = {
   created_at: string; amount: string | null; tags: string[];
   locked_by: string | null; locked_by_name: string | null; callback_set_by_name: string | null;
   assigned_to?: string | null; assigned_to_name?: string | null; has_guitar: boolean | null; version: number;
+  /** the Meta form's "preferred class time" answer (client, 16 Nov 2026) */
+  preferred_class_time: string | null;
   last_call: LastCall; bucket?: "due_now" | "overdue" | "new" | "retry" | "later";
 };
 export type QueueResponse = {

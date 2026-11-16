@@ -252,6 +252,21 @@ const lead = (await call(owner, "GET", "/crm/leads?limit=1")).data.data[0];
 ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "no_such_template_x", values: {} })).status === 404, "WATI: unknown template refused");
 ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_days_299", values: {} })).status === 400, "WATI: empty blank refused");
 ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_days_299", values: { name: "Test" } })).data?.mode === "dry-run", "WATI: local send is dry-run only");
+// "Edit Leads" (client, 16 Nov 2026): without it a rep can't change a lead's details; with it they can
+{
+  const ver = async () => (await call(owner, "GET", `/crm/leads/${lead.id}`)).data.lead;
+  const before = await ver();
+  const r1 = await call(neha, "PATCH", `/crm/leads/${lead.id}`, { version: before.version, preferred_class_time: "Evening", has_guitar: true });
+  ok(r1.status === 403, "Edit Leads: a rep without it can't change guitar or class time", `${r1.status} ${r1.msg}`);
+  const nehaRow = (await call(owner, "GET", "/employees")).data.find((e) => e.id === nehaId);
+  const perms = nehaRow.permissions;
+  ok((await call(owner, "PATCH", `/employees/${nehaId}`, { permissions: [...perms, "edit_leads"] })).status === 200, "Edit Leads: ticked for the rep on the Users form");
+  const r2 = await call(neha, "PATCH", `/crm/leads/${lead.id}`, { version: before.version, preferred_class_time: "Evening 6–8 pm" });
+  const after = await ver();
+  ok(r2.status === 200 && after.preferred_class_time === "Evening 6–8 pm", "Edit Leads: …then the rep can change the preferred class time", `${r2.status} ${r2.msg} ${after.preferred_class_time}`);
+  await call(owner, "PATCH", `/employees/${nehaId}`, { permissions: perms });
+  await call(owner, "PATCH", `/crm/leads/${lead.id}`, { version: after.version, preferred_class_time: before.preferred_class_time ?? "" });
+}
 
 
 // ── line rules (client, 15 Nov 2026): one person per line; switching off frees the line; gap calls; swap ──

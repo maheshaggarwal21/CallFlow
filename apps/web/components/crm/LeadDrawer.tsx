@@ -9,6 +9,7 @@ import { API_BASE, api, fetcher } from "@/lib/api";
 import { MIN_NOTE, fillTemplate, groupPhone, openWati, type Code, type CodeMeta, type CrmConfig, type LeadDetail, type WatiTemplates } from "@/lib/crm";
 import { useCrmCodes } from "@/hooks/useCrmCodes";
 import { useAuth } from "@/hooks/useAuth";
+import { useCrmMe } from "@/hooks/useCrmMe";
 import { WatiIcon, WhatsAppIcon } from "@/components/ui/WABtn";
 import { Btn, CodeChip, Modal, inputStyle, labelStyle } from "./kit";
 import { Card, History, Snapshot } from "./History";
@@ -429,6 +430,37 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
+  // "Edit Leads" (Users → Tabs, client 16 Nov 2026): name, contact, email, guitar, amount and class time can be
+  // changed and saved on their own; without it they are read-only (guitar and amount come from the sheet)
+  const { can } = useCrmMe();
+  const canEdit = can("edit_leads");
+  const initial = { name: l.name ?? "", phone: l.phone10, email: l.email ?? "", classTime: l.preferred_class_time ?? "" };
+  const [det, setDet] = useState(initial);
+  const [detMsg, setDetMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [detBusy, setDetBusy] = useState(false);
+  const guitarNow = l.has_guitar == null ? "" : l.has_guitar ? "Yes" : "No";
+  const amountNow = l.amount ? String(Number(l.amount)) : "";
+  const detDirty = det.name !== initial.name || det.phone !== initial.phone || det.email !== initial.email || det.classTime !== initial.classTime
+    || guitar !== guitarNow || amount !== amountNow;
+  const saveDetails = async () => {
+    setDetBusy(true); setDetMsg(null);
+    try {
+      const p: Record<string, unknown> = { version: l.version };
+      if (det.name !== initial.name) p.name = det.name.trim();
+      if (det.phone !== initial.phone) p.phone = det.phone.trim();
+      if (det.email !== initial.email) p.email = det.email.trim();
+      if (det.classTime !== initial.classTime) p.preferred_class_time = det.classTime.trim();
+      if (guitar !== guitarNow) p.has_guitar = guitar ? guitar === "Yes" : null;
+      if (amount !== amountNow) p.amount = Number(amount) || null;
+      await api.patch(`/crm/leads/${l.id}`, p);
+      setDetMsg({ ok: true, text: "Details saved" });
+      onReload();
+    } catch (e) {
+      setDetMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setDetBusy(false);
+    }
+  };
 
   const { meta } = useCrmCodes();
   const kind = meta(code)?.kind;
@@ -452,7 +484,8 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
 
   const save = async () => {
     if (!code) return setErr("Choose a status");
-    if (talked && !guitar) return setErr("Choose Guitar: Yes or No");
+    if (talked && canEdit && !guitar) return setErr("Choose Guitar: Yes or No");
+    if (canEdit && detDirty) return setErr("Save the changed details first (Save details, above)");
     if (kind === "callback" && (!date || !time)) return setErr("Set the next follow-up date and time");
     if (needsNote && note.trim().length < MIN_NOTE) return setErr(`Write a note of at least ${MIN_NOTE} characters`);
     if (!repId) return setErr("Choose the representative");
@@ -463,9 +496,9 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
         version: l.version, code,
         note: note.trim() || null,
         callback_at: !dateOff && date && time ? `${date}T${time}:00+05:30` : null,
-        amount: Number(amount) || null,
+        // read-only without Edit Leads: the server keeps the lead's own guitar and amount then
+        ...(canEdit ? { amount: Number(amount) || null, has_guitar: guitar ? guitar === "Yes" : null } : {}),
         assigned_to: repId,
-        has_guitar: guitar ? guitar === "Yes" : null,
       });
       onSaved(`${l.name || "Lead"} saved as ${code} · ${meta(code)?.label}`);
     } catch (e) {
@@ -499,26 +532,54 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
       <Card icon="user" title="Basic details">
         <div style={{ display: "grid", gap: 10 }}>
           <div className="lf-2">
-            <div>{lbl("Name", false)}<div style={box}><Icon name="user" size={15} style={{ color: R.mute }} />{l.name || "—"}</div></div>
-            <div>{lbl("Contact", false)}<ContactField phone10={l.phone10} /></div>
+            {canEdit
+              ? <label>{lbl("Name", false)}<input value={det.name} maxLength={150} onChange={(e) => setDet({ ...det, name: e.target.value })} aria-label="Name" style={{ ...inputStyle, minHeight: 42 }} /></label>
+              : <div>{lbl("Name", false)}<div style={box}><Icon name="user" size={15} style={{ color: R.mute }} />{l.name || "—"}</div></div>}
+            {canEdit
+              ? <label>{lbl("Contact", false)}<input value={det.phone} maxLength={20} inputMode="tel" onChange={(e) => setDet({ ...det, phone: e.target.value })} aria-label="Contact" style={{ ...inputStyle, minHeight: 42, fontWeight: 700 }} /></label>
+              : <div>{lbl("Contact", false)}<ContactField phone10={l.phone10} /></div>}
           </div>
           <div className="lf-2">
-            <div>{lbl("Email", false)}
-              <div style={box} title={l.email ?? undefined}>
-                <Icon name="mail" size={15} style={{ color: R.mute }} />
-                {l.email ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.email}</span>
-                  : <span style={{ color: "#a8977f" }}>Not in the sheet</span>}
-              </div>
+            <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
+              {canEdit
+                ? <label>{lbl("Email", false)}<input type="email" value={det.email} maxLength={200} onChange={(e) => setDet({ ...det, email: e.target.value })} aria-label="Email" placeholder="Not in the sheet" style={{ ...inputStyle, minHeight: 42 }} /></label>
+                : <div>{lbl("Email", false)}
+                    <div style={box} title={l.email ?? undefined}>
+                      <Icon name="mail" size={15} style={{ color: R.mute }} />
+                      {l.email ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.email}</span>
+                        : <span style={{ color: "#a8977f" }}>Not in the sheet</span>}
+                    </div>
+                  </div>}
+              {/* client, 16 Nov 2026: just below Email; from the Meta form */}
+              {canEdit
+                ? <label>{lbl("Preferred class time", false)}<input value={det.classTime} maxLength={100} onChange={(e) => setDet({ ...det, classTime: e.target.value })} aria-label="Preferred class time" placeholder="e.g. Evening 6–8 pm" style={{ ...inputStyle, minHeight: 42 }} /></label>
+                : <div>{lbl("Preferred class time", false)}
+                    <div style={box} title={l.preferred_class_time ?? undefined}>
+                      {l.preferred_class_time ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.preferred_class_time}</span>
+                        : <span style={{ color: "#a8977f" }}>Not in the sheet</span>}
+                    </div>
+                  </div>}
             </div>
-            <div className="lf-2">
-              <label>{lbl("Guitar", talked)}
-                <select value={guitar} onChange={(e) => setGuitar(e.target.value)} style={{ ...inputStyle, minHeight: 42 }} aria-label="Guitar">
-                  <option value="">—</option><option>Yes</option><option>No</option>
-                </select></label>
-              <label>{lbl("Amount (₹)", false)}
-                <input type="number" min={0} placeholder="e.g. 299" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ ...inputStyle, minHeight: 42 }} /></label>
+            <div className="lf-2" style={{ alignContent: "start" }}>
+              {canEdit
+                ? <label>{lbl("Guitar", talked)}
+                    <select value={guitar} onChange={(e) => setGuitar(e.target.value)} style={{ ...inputStyle, minHeight: 42 }} aria-label="Guitar">
+                      <option value="">—</option><option>Yes</option><option>No</option>
+                    </select></label>
+                : <div>{lbl("Guitar", false)}<div style={{ ...box, fontWeight: 700, color: l.has_guitar ? R.good : l.has_guitar === false ? R.bad : "#a8977f" }}>{guitarNow || "—"}</div></div>}
+              {canEdit
+                ? <label>{lbl("Amount (₹)", false)}
+                    <input type="number" min={0} placeholder="e.g. 299" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount" style={{ ...inputStyle, minHeight: 42 }} /></label>
+                : <div>{lbl("Amount (₹)", false)}<div style={box}>{amountNow ? `₹${amountNow}` : <span style={{ color: "#a8977f" }}>—</span>}</div></div>}
             </div>
           </div>
+          {canEdit && (detDirty || detMsg) && (
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              {detDirty && <Btn onClick={saveDetails} disabled={detBusy || readOnly}>{detBusy ? "Saving…" : "Save details"}</Btn>}
+              {detDirty && <Btn kind="ghost" onClick={() => { setDet(initial); setGuitar(guitarNow); setAmount(amountNow); setDetMsg(null); }}>Undo</Btn>}
+              {detMsg && <span role={detMsg.ok ? "status" : "alert"} style={{ fontSize: 13, fontWeight: 600, color: detMsg.ok ? R.good : R.bad }}>{detMsg.text}</span>}
+            </div>
+          )}
         </div>
       </Card>
 

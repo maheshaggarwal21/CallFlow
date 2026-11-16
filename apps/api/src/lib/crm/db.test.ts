@@ -12,7 +12,7 @@ import { DEFAULT_CODES, outcomeSchema } from "./rules";
 
 assertLocalDb(process.env.DATABASE_URL, "crm db.test");
 
-type U = { sub: string; role: "employee"; name: string };
+type U = { sub: string; role: "employee"; name: string; permissions: string[] };
 let neha: U, priya: U, raman: U;
 
 async function cleanup() {
@@ -21,12 +21,13 @@ async function cleanup() {
   await pool.query("DELETE FROM employees WHERE email LIKE '%@crm-test.local'");
 }
 
-async function rep(name: string): Promise<U> {
+// Neha and Priya hold "Edit Leads" (guitar, amount, contact details); Ramandeep doesn't
+async function rep(name: string, permissions: string[] = []): Promise<U> {
   const { rows: [e] } = await pool.query(
     `INSERT INTO employees (name, email, role, password_hash) VALUES ($1, $2, 'employee', 'x') RETURNING id`,
     [name, `${name.toLowerCase()}@crm-test.local`]
   );
-  return { sub: e.id, role: "employee", name };
+  return { sub: e.id, role: "employee", name, permissions };
 }
 
 let n = 0;
@@ -54,8 +55,8 @@ before(async () => {
   storedCodes = (await pool.query("SELECT value FROM crm_settings WHERE key = 'codes'")).rows[0]?.value;
   await pool.query("UPDATE crm_settings SET value = $1 WHERE key = 'codes'", [JSON.stringify(DEFAULT_CODES)]);
   await cleanup();
-  neha = await rep("Neha");
-  priya = await rep("Priya");
+  neha = await rep("Neha", ["edit_leads"]);
+  priya = await rep("Priya", ["edit_leads"]);
   raman = await rep("Ramandeep");
 });
 after(async () => {
@@ -237,7 +238,7 @@ test("edit in the table: rep, guitar and follow-up change with a history line; v
   await claimLock(l.id, priya.sub);
   await assert.rejects(updateLeadFields(l.id, neha, { version: 4, has_guitar: false }), (e: unknown) => e instanceof CrmError && e.status === 423);
   const { rows } = await pool.query("SELECT note FROM lead_interactions WHERE lead_id = $1 AND kind = 'system' ORDER BY created_at", [l.id]);
-  assert.match(rows[0].note, /Changed in the table: Assigned to Priya · Guitar: Yes/);
+  assert.match(rows[0].note, /Edited: Assigned to Priya · Guitar: Yes/);
   assert.match(rows[1].note, /Next follow-up/);
 });
 
@@ -254,4 +255,38 @@ test("edit in the table: amount and last contacted change (and clear); a future 
   await assert.rejects(updateLeadFields(l.id, neha, { version: 3, last_contacted_at: min(30).toISOString() }), /future/);
   const { rows } = await pool.query("SELECT note FROM lead_interactions WHERE lead_id = $1 AND kind = 'system' ORDER BY created_at", [l.id]);
   assert.match(rows[0].note, /Amount: ₹499 · Last contacted/);
+});
+
+test("Edit Leads (client, 16 Nov 2026): only holders change contact details, guitar, amount and class time", async () => {
+  const l = await lead("9000020090");
+  await lead("9000020091");
+  const row = async () => (await pool.query("SELECT name, phone10, email, has_guitar, amount::float AS amount, preferred_class_time, version FROM leads WHERE id = $1", [l.id])).rows[0];
+  // without it: refused in the table, and a status save keeps the lead's guitar and amount
+  await assert.rejects(updateLeadFields(l.id, raman, { version: 1, has_guitar: true }), (e: unknown) => e instanceof CrmError && e.status === 403);
+  await assert.rejects(updateLeadFields(l.id, raman, { version: 1, name: "X" }), (e: unknown) => e instanceof CrmError && e.status === 403);
+  await saveOutcome(l.id, raman, out({ version: 1, code: "B", amount: 999, has_guitar: true }));
+  assert.deepEqual(await row(), { name: "Test Lead", phone10: "9000020090", email: null, has_guitar: null, amount: null, preferred_class_time: null, version: 2 });
+  // with it: everything, with a history line
+  assert.deepEqual(await updateLeadFields(l.id, neha, { version: 2, name: "Riya Sen", phone: "+91 90000 20092", email: "riya@x.in", preferred_class_time: "Evening 6–8 pm", has_guitar: false, amount: 299 }), { version: 3 });
+  assert.deepEqual(await row(), { name: "Riya Sen", phone10: "9000020092", email: "riya@x.in", has_guitar: false, amount: 299, preferred_class_time: "Evening 6–8 pm", version: 3 });
+  // another lead's number, or a short one, is refused
+  await assert.rejects(updateLeadFields(l.id, neha, { version: 3, phone: "9000020091" }), /already has that number/);
+  await assert.rejects(updateLeadFields(l.id, neha, { version: 3, phone: "12345" }), /10-digit/);
+  const { rows } = await pool.query("SELECT note FROM lead_interactions WHERE lead_id = $1 AND kind = 'system' ORDER BY created_at DESC LIMIT 1", [l.id]);
+  assert.match(rows[0].note, /Edited: Name: Riya Sen · Contact: 9000020092 · Email: riya@x.in · Preferred class time: Evening 6–8 pm · Guitar: No · Amount: ₹299/);
+});
+
+test("sheet import: the Meta form's guitar answer and preferred class time come across", async () => {
+  const res = await ingestRows([
+    { external_id: "t-m1", name: "Meta A", phone: "9000020093", source: "test", guitar: "yes_i_have_one", class_time: "evening_(6pm_-_9pm)" },
+    { external_id: "t-m2", name: "Meta B", phone: "9000020094", source: "test", guitar: "No", class_time: "Morning" },
+    { external_id: "t-m3", name: "Meta C", phone: "9000020095", source: "test", guitar: "", class_time: "" },
+  ]);
+  assert.deepEqual(res.map((r) => r.result), ["created", "created", "created"]);
+  const { rows } = await pool.query("SELECT phone10, has_guitar, preferred_class_time FROM leads WHERE phone10 IN ('9000020093','9000020094','9000020095') ORDER BY phone10");
+  assert.deepEqual(rows.map((r) => [r.has_guitar, r.preferred_class_time]), [[true, "evening (6pm - 9pm)"], [false, "Morning"], [null, null]]);
+  // a re-enquiry fills a missing class time, never wipes one
+  await ingestRows([{ external_id: "t-m4", phone: "9000020095", source: "test", class_time: "Weekend" }, { external_id: "t-m5", phone: "9000020094", source: "test", class_time: "" }]);
+  const again = await pool.query("SELECT preferred_class_time FROM leads WHERE phone10 IN ('9000020094','9000020095') ORDER BY phone10");
+  assert.deepEqual(again.rows.map((r) => r.preferred_class_time), ["Morning", "Weekend"]);
 });

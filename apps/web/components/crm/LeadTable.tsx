@@ -17,10 +17,10 @@ const IST = "Asia/Kolkata";
 const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric" });
 const actBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: `1px solid ${R.line}`, background: R.card, color: R.ink,
   display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, textDecoration: "none" };
-// #, Received, Name, Contact, Assigned to (representative), Status, Amount, Guitar, Last contacted, Next follow-up, Follow-up alert, Actions
+// #, Received, Name, Contact, Assigned to (representative), Status, Amount, Guitar, Class time, Last contacted, Next follow-up, Follow-up alert, Actions
 // (sums to the table's width on a 1440 px screen; wider screens share out the extra)
 // 1106px in all = fits a 1440px screen beside the sidebar; Actions holds WhatsApp, WATI and Open (28px each)
-const COL_PX = [40, 94, 128, 112, 112, 66, 70, 64, 90, 106, 110, 114];
+const COL_PX = [40, 94, 128, 112, 112, 66, 70, 64, 104, 90, 106, 110, 114];
 // Actions stays visible while the table scrolls sideways; its cell needs the row's own background
 const STICKY_CSS = `
   .crm-sticky{position:sticky;right:0;z-index:1;box-shadow:-8px 0 10px -8px rgba(43,33,24,.18)}
@@ -41,6 +41,8 @@ const istLocal = (d: string) => new Date(d).toLocaleString("sv-SE", { timeZone: 
 export type TableEdit = {
   reps: { id: string; name: string }[];
   codes: CodeMeta[];
+  /** "Edit Leads": Amount and Guitar change in the row too (client, 16 Nov 2026); without it they are read-only */
+  details: boolean;
   patch: (l: LeadRow, p: { assigned_to?: string | null; has_guitar?: boolean | null; next_followup_at?: string; amount?: number | null; last_contacted_at?: string }) => void;
   status: (l: LeadRow, code: string) => void;
 };
@@ -90,7 +92,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
         <colgroup>{COL_PX.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
         <thead><tr>
           {head("#")}{head("Received", "created_at")}{head("Name", "name")}{head("Contact")}{head("Assigned to")}{head("Status", "status")}
-          {head("Amount")}{head("Guitar")}{head("Last contacted", "last_contacted_at")}{head("Next follow-up", "next_followup_at")}{head("Follow-up alert")}{head("Actions")}
+          {head("Amount")}{head("Guitar")}{head("Class time")}{head("Last contacted", "last_contacted_at")}{head("Next follow-up", "next_followup_at")}{head("Follow-up alert")}{head("Actions")}
         </tr></thead>
         <tbody>
           {rows.map((l, i) => {
@@ -131,19 +133,22 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                     {edit.codes.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.label}</option>)}
                   </select>}
                 </td>
-                <td className={edit ? "crm-edit" : undefined} style={td({ fontSize: 12.5 })} onClick={edit && stop}>
+                <td className={edit?.details ? "crm-edit" : undefined} style={td({ fontSize: 12.5 })} onClick={edit?.details ? stop : undefined}>
                   {l.amount ? `₹${Number(l.amount)}` : "—"}
-                  {edit && <input key={l.version} type="number" min={0} inputMode="decimal" placeholder="e.g. 299" className="crm-typed" aria-label={`Amount for ${l.name}`}
+                  {edit?.details && <input key={l.version} type="number" min={0} inputMode="decimal" placeholder="e.g. 299" className="crm-typed" aria-label={`Amount for ${l.name}`}
                     defaultValue={l.amount ? Number(l.amount) : ""} style={OVERLAY}
                     onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { e.currentTarget.value = l.amount ? String(Number(l.amount)) : ""; e.currentTarget.blur(); } }}
                     onBlur={(e) => { const v = Number(e.target.value) || null; if (v !== (l.amount ? Number(l.amount) : null)) edit.patch(l, { amount: v }); }} />}
                 </td>
-                <td className={edit ? "crm-edit" : undefined} style={td({ fontSize: 12.5, fontWeight: 600, color: l.has_guitar ? R.good : l.has_guitar === false ? R.bad : "#c2b39c" })} onClick={edit && stop}>
+                <td className={edit?.details ? "crm-edit" : undefined} style={td({ fontSize: 12.5, fontWeight: 600, color: l.has_guitar ? R.good : l.has_guitar === false ? R.bad : "#c2b39c" })} onClick={edit?.details ? stop : undefined}>
                   {l.has_guitar == null ? "—" : l.has_guitar ? "Yes" : "No"}
-                  {edit && <select aria-label={`Guitar for ${l.name}`} value={l.has_guitar == null ? "" : l.has_guitar ? "yes" : "no"} style={OVERLAY}
+                  {edit?.details && <select aria-label={`Guitar for ${l.name}`} value={l.has_guitar == null ? "" : l.has_guitar ? "yes" : "no"} style={OVERLAY}
                     onChange={(e) => edit.patch(l, { has_guitar: e.target.value === "" ? null : e.target.value === "yes" })}>
                     <option value="">—</option><option value="yes">Yes</option><option value="no">No</option>
                   </select>}</td>
+                {/* the Meta form's answer, as the student picked it (client, 16 Nov 2026) */}
+                <td style={td({ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: l.preferred_class_time ? R.ink : "#c2b39c" })}
+                  title={l.preferred_class_time ?? undefined}>{l.preferred_class_time || "—"}</td>
                 {/* Set automatically when a status is saved; can be corrected here (not into the future) */}
                 <td className={edit ? "crm-edit" : undefined} style={td({ fontSize: 12.5, whiteSpace: "nowrap" })} onClick={edit && stop}>
                   {l.last_contacted_at ? <>{day(l.last_contacted_at)}<div style={{ color: R.mute, fontSize: 11.5 }}>{time(l.last_contacted_at)}</div></> : "—"}

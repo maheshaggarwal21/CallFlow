@@ -132,7 +132,7 @@ router.get("/leads/export.csv", requirePermission("export_leads"), async (req, r
   const where = leadFilters(f, values, user(req).sub);
   const [{ rows }, codes] = await Promise.all([
     pool.query(
-      `SELECT l.lead_code, l.name, l.phone10, l.email, l.status, l.current_code, l.attempts, l.has_guitar,
+      `SELECT l.lead_code, l.name, l.phone10, l.email, l.status, l.current_code, l.attempts, l.has_guitar, l.preferred_class_time,
               l.last_contacted_at, l.next_followup_at, l.amount, l.tags, l.created_at, a.name AS assigned_to
        FROM leads l LEFT JOIN employees a ON a.id = l.assigned_to ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
        ORDER BY ${SORTS[f.sort]} ${f.dir} NULLS LAST, l.created_at DESC, l.id LIMIT 50000`,
@@ -146,6 +146,7 @@ router.get("/leads/export.csv", requirePermission("export_leads"), async (req, r
     ["Lead code", (r) => r.lead_code], ["Received (IST)", (r) => istCsv(r.created_at)], ["Name", (r) => r.name],
     ["Phone", (r) => r.phone10], ["Email", (r) => r.email], ["Status", (r) => status(r as never)],
     ["Assigned to", (r) => r.assigned_to], ["Guitar", (r) => (r.has_guitar == null ? "" : r.has_guitar ? "Yes" : "No")],
+    ["Preferred class time", (r) => r.preferred_class_time ?? ""],
     ["Amount", (r) => (r.amount == null ? "" : Number(r.amount))], ["Attempts", (r) => r.attempts],
     ["Last contacted (IST)", (r) => istCsv(r.last_contacted_at)], ["Next follow-up (IST)", (r) => istCsv(r.next_followup_at)],
     ["Tags", (r) => r.tags],

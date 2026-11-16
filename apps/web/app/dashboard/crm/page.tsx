@@ -116,6 +116,7 @@ function LeadsBoard() {
   const edit: TableEdit | undefined = cfg && {
     reps: cfg.reps,
     codes: codes.inUse,
+    details: can("edit_leads"),
     patch: async (l, p) => {
       try {
         await api.patch(`/crm/leads/${l.id}`, { version: l.version, ...p });

@@ -29,7 +29,8 @@ const ALL: (Tab & { crm?: boolean })[] = [
 export const TABS: Tab[] = ALL.filter((t) => !t.crm || CRM_ENABLED);
 
 /** Ticked on the Users form like a tab, but it is a button on the Leads tab, not a page. */
-export const EXTRA_PERMISSIONS = CRM_ENABLED ? [{ key: "export_leads", label: "Export leads" }] : [];
+// "Edit Leads" (client, 16 Nov 2026): change a lead's name, contact, email, guitar, amount and preferred class time
+export const EXTRA_PERMISSIONS = CRM_ENABLED ? [{ key: "export_leads", label: "Export leads" }, { key: "edit_leads", label: "Edit Leads" }] : [];
 
 export const RANKS: { role: UserRole; label: string; hint: string }[] = [
   { role: "owner",    label: "Super Admin", hint: "Sees every tab and everyone's data" },

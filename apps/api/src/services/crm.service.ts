@@ -20,7 +20,9 @@ export class CrmError extends Error {
   }
 }
 
-type User = { sub: string; role: "owner" | "admin" | "employee"; name: string };
+type User = { sub: string; role: "owner" | "admin" | "employee"; name: string; permissions?: string[] };
+/** "Edit Leads" (Users → Tabs, client 16 Nov 2026): may change name, contact, email, guitar, amount, preferred class time. */
+export const canEditLeads = (u: User) => u.role === "owner" || !!u.permissions?.includes("edit_leads");
 
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {
   const { rows } = await pool.query("SELECT value FROM crm_settings WHERE key = $1", [key]);
@@ -142,6 +144,8 @@ export async function saveOutcome(leadId: string, user: User, input: OutcomeInpu
       throw new CrmError(423, `${lead.locked_by_name} is on this lead`, { locked_by: lead.locked_by_name });
     }
 
+    // guitar and amount are read-only without "Edit Leads" (client, 16 Nov 2026): a save keeps what the lead has
+    if (!canEditLeads(user)) input = { ...input, amount: undefined, has_guitar: undefined };
     const s = nextState(lead.attempts, input, rules, now, codes);
     const { rows: [ix] } = await client.query(
       `INSERT INTO lead_interactions (lead_id, employee_id, kind, code, reason, note, next_followup_at, meta)
@@ -177,7 +181,7 @@ export async function leadDetail(leadId: string) {
   const { rows: [lead] } = await pool.query(
     `SELECT l.id, l.lead_code, l.name, l.email, l.phone_raw, l.phone10, l.source, l.campaign, l.external_id,
             l.status, l.current_code, l.next_followup_at, l.attempts, l.last_contacted_at,
-            l.amount, l.has_guitar, l.tags, l.version, l.created_at, l.updated_at, l.locked_until,
+            l.amount, l.has_guitar, l.preferred_class_time, l.tags, l.version, l.created_at, l.updated_at, l.locked_until,
             l.locked_by, k.name AS locked_by_name, cb.name AS callback_set_by_name, u.name AS updated_by_name,
             l.assigned_to, a.name AS assigned_to_name
      FROM leads l
@@ -279,7 +283,7 @@ export function leadFilters(f: Filters, values: unknown[], meId?: string): strin
 
 export const LEAD_LIST_COLS = `
   l.id, l.lead_code, l.version, l.name, l.phone10, l.source, l.campaign, l.status, l.current_code, l.attempts,
-  l.last_contacted_at, l.next_followup_at, l.created_at, l.amount, l.tags, l.has_guitar,
+  l.last_contacted_at, l.next_followup_at, l.created_at, l.amount, l.tags, l.has_guitar, l.preferred_class_time,
   CASE WHEN l.locked_until > NOW() THEN k.name END AS locked_by_name,
   CASE WHEN l.locked_until > NOW() THEN l.locked_by END AS locked_by,
   cb.name AS callback_set_by_name, l.assigned_to, asg.name AS assigned_to_name,
@@ -333,6 +337,11 @@ export async function queue(user: User, f: Filters, now = new Date()) {
 
 export const leadPatchSchema = z.object({
   version: z.number().int().positive(),
+  // "Edit Leads" only (client, 16 Nov 2026)
+  name: z.string().trim().min(1, "Name can't be empty").max(150).optional(),
+  phone: z.string().trim().max(40).optional(),
+  email: z.string().trim().max(200).email("That email doesn't look right").or(z.literal("")).optional(),
+  preferred_class_time: z.string().trim().max(100).optional(),
   assigned_to: z.string().uuid().nullable().optional(),
   has_guitar: z.boolean().nullable().optional(),
   next_followup_at: z.string().datetime({ offset: true }).optional(),
@@ -367,6 +376,18 @@ export async function updateLeadFields(leadId: string, user: User, p: LeadPatch,
     const sets: string[] = [];
     const values: unknown[] = [leadId];
     const set = (col: string, v: unknown) => { values.push(v); sets.push(`${col} = $${values.length}`); };
+    const details = [p.name, p.phone, p.email, p.preferred_class_time, p.has_guitar, p.amount].some((v) => v !== undefined);
+    if (details && !canEditLeads(user)) throw new CrmError(403, "Only someone with Edit Leads can change these details");
+    if (p.name !== undefined) { set("name", p.name); notes.push(`Name: ${p.name}`); }
+    if (p.phone !== undefined) {
+      const p10 = phone10(p.phone);
+      if (!isFullPhone10(p10)) throw new CrmError(400, "Contact needs a 10-digit number");
+      const { rows: [other] } = await client.query("SELECT lead_code FROM leads WHERE phone10 = $1 AND id <> $2", [p10, leadId]);
+      if (other) throw new CrmError(400, `Lead ${other.lead_code} already has that number`);
+      set("phone_raw", p.phone); set("phone10", p10); notes.push(`Contact: ${p10}`);
+    }
+    if (p.email !== undefined) { set("email", p.email || null); notes.push(`Email: ${p.email || "removed"}`); }
+    if (p.preferred_class_time !== undefined) { set("preferred_class_time", p.preferred_class_time || null); notes.push(`Preferred class time: ${p.preferred_class_time || "removed"}`); }
     if (p.assigned_to !== undefined) {
       const { rows: [e] } = p.assigned_to
         ? await client.query("SELECT name FROM employees WHERE id = $1 AND status = 'active'", [p.assigned_to])
@@ -404,7 +425,7 @@ export async function updateLeadFields(leadId: string, user: User, p: LeadPatch,
     );
     await client.query(
       "INSERT INTO lead_interactions (lead_id, employee_id, kind, note) VALUES ($1, $2, 'system', $3)",
-      [leadId, user.sub, `Changed in the table: ${notes.join(" · ")}`]
+      [leadId, user.sub, `Edited: ${notes.join(" · ")}`]
     );
     await client.query("COMMIT");
     return { version: saved.version };
@@ -430,7 +451,9 @@ export const ingestRowSchema = z.object({
   status: z.coerce.string().trim().max(20).nullish(),
   rep: z.coerce.string().trim().max(80).nullish(),
   amount: z.coerce.string().trim().max(20).nullish(),
-  guitar: z.coerce.string().trim().max(10).nullish(),
+  // the Meta form's "Do you have a guitar?" answer, e.g. "Yes" / "No" / "yes_i_have_one" (client, 16 Nov 2026)
+  guitar: z.coerce.string().trim().max(80).nullish(),
+  class_time: z.coerce.string().trim().max(100).nullish(),
   extra: z.record(z.unknown()).nullish(),
 });
 export const MAX_INGEST_ROWS = 500;
@@ -493,9 +516,10 @@ export async function ingestRows(input: unknown[], now = new Date()): Promise<In
              next_followup_at = CASE WHEN status = 'converted' THEN next_followup_at END,
              attempts = CASE WHEN status = 'converted' THEN attempts ELSE 0 END,
              assigned_to = COALESCE($4, assigned_to), has_guitar = COALESCE($5, has_guitar), amount = COALESCE($6, amount),
+             preferred_class_time = COALESCE($7, preferred_class_time),
              version = version + 1, updated_by = NULL, updated_at = NOW()
            WHERE id = $1`,
-          [l.id, sheet.status, sheet.code, sheet.assigned_to, sheet.has_guitar, sheet.amount]
+          [l.id, sheet.status, sheet.code, sheet.assigned_to, sheet.has_guitar, sheet.amount, sheet.class_time]
         );
         await client.query("COMMIT");
         out.push({ index, external_id: extId, result: "reenquired", lead_code: l.lead_code });
@@ -505,10 +529,10 @@ export async function ingestRows(input: unknown[], now = new Date()): Promise<In
       const createdAt = created && !Number.isNaN(created.getTime()) && created <= now ? created : now;
       const { rows: [l] } = await client.query(
         `INSERT INTO leads (name, email, phone_raw, phone10, source, campaign, external_id, raw, created_at,
-                            status, current_code, assigned_to, has_guitar, amount)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, 'new'), $11, $12, $13, $14) RETURNING id, lead_code`,
+                            status, current_code, assigned_to, has_guitar, amount, preferred_class_time)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, 'new'), $11, $12, $13, $14, $15) RETURNING id, lead_code`,
         [row.name || "", row.email || null, row.phone, p10, row.source || null, row.campaign || null, extId,
-         JSON.stringify(raw), createdAt, sheet.status, sheet.code, sheet.assigned_to, sheet.has_guitar, sheet.amount]
+         JSON.stringify(raw), createdAt, sheet.status, sheet.code, sheet.assigned_to, sheet.has_guitar, sheet.amount, sheet.class_time]
       );
       if (sheet.code) {
         await client.query(
@@ -541,11 +565,13 @@ function fromSheet(row: z.infer<typeof ingestRowSchema>, codes: CodeSettings, re
   const first = (r: { name: string }) => r.name.toLowerCase().split(/\s+/)[0];
   const starts = who.length >= 3 ? reps.filter((r) => first(r).startsWith(who)) : [];
   const rep = who ? reps.find((r) => r.name.toLowerCase() === who) ?? reps.find((r) => first(r) === who) ?? (starts.length === 1 ? starts[0] : undefined) : undefined;
-  const g = (row.guitar ?? "").toLowerCase();
+  // "Yes" / "Y" / "yes_i_have_one" → yes; "No" / "not_yet" → no; anything else stays empty
+  const g = (row.guitar ?? "").trim().toLowerCase();
   const amount = Number(row.amount);
   return {
     code, status: role ? STATUS_OF_ROLE[role] : null, assigned_to: rep?.id ?? null,
-    has_guitar: g === "yes" || g === "y" ? true : g === "no" || g === "n" ? false : null,
+    has_guitar: /^y(es)?\b|^yes/.test(g) ? true : /^n(o|ot)?\b|^no/.test(g) ? false : null,
+    class_time: (row.class_time ?? "").replace(/_/g, " ").trim().slice(0, 100) || null,
     // The sheet shows the trial price on every row; it only means money for a converted lead
     amount: role === "paid" && amount > 0 ? amount : null,
   };
