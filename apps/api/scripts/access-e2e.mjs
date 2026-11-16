@@ -254,6 +254,7 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
 ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_days_299", values: { name: "Test" } })).data?.mode === "dry-run", "WATI: local send is dry-run only");
 // "Edit Leads" (client, 16 Nov 2026): without it a rep can't change a lead's details; with it they can
 {
+  await pool.query("UPDATE leads SET locked_by = NULL, locked_until = NULL WHERE id = $1", [lead.id]);   // a lock left by an earlier browser test
   const ver = async () => (await call(owner, "GET", `/crm/leads/${lead.id}`)).data.lead;
   const before = await ver();
   const r1 = await call(neha, "PATCH", `/crm/leads/${lead.id}`, { version: before.version, preferred_class_time: "Evening", has_guitar: true });
@@ -409,23 +410,22 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok((await call(owner, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-11", full: true })).status === 400, "count as full: not a holiday");
   ok((await call(repTok, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-12", full: true })).status === 403, "count as full: only the Super Admin");
 
-  // expected, worked by hand (paise; ₹1,000 a day = 100000):
+  // expected, worked by hand (paise; ₹1,000 a day = 100000). Rule of 17 Nov 2026: calling and trial only; ANY
+  // target met → full day, else the best one's step (½ from 50 %); regular joinings don't count for salary.
   const want = {
-    "2026-11-02": 33333,  // calling 100 %, trial 0, regular 0 → ⅓
-    "2026-11-03": 50000,  // calling 50 % (½ of ⅓) + trial 1/1 (⅓) → ½
-    "2026-11-04": 25000,  // calling 75 % → ¾ of ⅓ = ¼
-    "2026-11-05": 16667,  // regular 1 of 2 = 50 % → ½ of ⅓ = ⅙
+    "2026-11-02": 100000, // calling 100 % → full
+    "2026-11-03": 100000, // calling 50 %, but trial 1/1 met → full
+    "2026-11-04": 50000,  // calling 75 % → ½ (no ¾ step any more)
     "2026-11-06": 100000, // counted as full
-    "2026-11-07": 33333,  // calling 100 % → ⅓
+    "2026-11-07": 100000, // calling 100 % → full
     "2026-11-09": 50000,  // its saved targets: only calling, 1 h of 2 h = 50 % → ½
-    "2026-11-10": 50000,  // calling 100 % (⅓) + regular 1 of 2 (½ of ⅓) → ½
-    "2026-11-20": 33333,  // 102 regular payments → regular 100 % → ⅓
-    "2026-11-21": 33333,  // today, live: calling 1 h → ⅓
-  };
-  const salaryPaise = Object.values(want).reduce((a, b) => a + b, 0);   // 424999 = ₹4,249.99
+    "2026-11-10": 100000, // calling 100 % → full
+    "2026-11-21": 100000, // today, live: calling 1 h → full
+  };                      // 5 Nov (1 regular) and 20 Nov (102 regular, no calls) → ₹0: regular no longer counts
+  const salaryPaise = Object.values(want).reduce((a, b) => a + b, 0);   // 700000 = ₹7,000
   // commission: 1 trial × ₹100 + 10 % of (2,999.50 + 4,000 + 1,020) = ₹801.95 → ₹802; extras ₹500 (10 Nov);
-  // deduction 5 % of salary + commission (client, 15 Nov 2026): 5 % of (4,249.99 + 902 = 5,151.99) = ₹257.60 → ₹258
-  const total = (salaryPaise + 100 * (100 + 802 + 500 - 258)) / 100;     // ₹5,393.99
+  // deduction 5 % of salary + commission (client, 15 Nov 2026): 5 % of (7,000 + 902 = 7,902) = ₹395.10 → ₹395
+  const total = (salaryPaise + 100 * (100 + 802 + 500 - 395)) / 100;     // ₹8,007
 
   const days = await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`);
   const D = days.data;
@@ -438,10 +438,10 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok(kind("2026-11-08").kind === "off" && kind("2026-11-11").kind === "holiday" && kind("2026-11-11").holiday === "Test holiday" && kind("2026-11-11").paise === 0, "Days view: Sunday off; the holiday earns nothing even with calls on it");
   ok(kind("2026-11-01").kind === "off" && kind("2026-11-23").kind === "future", "Days view: days after today are not counted yet");
   ok(kind("2026-11-06").countAsFull === true && kind("2026-11-09").parts.length === 1 && kind("2026-11-09").parts[0].target === 7200, "Days view: count-as-full shown; 9 Nov kept its saved 2 h target and ticks");
-  ok(D.base === salaryPaise / 100 && D.days.reduce((t, x) => t + x.paise, 0) === salaryPaise, "Days view: salary = the sum of the days shown, to the paisa (₹4,249.99)", `${D.base}`);
+  ok(D.base === salaryPaise / 100 && D.days.reduce((t, x) => t + x.paise, 0) === salaryPaise, "Days view: salary = the sum of the days shown, to the paisa (₹7,000)", `${D.base}`);
   ok(D.commission === 902 && D.trial.count === 1 && D.regular.count === 104, "commission so far: 1 trial × ₹100 + 10 % of ₹8,019.50 = ₹902", JSON.stringify({ c: D.commission, t: D.trial.count, r: D.regular.count }));
-  ok(JSON.stringify(D.extras) === JSON.stringify([{ name: "Bonus", amount: 500 }]) && JSON.stringify(D.deductions) === JSON.stringify([{ name: "Late", amount: 258 }]), "extras and deductions so far: only those started by today; 5 % of salary + commission ₹5,151.99 = ₹258", JSON.stringify({ e: D.extras, d: D.deductions }));
-  ok(D.total === total, "earned so far: ₹4,249.99 + ₹902 + ₹500 − ₹258 = ₹5,393.99", `${D.total}`);
+  ok(JSON.stringify(D.extras) === JSON.stringify([{ name: "Bonus", amount: 500 }]) && JSON.stringify(D.deductions) === JSON.stringify([{ name: "Late", amount: 395 }]), "extras and deductions so far: only those started by today; 5 % of salary + commission ₹7,902 = ₹395", JSON.stringify({ e: D.extras, d: D.deductions }));
+  ok(D.total === total, "earned so far: ₹7,000 + ₹902 + ₹500 − ₹395 = ₹8,007", `${D.total}`);
 
   // the same numbers everywhere: Employee Tracker, the Super Admin's eye, the rep's own dashboard, the rep's own days
   const row = (await get(owner, `/employees/payroll?month=2026-11&${AS}`)).data.people.find((x) => x.id === rid);
@@ -458,18 +458,18 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   // the redesigned dashboard: earnings at the top and the targets box come from the same calculation
   ok(mine?.status === "active" && mine.today.final === false && mine.today.targets.call_secs === 3600 && mine.today.targets.tick_call === true, "dashboard: status, today's live targets and ticks", JSON.stringify(mine && { s: mine.status, f: mine.today.final, t: mine.today.targets }));
   ok(mine?.today?.pay?.salary === kind("2026-11-21").paise / 100 && mine.today.pay.num === kind("2026-11-21").num && mine.today.pay.den === kind("2026-11-21").den, "dashboard: today's share and salary = the Days row", JSON.stringify(mine?.today?.pay));
-  ok(mine?.earnings?.today?.salary === 333.33 && mine.earnings.today.commission === 0 && mine.earnings.today.fees === 0, "dashboard: Today card = ₹333.33 salary, no fees", JSON.stringify(mine?.earnings?.today));
-  ok(mine?.earnings?.yesterday?.date === "2026-11-20" && mine.earnings.yesterday.salary === 333.33 && mine.earnings.yesterday.commission === 102 && mine.earnings.yesterday.fees === 102, "dashboard: Yesterday card = ₹333.33 salary + ₹102 commission on 102 fees", JSON.stringify(mine?.earnings?.yesterday));
+  ok(mine?.earnings?.today?.salary === 1000 && mine.earnings.today.commission === 0 && mine.earnings.today.fees === 0, "dashboard: today = ₹1,000 salary (calling met), no fees", JSON.stringify(mine?.earnings?.today));
+  ok(mine?.earnings?.yesterday?.date === "2026-11-20" && mine.earnings.yesterday.salary === 0 && mine.earnings.yesterday.commission === 102 && mine.earnings.yesterday.fees === 102, "dashboard: yesterday = ₹0 salary (only regular joinings) + ₹102 commission on 102 fees", JSON.stringify(mine?.earnings?.yesterday));
   const d9 = (await get(repTok, `/employees/me/summary?date_from=2026-11-09&date_to=2026-11-09&${AS}`)).data?.today;
   ok(d9?.final === true && d9.targets.call_secs === 7200 && d9.targets.tick_trial === false && d9.pay?.salary === 500, "dashboard: a closed day shows its SAVED targets (2 h, only calling) and is final", JSON.stringify(d9 && { f: d9.final, t: d9.targets, p: d9.pay?.salary }));
   // a longer period: how often each ticked target was met (client, 16 Nov 2026), worked by hand for 2–10 Nov
   // (8 working days; the 9th was saved with only calling ticked): calling met 2, 7, 10 → 3 of 8; trial met 3 Nov → 1 of 7;
-  // regular never fully met → 0 of 7; salary = the Days rows 2–10 = ₹3,583.33 of 8 × ₹1,000
+  // regular is no longer a target; salary = the Days rows 2–10 = ₹6,000 of 8 × ₹1,000
   const per = (await get(repTok, `/employees/me/summary?date_from=2026-11-02&date_to=2026-11-10&${AS}`)).data?.period;
   const pk = (k) => per?.targets?.find((t) => t.key === k);
   ok(per?.too_long === false && per.working_days === 8 && pk("call")?.met === 3 && pk("call")?.of === 8 && pk("trial")?.met === 1 && pk("trial")?.of === 7
-     && pk("regular")?.met === 0 && pk("regular")?.of === 7 && per.salary?.earned === 3583.33 && per.salary?.possible === 8000,
-     "period targets: calling met 3 of 8 days, trial 1 of 7, regular 0 of 7; salary ₹3,583.33 of ₹8,000", JSON.stringify(per && { w: per.working_days, t: per.targets?.map((t) => `${t.key}:${t.met}/${t.of}`), s: per.salary }));
+     && pk("regular") === undefined && per.salary?.earned === 6000 && per.salary?.possible === 8000,
+     "period targets: calling met 3 of 8 days, trial 1 of 7, no regular target; salary ₹6,000 of ₹8,000", JSON.stringify(per && { w: per.working_days, t: per.targets?.map((t) => `${t.key}:${t.met}/${t.of}`), s: per.salary }));
   ok((await get(repTok, `/employees/me/summary?date_from=2026-11-09&date_to=2026-11-09&${AS}`)).data?.period === null, "period targets: not for a single day (that day's box instead)");
   ok((await get(repTok, `/employees/me/summary?date_from=2026-06-01&date_to=2026-11-10&${AS}`)).data?.period?.too_long === true, "period targets: more than 3 months asks for a shorter period");
   ok((await get(repTok, `/pay/days?employee_id=${nehaId}&month=2026-11&${AS}`)).status === 403, "a rep can't open someone else's days");
@@ -481,11 +481,11 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
 
   // joining later, and switching off, take days away
   await call(owner, "PATCH", `/employees/${rid}`, { join_date: "2026-11-04" });
-  ok((await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data.base === (salaryPaise - 33333 - 50000) / 100, "joining on 4 Nov: 2 and 3 Nov are not paid");
+  ok((await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data.base === (salaryPaise - 100000 - 100000) / 100, "joining on 4 Nov: 2 and 3 Nov are not paid");
   await call(owner, "PATCH", `/employees/${rid}`, { join_date: "2026-11-02" });
   await pool.query("UPDATE employees SET status = 'inactive', left_on = '2026-11-10' WHERE id = $1", [rid]);
   const left = (await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data;
-  ok(left.base === (33333 + 50000 + 25000 + 16667 + 100000 + 33333 + 50000 + 50000) / 100 && left.days.find((x) => x.day === "2026-11-12").kind === "away", "switched off on 10 Nov: paid up to and including 10 Nov only", `${left.base}`);
+  ok(left.base === (100000 + 100000 + 50000 + 0 + 100000 + 100000 + 50000 + 100000) / 100 && left.days.find((x) => x.day === "2026-11-12").kind === "away", "switched off on 10 Nov: paid up to and including 10 Nov only", `${left.base}`);
   const leftRow = (await get(owner, `/employees/payroll?month=2026-11&${AS}`)).data.people.find((x) => x.id === rid);
   ok(leftRow?.base === left.base && leftRow.left_on === "2026-11-10", "…and the tracker shows the same for the leaver");
   ok((await get(owner, `/employees/${rid}/summary?date_from=2026-11-21&date_to=2026-11-21&${AS}`)).data?.status === "inactive", "dashboard: a switched-off rep shows Inactive");
@@ -498,7 +498,7 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   await call(owner, "PATCH", `/employees/${rid}`, { target_call_secs: 7200 });
   const after = (await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data;
   const changed = after.days.filter((x) => x.paise !== (D.days.find((y) => y.day === x.day)?.paise)).map((x) => x.day);
-  ok(changed.join(",") === "2026-11-21" && after.days.find((x) => x.day === "2026-11-21").paise === 16667, "a target changed later: closed days keep their old target; only today (live) moves", changed.join(","));
+  ok(changed.join(",") === "2026-11-21" && after.days.find((x) => x.day === "2026-11-21").paise === 50000, "a target changed later: closed days keep their old target; only today (live) moves", changed.join(","));
 
   // count as full can be undone
   await call(owner, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-06", full: false });

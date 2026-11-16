@@ -78,7 +78,8 @@ const hms = (secs: number) => {
 };
 /** Percent done, rounded DOWN: it reads 100 % only when the target is really met (99.6 % stays 99 %). */
 const pctDone = (done: number, target: number) => (target > 0 ? Math.min(100, Math.floor((done * 100) / target)) : 0);
-const STEP: Record<number, string> = { 0: "₹0 share", 2: "½ share", 3: "¾ share", 4: "full share" };
+// one target's step (client, 17 Nov 2026): any target met → full day, else the best one: 50 %+ → ½ day
+const STEP: Record<number, string> = { 0: "under 50 %", 2: "50 %+ · ½ day", 4: "met · full day" };
 const dayLabel = (d: string) => new Date(`${d}T00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
 /** One line of the profile card: label on the left, value on the right (the client's reference). */
@@ -205,7 +206,7 @@ function PeriodTargetsBox({ p, label }: { p: PeriodTargets; label: string }) {
           Salary earned in these days <b>{inr(p.salary.earned)}</b> <span style={{ color: R.mute }}>of {inr(p.salary.possible)} possible</span></div>
       )}
       {p.targets.length > 0 && <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: R.mute }}>
-        <span><b style={{ color: R.good }}>●</b> met</span><span><b style={{ color: R.out }}>●</b> ½ or ¾ share</span><span><b style={{ color: R.bad }}>●</b> under 50 %</span>
+        <span><b style={{ color: R.good }}>●</b> met</span><span><b style={{ color: R.out }}>●</b> 50 %+ (½ day)</span><span><b style={{ color: R.bad }}>●</b> under 50 %</span>
         <span>Each day uses the targets it had · Sundays and holidays don&apos;t count</span>
       </div>}
     </div>
@@ -378,7 +379,6 @@ export default function UserDashboard({ id }: { id?: string }) {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
             <div style={{ display: "grid", gap: 4 }}><Progress label="Trial joining" done={s.today.trial} goal={T.trial} />{stepBadge("trial", T.tick_trial && T.trial > 0)}</div>
-            <div style={{ display: "grid", gap: 4 }}><Progress label="Regular joining" done={s.today.regular} goal={T.regular} />{stepBadge("regular", T.tick_regular && T.regular > 0)}</div>
           </div>
         </div>
         {daily && !s.today.pay && (

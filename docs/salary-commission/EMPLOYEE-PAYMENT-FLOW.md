@@ -29,31 +29,32 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
 - Leave for one rep only: **not in this version** (later).
 
 ### Targets
-- Three daily targets per rep: **calling time**, **trial joining**, **regular joining**, each with a round
-  **tick beside the target box** on the Users form (✓ = counts for daily salary).
+- **Two daily targets per rep** (client, 17 Nov 2026; the regular-joining target was removed): **calling time** and
+  **trial joining**, each with a round **tick beside the target box** on the Users form (✓ = counts for daily
+  salary). Regular joinings still earn commission; they just don't count for the day salary any more.
 - **Calling time** = the sum of the **recording lengths** of **all** the rep's calls that day (short ones too), the same
   number as the Talk time card. The length is read from the recording file when it arrives (rounded to the second),
   so an unanswered call counts its ringing time (the PBX records from the moment it dials). Shown to the second;
   the % shown is rounded DOWN, so it reads 100 % only when the target is really met.
 - **Trial joining** = payments with fee type Trial filed under the rep that day (by the school's paid date).
-- **Regular joining** = every other payment that day: **new regular students and renewals**.
 - A ticked target set to **0** is treated as not ticked.
 
-### How a working day is paid
+### How a working day is paid (client, 17 Nov 2026)
 - **No target ticked → full day salary.**
-- Otherwise **each ticked target is an equal share** of the day (2 ticked = ½ each, 3 ticked = ⅓ each), and each
-  share is paid by steps:
+- Otherwise **any one ticked target met (100 %) → the full day salary.** If none is met, the **best** ticked target
+  decides, by steps (the 75 % step was removed):
 
-  | Result against the target | Share paid |
+  | Best result against its target | Day salary paid |
   |---|---|
   | below 50 % | ₹0 |
-  | 50 % to under 75 % | ½ |
-  | 75 % to under 100 % | ¾ |
-  | 100 % or more | full (no extra above 100 %) |
+  | 50 % to under 100 % | ½ |
+  | 100 % or more (any target) | full |
 
-- Example: ₹12,000 salary, 25 working days → ₹480 a day. Calling 100 %, trials 50 %, regular 0 % →
-  ₹160 + ₹80 + ₹0 = **₹240**.
-- Small targets are fine as they are (a target of 2 trials can only give 0 %, 50 % or 100 %).
+- Examples, ₹12,000 salary, 25 working days → ₹480 a day, targets calling 6 h and 2 trials:
+  calling 6 h, 0 trials → **₹480**; calling 1 h, 2 trials → **₹480**; calling 3 h, 1 trial → **₹240** (both 50 %,
+  not added up); calling 5 h, 0 trials → **₹240** (83 % is still ½); calling 2 h, 0 trials → **₹0**.
+- The results are not added together: two targets at 50 % give ½ day, not a full day.
+- Days already saved with the regular target ticked are worked out the same new way (the regular target is ignored).
 
 ### Who is paid which days
 - Days **before the rep's Joining date** (new box on the Users form; existing reps: the day their account was
@@ -119,8 +120,8 @@ Top to bottom (`apps/web/components/users/UserDashboard.tsx`; every amount comes
      down). Step badges show only on working days.
    - **A longer period** (Last 7 days, This month, Last month, a custom range; client, 16 Nov 2026): targets are
      **not** added up over the period, because pay is per day and a "100 % week" could hide ₹0 days. Instead, for
-     each ticked target: **"Met on 9 of 12 working days"**, a bar, and one dot per working day (green met, orange ½
-     or ¾ share, red under 50 %). Under daily pay also **"Salary earned in these days ₹… of ₹… possible"**. Each
+     each ticked target: **"Met on 9 of 12 working days"**, a bar, and one dot per working day (green met, orange
+     50 %+, red under 50 %). Under daily pay also **"Salary earned in these days ₹… of ₹… possible"**. Each
      day uses the targets it had; Sundays, holidays and days before joining or after leaving don't count. Same
      per-day results as the Days list (`periodTargets` in `pay.service.ts`; a month not on daily pay is worked out
      with a preview calendar, nothing saved). Up to 3 months; longer asks for a shorter period.

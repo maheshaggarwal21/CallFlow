@@ -87,32 +87,32 @@ export type DayTargets = {
 };
 export type DayDone = { call_secs: number; trial: number; regular: number };
 export type TargetKey = "call" | "trial" | "regular";
-/** One ticked target on one day: what was done, the target, and the share paid in quarters (0, 2, 3 or 4). */
+/** One ticked target on one day: what was done, the target, and its step in quarters (0, 2 or 4). */
 export type DayPart = { key: TargetKey; done: number; target: number; quarters: 0 | 2 | 3 | 4 };
 
 /**
- * The share of one target that is paid, in quarters: below 50 % → 0, 50 % → 2 (½), 75 % → 3 (¾), 100 % or more → 4
- * (full; nothing extra above 100 %). Whole-number maths, so 74.999… % can never be read as 75 %.
+ * One target's step (client, 17 Nov 2026: the 75 % step removed): below 50 % → 0, 50 % to under 100 % → 2 (½),
+ * 100 % or more → 4 (full). Whole-number maths, so 49.999… % can never be read as 50 %.
  */
-export function stepQuarters(done: number, target: number): 0 | 2 | 3 | 4 {
+export function stepQuarters(done: number, target: number): 0 | 2 | 4 {
   if (done >= target) return 4;
-  if (4 * done >= 3 * target) return 3;
   if (2 * done >= target) return 2;
   return 0;
 }
 
 /**
- * How much of the day salary a working day earns. Each ticked target with a value above 0 is an equal share;
- * no such target → the full day. "Count as full" → the full day. Returned as a fraction num / den in quarters
- * (num = sum of the shares' quarters, den = 4 × number of ticked targets) so money is rounded only once.
+ * How much of the day salary a working day earns (client, 17 Nov 2026). Two targets: calling time and trial
+ * joining (the regular-joining target was removed; regular joinings still earn commission). **Any one ticked target
+ * met → the full day**; otherwise the best ticked target's step decides: ½ day from 50 %, ₹0 under 50 %.
+ * No ticked target (or a 0 target) → the full day; "Count as full" → the full day.
+ * Returned as num / den (den = 4) so money is rounded only once.
  */
 export function dayShare(t: DayTargets, d: DayDone, countAsFull = false): { num: number; den: number; parts: DayPart[] } {
   const parts: DayPart[] = [];
   if (t.tick_call && t.target_call_secs > 0) parts.push({ key: "call", done: d.call_secs, target: t.target_call_secs, quarters: stepQuarters(d.call_secs, t.target_call_secs) });
   if (t.tick_trial && t.target_trial > 0) parts.push({ key: "trial", done: d.trial, target: t.target_trial, quarters: stepQuarters(d.trial, t.target_trial) });
-  if (t.tick_regular && t.target_regular > 0) parts.push({ key: "regular", done: d.regular, target: t.target_regular, quarters: stepQuarters(d.regular, t.target_regular) });
   if (countAsFull || parts.length === 0) return { num: 1, den: 1, parts };
-  return { num: parts.reduce((s, p) => s + p.quarters, 0), den: 4 * parts.length, parts };
+  return { num: Math.max(...parts.map((p) => p.quarters)), den: 4, parts };
 }
 
 /** The salary a day earns, in paise: fix salary × share ÷ working days, rounded once to the paisa. */

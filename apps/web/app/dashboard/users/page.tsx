@@ -406,11 +406,10 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
                   <Field label="Daily Calling Duration" sub="HH:MM:SS"><input value={f.duration} placeholder="06:00:00" onChange={(e) => set({ duration: e.target.value })} style={input} /></Field></TargetRow>
                 <TargetRow on={f.tick_trial} onChange={(v) => set({ tick_trial: v })} label="Trial joining">
                   <Field label="Daily Trial Joining"><input type="number" min={0} value={f.target_trial} onChange={(e) => set({ target_trial: e.target.value })} style={input} /></Field></TargetRow>
-                <TargetRow on={f.tick_regular} onChange={(v) => set({ tick_regular: v })} label="Regular joining">
-                  <Field label="Daily Regular Joining" sub="new and renewals"><input type="number" min={0} value={f.target_regular} onChange={(e) => set({ target_regular: e.target.value })} style={input} /></Field></TargetRow>
+                {/* the regular-joining target was removed (client, 17 Nov 2026); regular joinings still earn commission */}
                 <Field label="Joining date" sub="first day paid">
                   <input type="date" value={f.join_date} onChange={(e) => set({ join_date: e.target.value })} style={input} /></Field>
-                <p style={{ margin: 0, fontSize: 12, color: C.muted }}>✓ = counts for the daily salary. Ticked targets decide each working day&apos;s salary (each is an equal share: under 50 % ₹0, 50 % half, 75 % three quarters, 100 % full). None ticked: the full day.</p>
+                <p style={{ margin: 0, fontSize: 12, color: C.muted }}>✓ = counts for the daily salary. Any ticked target met (100 %) → the full day; otherwise the best one decides: 50 % or more → half the day, under 50 % → ₹0. None ticked: the full day.</p>
               </div>
             </Section>
           </div>

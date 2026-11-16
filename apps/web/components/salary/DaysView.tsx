@@ -30,7 +30,7 @@ const hm = (s: number) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
   return h ? `${h}h ${String(m).padStart(2, "0")}m ${String(sec).padStart(2, "0")}s` : m ? `${m}m ${String(sec).padStart(2, "0")}s` : `${sec}s`;
 };
-const STEP: Record<number, string> = { 0: "0", 2: "½", 3: "¾", 4: "full" };
+const STEP: Record<number, string> = { 0: "under 50 %", 2: "50 %+", 4: "met" };
 const pct = (num: number, den: number) => `${Math.round((num / den) * 1000) / 10}%`;
 
 /** `employeeId` empty = the signed-in person's own days. */
@@ -86,7 +86,7 @@ export default function DaysView({ employeeId, month, canOverride = false, onCha
       <div style={{ overflowX: "auto", border: `1px solid ${C.border}`, borderRadius: 12 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
           <thead style={{ background: C.bgDeep }}>
-            <tr><th style={th}>Day</th><th style={th}>Calling</th><th style={th}>Trials</th><th style={th}>Regular</th><th style={th}>Share</th><th style={{ ...th, textAlign: "right" }}>Earned</th>{canOverride && <th style={th} />}</tr>
+            <tr><th style={th}>Day</th><th style={th}>Calling</th><th style={th}>Trials</th><th style={th}>Share</th><th style={{ ...th, textAlign: "right" }}>Earned</th>{canOverride && <th style={th} />}</tr>
           </thead>
           <tbody>
             {data.days.map((d) => {
@@ -96,7 +96,7 @@ export default function DaysView({ employeeId, month, canOverride = false, onCha
                 return (
                   <tr key={d.day} style={{ color: C.muted, background: d.kind === "holiday" ? C.orangeLight : undefined }}>
                     <td style={{ ...td, color: C.muted }}>{label}</td>
-                    <td style={{ ...td, color: C.muted }} colSpan={canOverride ? 6 : 5}>
+                    <td style={{ ...td, color: C.muted }} colSpan={canOverride ? 5 : 4}>
                       {d.kind === "off" ? "Not a working day" : d.kind === "holiday" ? `Holiday · ${d.holiday}` : "—"}</td>
                   </tr>
                 );
@@ -105,8 +105,8 @@ export default function DaysView({ employeeId, month, canOverride = false, onCha
                 <tr key={d.day} style={{ background: isToday ? C.blueLight : undefined }}>
                   <td style={{ ...td, fontWeight: 700, color: C.text, whiteSpace: "nowrap" }}>{label}{isToday && <span style={{ color: C.blue, fontWeight: 600 }}> · today</span>}</td>
                   {d.kind === "away"
-                    ? <td style={{ ...td, color: C.muted }} colSpan={3}>Not working here that day (before joining, or switched off)</td>
-                    : <><td style={td}>{cell(d, "call")}</td><td style={td}>{cell(d, "trial")}</td><td style={td}>{cell(d, "regular")}</td></>}
+                    ? <td style={{ ...td, color: C.muted }} colSpan={2}>Not working here that day (before joining, or switched off)</td>
+                    : <><td style={td}>{cell(d, "call")}</td><td style={td}>{cell(d, "trial")}</td></>}
                   <td style={{ ...td, whiteSpace: "nowrap" }} title={`${d.num} / ${d.den} of the day`}>
                     {d.kind === "away" ? "—" : d.countAsFull ? <b style={{ color: C.green }}>Full · set by Super Admin</b> : d.noTargets ? "Full · no targets ticked" : pct(d.num, d.den)}</td>
                   <td style={{ ...td, textAlign: "right", fontWeight: 700, color: d.paise ? C.text : C.muted, whiteSpace: "nowrap" }}>{inr(d.paise / 100)}</td>
@@ -127,7 +127,7 @@ export default function DaysView({ employeeId, month, canOverride = false, onCha
         </table>
       </div>
       <p style={{ margin: 0, fontSize: 12, color: C.muted }}>
-        Day salary = fixed salary ÷ {data.working_days} working days. Each ticked target is an equal share of the day: under 50 % ₹0, 50 % half, 75 % three quarters, 100 % full. Today moves live; past days use the targets they had.</p>
+        Day salary = fixed salary ÷ {data.working_days} working days. Targets: calling time and trial joining. Any ticked target met (100 %) → the full day; otherwise the best one decides: 50 % or more → half the day, under 50 % → ₹0. None ticked: the full day. Today moves live; past days use the targets they had.</p>
     </div>
   );
 }
