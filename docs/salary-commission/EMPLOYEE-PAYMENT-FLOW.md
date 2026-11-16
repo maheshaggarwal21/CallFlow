@@ -111,8 +111,10 @@ Days view and the rep's own dashboard all read the same numbers from that one se
 
 ## 6. Month close (client, 17 Nov 2026)
 
-- **A month stays open until the 10th of the next month**: November takes late payments dated in November until
-  **10 Dec** (end of day). From **11 Dec** November is **final**.
+- **A month's pay covers the 1st to its last day only** (November = 1–30 Nov). The days of the next month are never
+  counted in it: 1–10 Dec are December's salary days.
+- **The 10 days after it are only a waiting period for late payments**: November takes late payments **dated in
+  November** until **10 Dec** (end of day). From **11 Dec** November is **final**.
 - At the close each person's month pay is **saved as it is** (`month_close`); every screen (tracker, Days, dashboard)
   shows that saved copy from then on. A later call, target or salary change can't move it; holidays and Count as
   full are refused in a final month.
