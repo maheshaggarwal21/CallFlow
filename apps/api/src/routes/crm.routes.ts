@@ -147,7 +147,7 @@ router.get("/leads/export.csv", requirePermission("export_leads"), async (req, r
     ["Phone", (r) => r.phone10], ["Email", (r) => r.email], ["Status", (r) => status(r as never)],
     ["Assigned to", (r) => r.assigned_to], ["Guitar", (r) => (r.has_guitar == null ? "" : r.has_guitar ? "Yes" : "No")],
     ["Preferred class time", (r) => r.preferred_class_time ?? ""],
-    ["Amount", (r) => (r.amount == null ? "" : Number(r.amount))], ["Attempts", (r) => r.attempts],
+    ["Amount", (r) => (r.amount == null ? "" : Number(r.amount) === 0 ? "Free" : Number(r.amount))], ["Attempts", (r) => r.attempts],
     ["Last contacted (IST)", (r) => istCsv(r.last_contacted_at)], ["Next follow-up (IST)", (r) => istCsv(r.next_followup_at)],
     ["Tags", (r) => r.tags],
   ];

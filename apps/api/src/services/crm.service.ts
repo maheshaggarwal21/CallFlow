@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/pool";
 import { isFullPhone10, phone10 } from "../lib/crm/phone";
 import { DUE_WINDOW_MS, bucketOf, compareQueue, type QueueBucket } from "../lib/crm/queue";
-import {
+import { sheetAmount,
   CODE_RE, DEFAULT_CODES, DEFAULT_RETRY, codeLetters, STATUS_OF_ROLE, keepsAudio, nextState, validateOutcome,
   type CodeSettings, type OutcomeInput, type RetryRules,
 } from "../lib/crm/rules";
@@ -345,7 +345,7 @@ export const leadPatchSchema = z.object({
   assigned_to: z.string().uuid().nullable().optional(),
   has_guitar: z.boolean().nullable().optional(),
   next_followup_at: z.string().datetime({ offset: true }).optional(),
-  amount: z.number().positive().max(100000).nullable().optional(),
+  amount: z.number().min(0).max(100000).nullable().optional(),   // 0 = Free
   last_contacted_at: z.string().datetime({ offset: true }).optional(),
 }).refine((p) => Object.keys(p).some((k) => k !== "version" && p[k as keyof typeof p] !== undefined), "Nothing to change");
 export type LeadPatch = z.infer<typeof leadPatchSchema>;
@@ -410,7 +410,7 @@ export async function updateLeadFields(leadId: string, user: User, p: LeadPatch,
     }
     if (p.amount !== undefined) {
       set("amount", p.amount);
-      notes.push(`Amount: ${p.amount == null ? "not set" : `₹${p.amount}`}`);
+      notes.push(`Amount: ${p.amount == null ? "not set" : p.amount === 0 ? "Free" : `₹${p.amount}`}`);
     }
     if (p.last_contacted_at !== undefined) {
       const at = new Date(p.last_contacted_at);
@@ -567,13 +567,13 @@ function fromSheet(row: z.infer<typeof ingestRowSchema>, codes: CodeSettings, re
   const rep = who ? reps.find((r) => r.name.toLowerCase() === who) ?? reps.find((r) => first(r) === who) ?? (starts.length === 1 ? starts[0] : undefined) : undefined;
   // "Yes" / "Y" / "yes_i_have_one" → yes; "No" / "not_yet" → no; anything else stays empty
   const g = (row.guitar ?? "").trim().toLowerCase();
-  const amount = Number(row.amount);
+
   return {
     code, status: role ? STATUS_OF_ROLE[role] : null, assigned_to: rep?.id ?? null,
     has_guitar: /^y(es)?\b|^yes/.test(g) ? true : /^n(o|ot)?\b|^no/.test(g) ? false : null,
     class_time: (row.class_time ?? "").replace(/_/g, " ").trim().slice(0, 100) || null,
-    // The sheet shows the trial price on every row; it only means money for a converted lead
-    amount: role === "paid" && amount > 0 ? amount : null,
+    // what the sheet's Amount shows, on every lead (client, 17 Nov 2026): 299 / 98 / "Free" (₹0), blank stays blank
+    amount: sheetAmount(row.amount),
   };
 }
 

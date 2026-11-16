@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import useSWR from "swr";
 import { R } from "@/components/report/kit";
 import { API_BASE, api, fetcher } from "@/lib/api";
-import { MIN_NOTE, fillTemplate, groupPhone, openWati, type Code, type CodeMeta, type CrmConfig, type LeadDetail, type WatiTemplates } from "@/lib/crm";
+import { amountInput, leadAmount, MIN_NOTE, fillTemplate, groupPhone, openWati, type Code, type CodeMeta, type CrmConfig, type LeadDetail, type WatiTemplates } from "@/lib/crm";
 import { useCrmCodes } from "@/hooks/useCrmCodes";
 import { useAuth } from "@/hooks/useAuth";
 import { useCrmMe } from "@/hooks/useCrmMe";
@@ -426,7 +426,7 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
   const [code, setCode] = useState<Code | "">("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
-  const [amount, setAmount] = useState(l.amount ? String(Number(l.amount)) : ""); // price varies: no default
+  const [amount, setAmount] = useState(l.amount == null ? "" : String(Number(l.amount))); // from the sheet; 0 = Free
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
@@ -439,7 +439,7 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
   const [detMsg, setDetMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [detBusy, setDetBusy] = useState(false);
   const guitarNow = l.has_guitar == null ? "" : l.has_guitar ? "Yes" : "No";
-  const amountNow = l.amount ? String(Number(l.amount)) : "";
+  const amountNow = l.amount == null ? "" : String(Number(l.amount));
   const detDirty = det.name !== initial.name || det.phone !== initial.phone || det.email !== initial.email || det.classTime !== initial.classTime
     || guitar !== guitarNow || amount !== amountNow;
   const saveDetails = async () => {
@@ -451,7 +451,7 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
       if (det.email !== initial.email) p.email = det.email.trim();
       if (det.classTime !== initial.classTime) p.preferred_class_time = det.classTime.trim();
       if (guitar !== guitarNow) p.has_guitar = guitar ? guitar === "Yes" : null;
-      if (amount !== amountNow) p.amount = Number(amount) || null;
+      if (amount !== amountNow) p.amount = amountInput(amount);
       await api.patch(`/crm/leads/${l.id}`, p);
       setDetMsg({ ok: true, text: "Details saved" });
       onReload();
@@ -497,7 +497,7 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
         note: note.trim() || null,
         callback_at: !dateOff && date && time ? `${date}T${time}:00+05:30` : null,
         // read-only without Edit Leads: the server keeps the lead's own guitar and amount then
-        ...(canEdit ? { amount: Number(amount) || null, has_guitar: guitar ? guitar === "Yes" : null } : {}),
+        ...(canEdit ? { amount: amountInput(amount), has_guitar: guitar ? guitar === "Yes" : null } : {}),
         assigned_to: repId,
       });
       onSaved(`${l.name || "Lead"} saved as ${code} · ${meta(code)?.label}`);
@@ -569,8 +569,8 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
                 : <div>{lbl("Guitar", false)}<div style={{ ...box, fontWeight: 700, color: l.has_guitar ? R.good : l.has_guitar === false ? R.bad : "#a8977f" }}>{guitarNow || "—"}</div></div>}
               {canEdit
                 ? <label>{lbl("Amount (₹)", false)}
-                    <input type="number" min={0} placeholder="e.g. 299" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount" style={{ ...inputStyle, minHeight: 42 }} /></label>
-                : <div>{lbl("Amount (₹)", false)}<div style={box}>{amountNow ? `₹${amountNow}` : <span style={{ color: "#a8977f" }}>—</span>}</div></div>}
+                    <input type="number" min={0} placeholder="e.g. 299 · 0 = Free" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount" style={{ ...inputStyle, minHeight: 42 }} /></label>
+                : <div>{lbl("Amount (₹)", false)}<div style={box}>{leadAmount(l.amount)}</div></div>}
             </div>
           </div>
           {canEdit && (detDirty || detMsg) && (

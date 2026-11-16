@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { groupPhone, isProbableTypo, phone10 } from "./phone";
 import { bucketOf, compareQueue, type QueueLead } from "./queue";
-import { DEFAULT_CODES, nextState, outcomeSchema, retryAt, validateOutcome, type OutcomeInput } from "./rules";
+import { DEFAULT_CODES, nextState, outcomeSchema, retryAt, sheetAmount, validateOutcome, type OutcomeInput } from "./rules";
 
 test("phone10 normalisation", () => {
   assert.equal(phone10("09465658112"), "9465658112");
@@ -93,4 +93,17 @@ test("next state: retry waits, drop after 6 failed attempts or an invalid number
   assert.equal(validateOutcome(base({ code: "X" }), now, codes), null);
   assert.deepEqual(nextState(0, base({ code: "X" }), rules, now, codes).next_followup_at, null);
   assert.deepEqual(nextState(0, base({ code: "X", callback_at: "2026-11-07T06:00:00Z" }), rules, now, codes).next_followup_at, new Date("2026-11-07T06:00:00Z"));
+});
+
+test("sheet Amount cell (client, 17 Nov 2026): the number, Free = 0, blank stays blank", () => {
+  assert.equal(sheetAmount("299"), 299);
+  assert.equal(sheetAmount(" 98 "), 98);
+  assert.equal(sheetAmount("₹1,999"), 1999);
+  assert.equal(sheetAmount("299/-"), 299);
+  assert.equal(sheetAmount("Free"), 0);
+  assert.equal(sheetAmount("FREE trial"), 0);
+  assert.equal(sheetAmount(""), null);
+  assert.equal(sheetAmount(null), null);
+  assert.equal(sheetAmount("NA"), null);
+  assert.equal(sheetAmount("9999999"), null);   // not a price: left blank
 });

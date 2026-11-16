@@ -61,6 +61,11 @@ export const fmtAgo = (d: string | Date | null | undefined, now = Date.now()) =>
   return fmtWhen(d);
 };
 
+/** A lead's Amount as the sheet shows it (client, 17 Nov 2026): ₹299, "Free" for ₹0, blank when there is none. */
+export const leadAmount = (a: string | number | null | undefined) => (a == null || a === "" ? "" : Number(a) === 0 ? "Free" : `₹${Number(a)}`);
+/** The amount box's text → what is saved: empty = blank (null), 0 = Free. */
+export const amountInput = (s: string) => (s.trim() === "" ? null : Number(s));
+
 export type LastCall = { id: string; duration_secs: number; called_at: string; has_audio: boolean } | null;
 export type LeadRow = {
   id: string; lead_code: string; name: string; phone10: string; source: string | null; campaign: string | null;

@@ -6,7 +6,7 @@ import { useState, type CSSProperties, type MouseEvent } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import { R } from "@/components/report/kit";
-import { DUE_WINDOW_MS, groupPhone, openWati, type CodeMeta, type LeadRow, type WatiTemplates } from "@/lib/crm";
+import { amountInput, leadAmount, DUE_WINDOW_MS, groupPhone, openWati, type CodeMeta, type LeadRow, type WatiTemplates } from "@/lib/crm";
 import { WatiIcon, WhatsAppIcon } from "@/components/ui/WABtn";
 import { CodeChip, Tag, tdStyle, thStyle } from "./kit";
 import { Icon } from "./icons";
@@ -134,11 +134,11 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                   </select>}
                 </td>
                 <td className={edit?.details ? "crm-edit" : undefined} style={td({ fontSize: 12.5 })} onClick={edit?.details ? stop : undefined}>
-                  {l.amount ? `₹${Number(l.amount)}` : "—"}
-                  {edit?.details && <input key={l.version} type="number" min={0} inputMode="decimal" placeholder="e.g. 299" className="crm-typed" aria-label={`Amount for ${l.name}`}
-                    defaultValue={l.amount ? Number(l.amount) : ""} style={OVERLAY}
-                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { e.currentTarget.value = l.amount ? String(Number(l.amount)) : ""; e.currentTarget.blur(); } }}
-                    onBlur={(e) => { const v = Number(e.target.value) || null; if (v !== (l.amount ? Number(l.amount) : null)) edit.patch(l, { amount: v }); }} />}
+                  {leadAmount(l.amount)}
+                  {edit?.details && <input key={l.version} type="number" min={0} inputMode="decimal" placeholder="299 · 0 = Free" className="crm-typed" aria-label={`Amount for ${l.name}`}
+                    defaultValue={l.amount == null ? "" : Number(l.amount)} style={OVERLAY}
+                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { e.currentTarget.value = l.amount == null ? "" : String(Number(l.amount)); e.currentTarget.blur(); } }}
+                    onBlur={(e) => { const v = amountInput(e.target.value); if (v !== (l.amount == null ? null : Number(l.amount))) edit.patch(l, { amount: v }); }} />}
                 </td>
                 <td className={edit?.details ? "crm-edit" : undefined} style={td({ fontSize: 12.5, fontWeight: 600, color: l.has_guitar ? R.good : l.has_guitar === false ? R.bad : "#c2b39c" })} onClick={edit?.details ? stop : undefined}>
                   {l.has_guitar == null ? "—" : l.has_guitar ? "Yes" : "No"}

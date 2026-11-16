@@ -31,6 +31,19 @@ export const keepsAudio = (role: Role | undefined) => role === "paid" || role ==
 export const INVALID_REASON = "Invalid number";
 export const MIN_NOTE = 15;
 
+/**
+ * The lead sheet's Amount cell → ₹ (client, 17 Nov 2026: show what the sheet shows, on every lead): "Free" → 0
+ * (shown as "Free"), "299" / "₹1,999" / "299/-" → the number, empty or anything else → null (blank).
+ * Migration 027 applies the same rule in SQL to the leads already in the CRM.
+ */
+export function sheetAmount(cell: string | null | undefined): number | null {
+  const s = String(cell ?? "").trim();
+  if (/free/i.test(s)) return 0;
+  const m = s.replace(/,/g, "").match(/\d+(?:\.\d+)?/);
+  const n = m ? Number(m[0]) : NaN;
+  return Number.isFinite(n) && n <= 100000 ? n : null;
+}
+
 export type RetryRule = { hours?: number; next_day_at?: string };
 /** max_attempts: drop the lead after this many "no contact" saves in a row; 0 = never (client, 7 Nov). */
 export type RetryRules = { invalid?: { never?: boolean }; max_attempts?: number };
@@ -52,7 +65,7 @@ export const outcomeSchema = z.object({
   reason: z.string().trim().max(150).nullish(),
   note: z.string().trim().max(2000).nullish(),
   callback_at: z.string().datetime({ offset: true }).nullish(),
-  amount: z.number().positive().max(100000).nullish(),
+  amount: z.number().min(0).max(100000).nullish(),   // 0 = Free
   assigned_to: z.string().uuid().nullish(),
   has_guitar: z.boolean().nullish(),
 });

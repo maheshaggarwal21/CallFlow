@@ -292,3 +292,12 @@ against the running local API. (The old Playwright walkthrough and its screensho
   a change (403) and ignores guitar / amount sent with a status save. Status, representative, next follow-up and
   notes stay open to every rep (that is the follow-up work itself).
 
+
+## Amount = what the sheet shows (client, 17 Nov 2026)
+
+- Every lead's **Amount** is the sheet's Amount cell, whatever the status (before, only joined N rows kept it and
+  "Free" was dropped). `sheetAmount()` in `lib/crm/rules.ts`: "Free" → 0, shown everywhere as **Free**; a number
+  ("299", "₹1,999", "299/-") → that number; empty or anything else → blank. A re-enquiry's row replaces it when it
+  has an amount. Migration 027 applied the rule to the leads already in the CRM (the newest sheet row wins; leads
+  that never came from the sheet untouched). Edit Leads holders can still change it (0 = Free).
+- Each sheet row is sent once: an Amount edited in the sheet later does not reach the CRM.

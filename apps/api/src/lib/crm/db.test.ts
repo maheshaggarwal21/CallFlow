@@ -167,9 +167,9 @@ test("sheet import: status, rep, guitar and amount come across; no follow-up tim
   const { rows } = await pool.query(
     "SELECT phone10, status, current_code, assigned_to, has_guitar, amount::float AS amount, next_followup_at FROM leads WHERE phone10 LIKE '900002003%' ORDER BY phone10");
   assert.deepEqual(rows.map((r) => [r.status, r.current_code, r.assigned_to, r.has_guitar, r.amount]), [
-    ["callback", "D", neha.sub, true, null],   // 299 on the sheet is the price, not a payment
+    ["callback", "D", neha.sub, true, 299],    // the sheet's Amount shows on every lead (client, 17 Nov 2026)
     ["converted", "F", null, false, 299],
-    ["new", null, null, null, null],
+    ["new", null, null, null, 299],
     ["retry", "A", raman.sub, null, null],     // "Raman" on the sheet = the only first name starting with it
   ]);
   assert.equal(rows[0].next_followup_at, null);
