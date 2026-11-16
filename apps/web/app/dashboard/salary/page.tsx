@@ -26,8 +26,10 @@ type Row = {
   mode: "monthly" | "daily"; working_days: number | null; days_so_far: number | null;
   trial: Bucket; regular: Bucket; commission: number; base: number;
   extras: { name: string; amount: number }[]; deductions: { name: string; amount: number }[]; total: number;
+  /** payments dated in this month that showed up after it closed: listed, never added (client, 17 Nov 2026) */
+  late: { count: number; commission: number } | null;
 };
-type Payroll = { month: string; connected: boolean; mode: "monthly" | "daily" | null; people: Row[] };
+type Payroll = { month: string; connected: boolean; mode: "monthly" | "daily" | null; people: Row[]; final: boolean; open_until: string | null };
 // money can have paise under daily pay: add in paise so a total never shows 0.1 + 0.2 = 0.30000000000000004
 const addMoney = (xs: number[]) => Math.round(xs.reduce((t, x) => t + Math.round(x * 100), 0)) / 100;
 
@@ -68,6 +70,12 @@ function Tracker() {
           <h1 style={S.h1}>Employee Tracker</h1>
           <p style={S.sub}>Salary, commission, extras and deductions for each employee · {monthName(month)}
             {daily ? ` · daily pay${soFar ? ", earned up to today" : ""}` : ""}</p>
+          {/* month close (client, 17 Nov 2026): a month keeps taking late payments dated in it until the 10th of the next month */}
+          {data && data.open_until && month < istToday().slice(0, 7) && (
+            <p style={{ margin: "6px 0 0", fontSize: 13, fontWeight: 700, color: data.final ? C.green : C.orange }}>
+              {data.final ? `● Final: closed after ${dayMonth(data.open_until)}. These figures no longer change.`
+                : `● Open until ${dayMonth(data.open_until)}: payments dated ${monthName(month).split(" ")[0]} that show up late still count. Final from the next day.`}</p>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
         <label style={{ display: "grid", gap: 4 }}>
@@ -125,7 +133,10 @@ function Tracker() {
                     {r.mode === "daily"
                       ? <span style={{ display: "block", fontSize: 12, color: C.muted }}>{r.days_so_far} of {r.working_days} working days</span>
                       : r.left_on && r.days_paid < r.month_days && <span style={{ display: "block", fontSize: 12, color: C.muted }}>for {r.days_paid} of {r.month_days} days</span>}</span>
-                  <span style={{ fontSize: 17, fontWeight: 700, color: C.text }}>{inr(r.total)}</span>
+                  <span style={{ fontSize: 17, fontWeight: 700, color: C.text }}>{inr(r.total)}
+                    {r.late && <span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: C.orange }}
+                      title="Dated in this month but it showed up after the month closed. Not added: add it by hand as an extra if you want.">
+                      +{r.late.count} late payment{r.late.count === 1 ? "" : "s"} · {inr(r.late.commission)} commission, not added</span>}</span>
                   <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                     {r.mode === "daily" && <button type="button" onClick={() => setDaysOf({ id: r.id, name: r.name })} title={`${r.name}'s days`}
                       style={{ ...S.btn, padding: "8px 12px", border: `1px solid ${C.orangeBdr}`, color: C.orange }}>Days</button>}

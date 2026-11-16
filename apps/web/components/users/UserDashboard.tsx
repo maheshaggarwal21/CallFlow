@@ -49,6 +49,8 @@ type Summary = {
     month: string; base: number; total: number;
     /** daily salary (15 Nov 2026): "daily" = salary earned on working days so far; same numbers as the tracker and Days */
     mode: "monthly" | "daily"; working_days: number | null; days_so_far: number | null;
+    /** month close (client, 17 Nov 2026) */
+    final: boolean; open_until: string | null;
     trial: { count: number; commission: number }; regular: { count: number; commission: number };
     extras: { name: string; amount: number }[]; deductions: { name: string; amount: number }[];
   };
@@ -354,7 +356,9 @@ export default function UserDashboard({ id }: { id?: string }) {
               {" "}({daily ? `${s.earnings.today.kind === "working" || s.earnings.today.kind === "away" ? inr(s.earnings.today.salary ?? 0) : "no"} salary · ` : ""}{inr(s.earnings.today.commission)} commission on {s.earnings.today.fees} fee{s.earnings.today.fees === 1 ? "" : "s"})</div>
           )}
           <div style={{ fontSize: 12, color: "#d9c8b4" }}>{inactive ? `Left on ${s.left_on ? fmtDay(s.left_on) : "—"} · nothing more is added`
-            : payClosed ? "This month has ended: final" : `Paid at the end of the month${daily ? " · grows every working day" : ""}`}</div>
+            : payClosed ? (s.pay.final || !s.pay.open_until ? "This month has ended: final"
+              : `Open until ${fmtDay(s.pay.open_until)}: late payments dated this month still count`)
+            : `Paid at the end of the month${daily ? " · grows every working day" : ""}`}</div>
         </div>
         {!inactive && <Yesterday e={s.earnings.yesterday} daily={daily} />}
       </section>

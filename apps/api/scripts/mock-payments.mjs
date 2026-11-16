@@ -7,7 +7,7 @@ import http from "node:http";
 
 export const MOCK_KEY = "mock-key";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const pay = (id, paidDate, amountPaise, feeType, receiptUrl = null) => ({
+export const pay = (id, paidDate, amountPaise, feeType, receiptUrl = null) => ({
   id, name: `Student ${id}`, email: "", phone: "9000000000", amount: (amountPaise / 100).toFixed(2), amountPaise, currency: "INR",
   paidDate, paidDateDisplay: paidDate, paymentMode: "Cash", feeType, representativeName: "Rep", linkedTo: "student",
   hasReceipt: !!receiptUrl, receiptUrl, createdAt: `${paidDate}T10:00:00.000Z`, updatedAt: `${paidDate}T10:00:00.000Z`,
@@ -21,6 +21,7 @@ const ALL = [
 
 export function startMock(port = 4100) {
   const broken = new Set();
+  const extra = [];   // a test can add a payment that "shows up late"
   const server = http.createServer((req, res) => {
     const send = (code, body) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
     const u = new URL(req.url, "http://x");
@@ -30,7 +31,7 @@ export function startMock(port = 4100) {
     if (!UUID.test(q.callFlowId ?? "")) return send(400, { message: "callFlowId must be a UUID" });
     if (broken.has(q.callFlowId)) return send(200, { data: { payments: "oops" } });
     const page = Math.max(1, Number(q.page) || 1), limit = Math.min(100, Math.max(1, Number(q.limit) || 25));
-    const list = ALL.filter((p) => (!q.startDate || p.paidDate >= q.startDate) && (!q.endDate || p.paidDate <= q.endDate));
+    const list = [...ALL, ...extra].filter((p) => (!q.startDate || p.paidDate >= q.startDate) && (!q.endDate || p.paidDate <= q.endDate));
     send(200, { code: 200, message: "Payments fetched.", data: {
       user: { callFlowId: q.callFlowId, name: "Rep", status: "Active" }, filters: { startDate: q.startDate, endDate: q.endDate },
       payments: list.slice((page - 1) * limit, page * limit),
@@ -38,5 +39,5 @@ export function startMock(port = 4100) {
       totalAmountPaise: list.reduce((t, p) => t + p.amountPaise, 0), receiptUrlExpiresInSeconds: 1800,
     } });
   });
-  return new Promise((ok) => server.listen(port, "127.0.0.1", () => ok({ server, broken })));
+  return new Promise((ok) => server.listen(port, "127.0.0.1", () => ok({ server, broken, extra })));
 }

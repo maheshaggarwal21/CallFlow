@@ -3,7 +3,7 @@
 // It adds a temporary line 99 and test users, and removes them again at the end.
 import { readFileSync } from "node:fs";
 import poolMod from "../dist/db/pool.js";
-import { startMock } from "./mock-payments.mjs";
+import { pay, startMock } from "./mock-payments.mjs";
 const pool = poolMod.default;
 const A = `http://localhost:${process.env.PORT || 4000}/api/v1`;
 const PW = readFileSync(new URL("../src/seedCrm.ts", import.meta.url), "utf8").match(/Demo@\d+/)[0];
@@ -384,6 +384,8 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok(dp.status === 201 && dp.data.tick_call === true && dp.data.tick_trial === true && dp.data.join_date === "2026-11-02", "Users form: target ticks and joining date saved", `${dp.status} ${dp.msg}`);
   ok((await call(owner, "PATCH", `/employees/${dp.data.id}`, { join_date: "2026-11-31" })).status === 400, "Users form: an impossible joining date is refused");
   const rid = dp.data.id;
+  // the account "exists" from 1 Nov, as a real rep's would (tests run on dates earlier than the real creation day)
+  await pool.query("UPDATE employees SET created_at = '2026-11-01 09:00+05:30' WHERE id = $1", [rid]);
   const repTok = (await login(`dp${stamp}@crm-demo.local`, "Dp@123456")).token;
   // calls (IST): 2 Nov 1 h · 3 Nov 30 min · 4 Nov 45 min · 7 Nov 1 h · 9 Nov 1 h · 10 Nov 1 h · 11 Nov (holiday) 1 h · 21 Nov (today) 1 h
   const C = [["2026-11-02", 3600], ["2026-11-03", 1800], ["2026-11-04", 2700], ["2026-11-07", 3600], ["2026-11-09", 3600], ["2026-11-10", 3600], ["2026-11-11", 3600], ["2026-11-21", 3600]];
@@ -522,6 +524,53 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
     ["12", "13", "14", "16", "20"].map((d) => `${d}:${k(`2026-11-${d}`)}`).join(" "));
   const rowH = (await get(owner, `/employees/payroll?month=2026-11&${AS}`)).data.people.find((x) => x.id === rid);
   ok(rowH?.base === hist.base, "…and the Employee Tracker pays the same days", `${rowH?.base} vs ${hist.base}`);
+
+  // a rep added after they started (client, 17 Nov 2026): the joining date set back by hand makes the days before the
+  // account working days (not "away"), so the Super Admin can "Count as full" them
+  await pool.query("UPDATE employees SET created_at = '2026-11-05 10:00+05:30' WHERE id = $1", [rid]);
+  await pool.query("DELETE FROM day_targets WHERE employee_id = $1 AND day < '2026-11-05'", [rid]);   // never saved: no account yet
+  const early = (await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data;
+  const ek = (d) => early.days.find((x) => x.day === d)?.kind;
+  ok(["2026-11-02", "2026-11-03", "2026-11-04"].every((d) => ek(d) === "working"), "late-created rep: the days from the joining date before the account are working days",
+    ["02", "03", "04"].map((d) => `${d}:${ek(`2026-11-${d}`)}`).join(" "));
+  ok((await call(owner, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-04", full: true })).status === 200
+    && (await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data.days.find((x) => x.day === "2026-11-04").paise === 100000,
+    "late-created rep: Count as full on such a day pays the full day (₹1,000)");
+  await call(owner, "PATCH", `/employees/${rid}`, { join_date: "2026-11-04" });
+  ok((await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data.days.find((x) => x.day === "2026-11-03").kind === "away",
+    "late-created rep: a day before the joining date stays unpaid");
+  await call(owner, "PATCH", `/employees/${rid}`, { join_date: "2026-11-02" });
+
+  // month close (client, 17 Nov 2026): November stays open until 10 Dec, is final from 11 Dec; a payment dated in
+  // November that shows up later is listed, never added
+  const DEC11 = "as_of=2026-12-11";
+  const openNov = (await get(owner, `/employees/payroll?month=2026-11&${DEC11}`)).data;
+  const liveRow = openNov.people.find((x) => x.id === rid);
+  ok(openNov.final === false && openNov.open_until === "2026-12-10", "month close: November is open until 10 Dec", JSON.stringify({ f: openNov.final, u: openNov.open_until }));
+  ok((await call(owner, "POST", "/pay/dev/close-months", { today: "2026-12-10" })).data?.closed?.length === 0, "month close: nothing closes on 10 Dec");
+  ok((await call(owner, "POST", "/pay/dev/close-months", { today: "2026-12-11" })).data?.closed?.includes("2026-11"), "month close: November closes on 11 Dec");
+  const finNov = (await get(owner, `/employees/payroll?month=2026-11&${DEC11}`)).data;
+  const finRow = finNov.people.find((x) => x.id === rid);
+  ok(finNov.final === true && finRow?.total === liveRow.total && finRow.base === liveRow.base, "month close: final, with exactly the figures shown before it closed",
+    `${liveRow?.total} → ${finRow?.total}`);
+  // a later change can't move it: a new call, a target change; and holidays / count as full are refused
+  await pool.query("INSERT INTO calls (source_file_key, called_at, duration_secs, call_direction, caller_phone, employee_id) VALUES ($1, '2026-11-24 10:00+05:30', 7200, 'outbound', '9876500100', $2)", [`e2e/${stamp}/dp-late-call.wav`, rid]);
+  await call(owner, "PATCH", `/employees/${rid}`, { fix_salary: 99000 });
+  const still = (await get(owner, `/employees/payroll?month=2026-11&${DEC11}`)).data.people.find((x) => x.id === rid);
+  const mineDays = (await get(repTok, `/pay/days?month=2026-11&${DEC11}`)).data;
+  ok(still?.total === liveRow.total && mineDays.total === liveRow.total && mineDays.final === true, "month close: a later call or salary change doesn't move a final month (tracker and the rep's days)", `${still?.total} / ${mineDays.total}`);
+  await call(owner, "PATCH", `/employees/${rid}`, { fix_salary: 24000 });
+  ok((await call(owner, "POST", "/pay/holidays", { day: "2026-11-26", name: "Too late" })).status === 400, "month close: a holiday can't be added to a final month");
+  ok((await call(owner, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-12", full: true })).status === 400, "month close: Count as full is refused in a final month");
+  // a ₹1,000 Monthly payment dated 28 Nov shows up after the close: listed (10 % = ₹100 commission), total unchanged
+  mock.extra.push(pay("late-1", "2026-11-28", 100_000, "Monthly"));
+  const lateRun = (await call(owner, "POST", "/pay/dev/close-months", { today: "2026-12-12" })).data;
+  const afterLate = (await get(owner, `/employees/payroll?month=2026-11&${DEC11}`)).data.people.find((x) => x.id === rid);
+  ok(lateRun?.late >= 1 && afterLate?.late?.count === 1 && afterLate.late.commission === 100 && afterLate.total === liveRow.total,
+    "late payment: listed for the month (1 payment, ₹100 commission), never added to it", JSON.stringify({ run: lateRun, late: afterLate?.late, t: afterLate?.total }));
+  mock.extra.length = 0;
+  await pool.query("DELETE FROM late_payments WHERE month = '2026-11'");
+  await pool.query("DELETE FROM months_closed WHERE month = '2026-11'");
 
   // clean up: the rep (with her calls, saved days and overrides), the test holiday, the days closed here, the settings
   await pool.query("DELETE FROM calls WHERE source_file_key LIKE $1", [`e2e/${stamp}/dp-%`]);

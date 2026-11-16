@@ -77,7 +77,8 @@ async function page(callFlowId: string, startDate: string, endDate: string, n: n
 const cache = new Map<string, { at: number; list: Payment[] }>();
 
 /** Every payment by one rep from `startDate` to `endDate` (IST dates, both included; "" = no limit), newest first. */
-export async function paymentsFor(callFlowId: string, startDate: string, endDate: string): Promise<Payment[]> {
+/** `fresh`: skip the 2-minute cache (the late-payment check must see what the school site has right now). */
+export async function paymentsFor(callFlowId: string, startDate: string, endDate: string, fresh = false): Promise<Payment[]> {
   if (!paymentsConfigured()) throw new PaymentsError("Payments are not connected yet (PAYMENTS_API_URL / PAYMENTS_API_KEY)");
   // the key must not travel in clear text to a live server
   if (process.env.NODE_ENV === "production" && !base().startsWith("https://")) throw new PaymentsError("PAYMENTS_API_URL must be https in production");
@@ -87,7 +88,7 @@ export async function paymentsFor(callFlowId: string, startDate: string, endDate
   }
   const key = `${callFlowId}|${startDate}|${endDate}`;
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.list;
+  if (!fresh && hit && Date.now() - hit.at < TTL_MS) return hit.list;
 
   const first = await page(callFlowId, startDate, endDate, 1);
   if (first.pagination.pages > MAX_PAGES) throw new PaymentsError(`Too many payments to add up (${first.pagination.pages} pages); pick a shorter period`);

@@ -370,7 +370,9 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(290px, 100%), 1fr))", gap: 16 }}>
             <Section title="Salary" icon="₹">
               <div style={{ display: "grid", gap: 12 }}>
-                <Field label="Fix Salary" sub="in rupees, per month"><input type="number" min={0} value={f.fix_salary} onChange={(e) => set({ fix_salary: e.target.value })} style={input} /></Field>
+                <Field label="Fix Salary" sub="in rupees, per month"><input type="number" min={0} value={f.fix_salary} onChange={(e) => set({ fix_salary: e.target.value })} style={input} />
+                  {/* client, 17 Nov 2026: salary only changes on the 1st */}
+                  <span style={{ display: "block", marginTop: 4, fontSize: 11.5, color: C.muted }}>Applies to the whole current month. Change it only on the 1st.</span></Field>
                 {rate("Trial Commission", "trial_commission")}
                 {rate("Regular Commission", "regular_commission")}
               </div>

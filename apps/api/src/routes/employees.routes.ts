@@ -230,7 +230,13 @@ router.get("/payroll", requireOwner, async (req, res) => {
   });
   // owner accounts that aren't someone on the school site (the system "WATI LINE", a second owner) have no pay to show
   const people = out.filter((p) => !(p.isOwner && p.error));
-  return res.json({ month, from: b.from, to: b.to, connected: paymentsConfigured(), mode: pays[0]?.mode ?? null, people });
+  // payments dated in this month that showed up after it closed: listed for the Super Admin, never added (client, 17 Nov 2026)
+  const { rows: late } = await pool.query(
+    "SELECT employee_id, COUNT(*)::int AS count, SUM(commission)::float AS commission FROM late_payments WHERE month = $1 GROUP BY 1", [month]);
+  const lateOf = new Map(late.map((r) => [r.employee_id as string, { count: r.count as number, commission: r.commission as number }]));
+  return res.json({ month, from: b.from, to: b.to, connected: paymentsConfigured(), mode: pays[0]?.mode ?? null,
+    final: pays[0]?.final ?? false, open_until: pays[0]?.open_until ?? null,
+    people: people.map((p) => ({ ...p, late: lateOf.get(p.id) ?? null })) });
 });
 
 /**

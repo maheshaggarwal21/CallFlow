@@ -22,6 +22,8 @@ export type DaysData = {
   trial: { count: number; commission: number }; regular: { count: number; commission: number };
   extras: { name: string; amount: number }[]; deductions: { name: string; amount: number }[];
   days: Day[] | null;
+  /** month close: a final month can't be changed (no Count as full) */
+  final?: boolean;
 };
 
 const WD = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -112,7 +114,7 @@ export default function DaysView({ employeeId, month, canOverride = false, onCha
                   <td style={{ ...td, textAlign: "right", fontWeight: 700, color: d.paise ? C.text : C.muted, whiteSpace: "nowrap" }}>{inr(d.paise / 100)}</td>
                   {canOverride && (
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
-                      {d.kind === "working" && (
+                      {d.kind === "working" && !data.final && (
                         <button type="button" disabled={busy === d.day} onClick={() => setFull(d.day, !d.countAsFull)}
                           style={{ border: `1px solid ${d.countAsFull ? C.border : C.orangeBdr}`, background: d.countAsFull ? C.card : C.orangeLight, color: d.countAsFull ? C.textSub : C.orange,
                             borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>

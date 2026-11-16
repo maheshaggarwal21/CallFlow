@@ -6,7 +6,7 @@ import { requireOwner } from "../middleware/requireOwner";
 import { requirePermission } from "../middleware/requirePermission";
 import { monthBounds, workingDaysOf } from "../lib/payroll";
 import {
-  closeDays, forgetPayCalendar, holidaysBetween, isDailyMonth, monthPay, PAY_COLS, payCalendar, requestToday, type PayEmployee,
+  closeDays, closeMonths, findLatePayments, forgetPayCalendar, holidaysBetween, isDailyMonth, monthPay, PAY_COLS, payCalendar, requestToday, type PayEmployee,
 } from "../services/pay.service";
 
 // Daily salary (client, 15 Nov 2026; docs/salary-commission/EMPLOYEE-PAYMENT-FLOW.md): the Working days panel,
@@ -52,12 +52,14 @@ const holidaySchema = z.object({ day, name: z.string().trim().min(1, "Give the h
 router.post("/holidays", workingDaysTab, async (req, res) => {
   const p = holidaySchema.safeParse(req.body);
   if (!p.success) return bad(res, 400, p.error.issues[0].message);
+  if (await isClosedMonth(p.data.day)) return bad(res, 400, "That month is final: its working days can't change");
   const r = await pool.query("INSERT INTO holidays (day, name) VALUES ($1, $2) ON CONFLICT (day) DO NOTHING RETURNING to_char(day, 'YYYY-MM-DD') AS day, name", [p.data.day, p.data.name]);
   if (!r.rows[0]) return bad(res, 409, "That date is already a holiday");
   return res.status(201).json(r.rows[0]);
 });
 router.delete("/holidays/:day", workingDaysTab, async (req, res) => {
   if (!day.safeParse(req.params.day).success) return bad(res, 400, "Dates must be YYYY-MM-DD");
+  if (await isClosedMonth(req.params.day)) return bad(res, 400, "That month is final: its working days can't change");
   const r = await pool.query("DELETE FROM holidays WHERE day = $1", [req.params.day]);
   return r.rowCount ? res.status(204).end() : bad(res, 404, "No holiday on that date");
 });
@@ -88,6 +90,7 @@ router.put("/overrides", requireOwner, async (req, res) => {
   if (!p.success) return bad(res, 400, p.error.issues[0].message);
   const today = requestToday(req.query);
   if (p.data.day > today) return bad(res, 400, "That day hasn't happened yet");
+  if (await isClosedMonth(p.data.day)) return bad(res, 400, "That month is final: its days can't change");
   const cal = await payCalendar();
   const hol = await holidaysBetween(p.data.day, p.data.day);
   if (!workingDaysOf(p.data.day.slice(0, 7), cal.weekdays, hol).includes(p.data.day)) return bad(res, 400, "That day is not a working day");
@@ -101,11 +104,24 @@ router.put("/overrides", requireOwner, async (req, res) => {
   return res.json({ employee_id: p.data.employee_id, day: p.data.day, full: p.data.full });
 });
 
+/** Tests only (not in production): close the months whose 10 days have passed by `today`, then look for late payments. */
+router.post("/dev/close-months", requireOwner, async (req, res) => {
+  if (process.env.NODE_ENV === "production") return bad(res, 404, "Not found");
+  const today = typeof req.body?.today === "string" && DAY.test(req.body.today) ? req.body.today : undefined;
+  const closed = await closeMonths(today);
+  return res.json({ closed, late: await findLatePayments(today) });
+});
+
 /** Tests only (not in production): close the days up to the day before `today` now, instead of waiting for midnight. */
 router.post("/dev/close-days", requireOwner, async (req, res) => {
   if (process.env.NODE_ENV === "production") return bad(res, 404, "Not found");
   const today = typeof req.body?.today === "string" && DAY.test(req.body.today) ? req.body.today : undefined;
   return res.json({ closed: await closeDays(today) });
 });
+
+/** A day in a month that has closed (final). */
+async function isClosedMonth(day: string) {
+  return !!(await pool.query("SELECT 1 FROM months_closed WHERE month = $1", [day.slice(0, 7)])).rows[0];
+}
 
 export default router;

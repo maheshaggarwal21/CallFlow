@@ -66,22 +66,37 @@ Paid at the **end of the month**. The Employee Tracker shows what has been **ear
   13–15, so those days stay unpaid even though the record now just says "active" (checked by the end-to-end test).
   Known gap: if the server is down over those nights, the missed days are closed from the rep's status when it
   comes back. A full log of every switch would close it (offered, not built).
+- **A rep added after they started** (client, 17 Nov 2026): set their **Joining date** to the real first day; the days
+  from then until the account was made become working days (₹0 unless their targets were met), and the Super Admin
+  clicks **Count as full** on them.
 - **"Count as full"**: Employee Tracker → **Days** on the rep's row → orange **Count as full** button at the end of
   each working day's row (e.g. the PBX or power was down and calls were not recorded). Shown as "Full · set by Super
   Admin"; the same button then reads **Undo**. Super Admin only; not on Sundays, holidays or future days. **It only
   appears once daily pay is switched on**: while it is Off the Days view says "Daily pay is not on for this month".
 
-### Freezing and recalculating
+### Freezing, recalculating and the month close (client, 17 Nov 2026)
 - Each day's **targets and ticks are saved when the day closes** (just after midnight IST), so changing a target on
   the 15th leaves days 1–14 on their old targets. A change during a day applies to that whole day.
-- The **results** (calls, payments) are **recalculated until month end**, so a call moved by the hourly PBX clock
-  fix, calls given to a rep from a free line, or a payment that shows up late still count.
-- A payment always counts on its **paid date** (the only date on the Payments tab). If a payment dated the 14th only
-  appears on the Payments tab on the 15th, it is added to the **14th**, not to the 15th. The month's total counts
-  it once either way.
-- *(Question 7, still open: should a finished day be locked at midnight instead? Then such a late payment would earn
-  nothing for that day's salary share. Commission is counted for the month either way.)*
-- Adding a holiday later in the month changes the month's working days, so "earned so far" can shift a little.
+- **A day is not locked at midnight.** Its results (calls, payments) keep updating while the month is open: a payment
+  always counts on its **paid date** — the only date on the Payments tab — however late it shows up (paid date
+  Friday, shows up Sunday → Friday's commission and Friday's trial target). Same for a call moved by the hourly PBX
+  clock fix or calls given to a rep from a free line.
+- **Each month stays open for 10 days after it ends**: November takes late payments dated in November until
+  **10 Dec**; from **11 Dec** it is **final**. At that moment each person's month pay is saved as it is
+  (`month_close`), and every screen (tracker, Days, dashboard) shows that saved copy from then on — a later call,
+  target or salary change can't move it; holidays and Count as full are refused in a final month. Months before
+  November 2026 are worked out live as before. A month never closes while someone's payments can't be read (it
+  tries again on the next run, every 10 minutes).
+- **A payment dated in a final month that shows up after it closed** is not added anywhere (it belongs to its paid
+  date's month). Once a day the server looks for them in the last 3 closed months and lists them (`late_payments`):
+  the Employee Tracker row shows "+1 late payment · ₹X commission, not added"; the Super Admin can add it by hand as
+  an extra.
+- The tracker shows the month's state: **"Open until 10 Dec"** or **"Final"**.
+- Adding a holiday later in an open month changes its working days, so "earned so far" can shift a little.
+
+### Fixed salary
+- The client changes salaries **only on the 1st** of a month, so the fixed salary on the Users form applies to the
+  whole month it is in (the form says so under the box). No salary history is kept.
 
 ### Extra commissions and deductions
 - Paid **once, in the month their start date falls in** (the form fills the start with the day it is added).
@@ -152,9 +167,8 @@ sideways inside their own card.
 ## 6. Still open
 
 1. **Start month** for daily pay (1 Nov or 1 Dec 2026). Until it is set nothing daily shows, including Count as full.
-2. **Question 7**: lock a finished day at midnight, or keep counting late results until month end (current)?
-3. **Leave for one rep** (today holidays apply to everyone).
-4. A full **log of every switch on/off** (only matters if the server is down over a night; see "Who is paid which days").
+2. **Leave for one rep** (today holidays apply to everyone).
+3. A full **log of every switch on/off** (only matters if the server is down over a night; see "Who is paid which days").
 
 Decided on 15 Nov 2026: % deduction = % of salary + commission (extras left out); inactive staff as in 5c; dashboard
 as in 5b.

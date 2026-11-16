@@ -23,11 +23,14 @@ export const PAY_COLS = `e.id, e.name, e.role, e.status, e.employee_code, e.colo
   e.fix_salary, e.trial_commission::float, e.trial_commission_type, e.regular_commission::float, e.regular_commission_type,
   e.extra_commissions, e.extra_deductions, e.target_call_secs, e.target_trial, e.target_regular,
   e.tick_call, e.tick_trial, e.tick_regular, to_char(e.join_date, 'YYYY-MM-DD') AS join_date,
-  CASE WHEN e.status = 'inactive' THEN to_char(e.left_on, 'YYYY-MM-DD') END AS left_on`;
+  CASE WHEN e.status = 'inactive' THEN to_char(e.left_on, 'YYYY-MM-DD') END AS left_on,
+  to_char((e.created_at AT TIME ZONE 'Asia/Kolkata')::date, 'YYYY-MM-DD') AS created_on`;
 
 export type PayEmployee = PayPlan & DayTargets & {
   id: string; name: string; role: string; status: string; employee_code: number; color_index: number;
   join_date: string | null; left_on: string | null;
+  /** the day the account was made (IST): days from the joining date before it were never saved by the day closer */
+  created_on?: string | null;
 };
 
 // ── Working-days calendar (Super Admin, Working days panel) ────────────────────────────────────────────────────
@@ -76,6 +79,8 @@ export type MonthPay = ReturnType<typeof commissionOn> & {
   working_days: number | null; days_so_far: number | null; days: PayDay[] | null;
   /** the school site's payments up to the cutoff (for the dashboard's fees table) */
   payments: Payment[];
+  /** month close (client, 17 Nov 2026): true = the saved final copy; open_until = the last day late payments still count */
+  final: boolean; open_until: string | null;
 };
 
 /**
@@ -83,6 +88,90 @@ export type MonthPay = ReturnType<typeof commissionOn> & {
  * The data for everyone is read in a handful of queries, whatever the number of people.
  */
 export async function monthPay(emps: PayEmployee[], month: string, today: string = istDateKey(new Date()), preview?: PayCalendar): Promise<MonthPay[]> {
+  // a closed month is its saved copy (a preview — another calendar — is always worked out live)
+  if (!preview && month >= LOCK_FROM && emps.length) {
+    const { rows: [closed] } = await pool.query("SELECT 1 FROM months_closed WHERE month = $1", [month]);
+    if (closed) {
+      const { rows } = await pool.query("SELECT employee_id, pay FROM month_close WHERE month = $1 AND employee_id = ANY($2::uuid[])", [month, emps.map((e) => e.id)]);
+      const saved = new Map(rows.map((r) => [r.employee_id as string, r.pay as MonthPay]));
+      const missing = emps.filter((e) => !saved.has(e.id));
+      const live = missing.length ? await livePay(missing, month, today) : [];
+      return emps.map((e) => ({ ...(saved.get(e.id) ?? live.find((x) => x.id === e.id)!), final: true, open_until: openUntil(month) }));
+    }
+  }
+  return livePay(emps, month, today, preview);
+}
+
+// ── Month close (client, 17 Nov 2026) ──────────────────────────────────────────────────────────────────────────
+/** The first month that closes; earlier months are worked out live, as before. */
+export const LOCK_FROM = "2026-11";
+export const nextMonth = (m: string) => addDays(`${m}-28`, 7).slice(0, 7);
+/** The last day a month is still open: late payments dated in it count until the 10th of the next month. */
+export const openUntil = (m: string) => `${nextMonth(m)}-10`;
+
+/**
+ * Close every month whose 10 days have passed: save each person's month pay as it is now. Not while the school's
+ * payments can't be read for someone who is linked (a month never closes with payments missing; the next run tries
+ * again). Returns the months closed.
+ */
+export async function closeMonths(today: string = istDateKey(new Date())): Promise<string[]> {
+  const done: string[] = [];
+  for (let m = LOCK_FROM; openUntil(m) < today; m = nextMonth(m)) {
+    if ((await pool.query("SELECT 1 FROM months_closed WHERE month = $1", [m])).rows[0]) continue;
+    const b = monthBounds(m)!;
+    const { rows } = await pool.query(`SELECT ${PAY_COLS} FROM employees e WHERE (e.status = 'active' OR e.left_on >= $1::date)`, [b.from]);
+    const pays = await livePay(rows as PayEmployee[], m, today);
+    const broken = pays.filter((p) => p.error && !/isn't linked/.test(p.error));
+    if (broken.length) { console.error(`[pay] ${m} not closed: payments unreadable for ${broken.length} person(s); will try again`); continue; }
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("INSERT INTO months_closed (month) VALUES ($1) ON CONFLICT DO NOTHING", [m]);
+      for (const p of pays) {
+        await client.query("INSERT INTO month_close (month, employee_id, pay) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+          [m, p.id, JSON.stringify({ ...p, final: true, open_until: openUntil(m) })]);
+      }
+      await client.query("COMMIT");
+      done.push(m);
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+  return done;
+}
+
+/**
+ * Payments dated in a closed month that show up after it closed (looked for once a day, last 3 closed months):
+ * listed in late_payments for the Super Admin, never added to any month (client: a payment belongs to its paid date).
+ */
+export async function findLatePayments(today: string = istDateKey(new Date())): Promise<number> {
+  if (!paymentsConfigured()) return 0;
+  const { rows: months } = await pool.query("SELECT month FROM months_closed ORDER BY month DESC LIMIT 3");
+  let found = 0;
+  for (const { month } of months) {
+    const b = monthBounds(month.trim())!;
+    const { rows } = await pool.query(
+      `SELECT c.pay, ${PAY_COLS} FROM month_close c JOIN employees e ON e.id = c.employee_id WHERE c.month = $1`, [month]);
+    for (const r of rows) {
+      const known = new Set(((r.pay as MonthPay).payments ?? []).map((p) => p.id));
+      let now: Payment[];
+      try { now = await paymentsFor(r.id, b.from, b.to, true); } catch { continue; }
+      for (const p of now.filter((x) => !known.has(x.id))) {
+        const c = commissionOn(r as PayEmployee, [p]);
+        found += (await pool.query(
+          `INSERT INTO late_payments (month, employee_id, payment_id, paid_date, amount, commission) VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT DO NOTHING`, [month.trim(), r.id, p.id, p.paidDate, p.amountPaise / 100, c.commission])).rowCount ?? 0;
+      }
+    }
+  }
+  return found;
+}
+
+/** The pay of everyone for `month`, worked out from the live data (what monthPay shows until the month closes). */
+async function livePay(emps: PayEmployee[], month: string, today: string, preview?: PayCalendar): Promise<MonthPay[]> {
   const b = monthBounds(month);
   if (!b || emps.length === 0) return [];
   // `preview`: work it out with another calendar without saving anything (used to check real data before switching on)
@@ -121,6 +210,7 @@ export async function monthPay(emps: PayEmployee[], month: string, today: string
         ...monthPayout(plan, list, b.from, last),
         left_on: e.left_on && e.left_on <= b.to ? e.left_on : null, days_paid: days, month_days: monthDays,
         working_days: null, days_so_far: null, days: null, payments: list,
+        final: false, open_until: month >= LOCK_FROM ? openUntil(month) : null,
       };
     });
   }
@@ -167,7 +257,10 @@ export async function monthPay(emps: PayEmployee[], month: string, today: string
       let targets: DayTargets | null;
       if (day === today) targets = onByRecord(day) ? e : null;                 // today: live, current targets
       else if (s) targets = (!e.join_date || e.join_date <= day) ? s : null;  // saved targets for that day
-      else if (isClosed(day)) targets = null;                                  // a closed day without them: not working here
+      // a closed day without them: not working here — unless it is before the account existed but on/after the joining
+      // date set by hand (the rep started before they were added; client, 17 Nov 2026): then it is a working day, so
+      // the Super Admin can "Count as full"
+      else if (isClosed(day)) targets = e.join_date && e.created_on && day >= e.join_date && day < e.created_on && onByRecord(day) ? e : null;
       else targets = onByRecord(day) ? e : null;                               // not closed (before closing began): current record
       const pd = byDay.get(day) ?? { trial: 0, regular: 0 };
       input.set(day, { day, targets, done: { call_secs: secs.get(`${e.id}|${day}`) ?? 0, trial: pd.trial, regular: pd.regular }, countAsFull: full.has(`${e.id}|${day}`) });
@@ -183,6 +276,7 @@ export async function monthPay(emps: PayEmployee[], month: string, today: string
       ...c, base: sal.salary_paise / 100, extras, deductions, total: totalPaise / 100,
       left_on: e.left_on && e.left_on <= b.to ? e.left_on : null, days_paid: 0, month_days: Number(b.to.slice(8)),
       working_days: sal.working_days, days_so_far: sal.days_so_far, days: sal.days, payments: list,
+      final: false, open_until: month >= LOCK_FROM ? openUntil(month) : null,
     };
   });
 }
@@ -271,9 +365,19 @@ export async function closeDays(today: string = istDateKey(new Date())): Promise
 
 /** Production only: close days every 10 minutes (cheap when there is nothing to close). */
 export function startDayCloser() {
-  const run = () => closeDays().catch((e) => console.error("[pay] closing days failed:", (e as Error).message));
-  run();
-  setInterval(run, 10 * 60_000).unref();
+  let lateCheckedOn = "";
+  const run = async () => {
+    await closeDays().catch((e) => console.error("[pay] closing days failed:", (e as Error).message));
+    // month close (client, 17 Nov 2026): a month closes after the 10th of the next one; late payments are looked for once a day
+    await closeMonths().then((m) => m.length && console.log(`[pay] closed ${m.join(", ")}`)).catch((e) => console.error("[pay] closing months failed:", (e as Error).message));
+    const today = istDateKey(new Date());
+    if (lateCheckedOn !== today) {
+      lateCheckedOn = today;
+      await findLatePayments(today).then((n) => n && console.log(`[pay] ${n} late payment(s) found for closed months`)).catch((e) => console.error("[pay] late payments check failed:", (e as Error).message));
+    }
+  };
+  void run();
+  setInterval(() => void run(), 10 * 60_000).unref();
 }
 
 /** "Today" for a request: the real IST date; outside production a test may pass `?as_of=YYYY-MM-DD`. */
