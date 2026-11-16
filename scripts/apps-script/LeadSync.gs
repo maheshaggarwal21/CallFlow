@@ -38,7 +38,7 @@ var CONFIG = {
              email: 'Email', campaign: 'Campaign', source: 'Source',
              status: 'Status', rep: '#F', amount: 'Amount',
              guitar: ['Do you have a guitar?', 'Do you have guitar'], guitar_old: 'Guitar',
-             class_time: ['Select your preferred class time', 'Select your preferred class time.', 'Preferred class time'] },
+             class_time: ['Class time', 'Select your preferred class time', 'Preferred class time'] },  // the sheet's header is "Class time" (client, 16 Nov 2026)
 };
 var HANDLERS = ['syncLeads', 'sweepUnsynced', 'reconcileYesterday'];
 var TZ = 'Asia/Kolkata';
