@@ -13,7 +13,7 @@
 import pool from "../db/pool";
 import { istDateKey } from "../lib/dateRange";
 import {
-  commissionOn, dailySalary, dayPaise, extrasAndDeductions, isTrial, monthBounds, monthPayout, proRated,
+  commissionOn, dailySalary, dayPaise, extrasAndDeductions, isOther, isTrial, monthBounds, monthPayout, proRated,
   type DayTargets, type PayDay, type PayDayInput, type PayPlan,
 } from "../lib/payroll";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "./payments.service";
@@ -159,7 +159,8 @@ export async function findLatePayments(today: string = istDateKey(new Date())): 
       const known = new Set(((r.pay as MonthPay).payments ?? []).map((p) => p.id));
       let now: Payment[];
       try { now = await paymentsFor(r.id, b.from, b.to, true); } catch { continue; }
-      for (const p of now.filter((x) => !known.has(x.id))) {
+      // an "Other" payment (event / special) earns no commission, so it is never listed
+      for (const p of now.filter((x) => !known.has(x.id) && !isOther(x))) {
         const c = commissionOn(r as PayEmployee, [p]);
         found += (await pool.query(
           `INSERT INTO late_payments (month, employee_id, payment_id, paid_date, amount, commission) VALUES ($1, $2, $3, $4, $5, $6)
@@ -246,7 +247,7 @@ async function livePay(emps: PayEmployee[], month: string, today: string, previe
     const byDay = new Map<string, { trial: number; regular: number }>();
     for (const p of list) {
       const c = byDay.get(p.paidDate) ?? { trial: 0, regular: 0 };
-      if (isTrial(p)) c.trial++; else c.regular++;
+      if (isTrial(p)) c.trial++; else if (!isOther(p)) c.regular++;
       byDay.set(p.paidDate, c);
     }
     // working here on `day` by the current record: joined by then, and still active (or switched off that day or later)

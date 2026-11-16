@@ -1,7 +1,7 @@
 // Run: npm run build && node --test dist/lib/payroll.test.js
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { commissionOn, feeCommission, monthBounds, monthPayout, proRated, type PayPlan } from "./payroll";
+import { commissionOn, feeCommission, isOther, monthBounds, monthPayout, proRated, type PayPlan } from "./payroll";
 
 const plan: PayPlan = {
   fix_salary: 20000,
@@ -78,4 +78,13 @@ test("someone who left mid-month gets salary for the days worked; % deduction on
   assert.equal(r.total, 10350);
   assert.equal(proRated(p, 30, 30).fix_salary, 20000);
   assert.equal(proRated(p, 0, 30).fix_salary, 0);
+});
+
+test("fee type Other (events, special payments; client 17 Nov 2026): no commission, not a joining", () => {
+  const other = { ...fees[0], feeType: "Other", amountPaise: 5_000_000 };
+  const before = commissionOn(plan, fees);
+  const after = commissionOn(plan, [...fees, other, { ...other, feeType: " other " }]);
+  assert.deepEqual(after, before);
+  assert.equal(isOther(other), true);
+  assert.equal(feeCommission(plan, other), 0);
 });

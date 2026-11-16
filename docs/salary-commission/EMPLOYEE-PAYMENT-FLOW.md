@@ -34,8 +34,11 @@ Days view and the rep's own dashboard all read the same numbers from that one se
 
 ## 3. Commission
 
-- Fee type **Trial** → the trial rate; **every other fee type** (Class 1, Class 2, renewals…) → the regular rate.
-  A renewal earns the **same rate** as a first regular fee.
+- Fee type **Trial** → the trial rate; **Class 1, Class 2, renewals…** → the regular rate. A renewal earns the
+  **same rate** as a first regular fee.
+- Fee type **Other** = events and special payments (client, 17 Nov 2026): **no commission** and not counted as a
+  joining. It still shows on the Payments tab and in the rep's payments table (with ₹0 commission). Sep–Nov 2026
+  had 32 such payments (₹58,164).
 - `pct` = % of the amount paid; `fix` = ₹ per payment.
 - Commission does **not** depend on the targets; a payment dated on a Sunday or holiday still earns it in full.
 - It belongs to the month of the paid date, **only** that month (a payment dated 30 Nov is November's).
@@ -187,3 +190,4 @@ Days view and the rep's own dashboard all read the same numbers from that one se
 | 17 Nov 2026 | A month stays open until the 10th of the next month, then is final; later payments are listed, not added |
 | 17 Nov 2026 | Fixed salary changes only on the 1st; a rep who started before their account: joining date + Count as full |
 | 17 Nov 2026 | A late payment after the close: one-click "Add to this month" makes it an extra commission in the current month |
+| 17 Nov 2026 | Fee type "Other" (events, special payments): no commission, not a joining |

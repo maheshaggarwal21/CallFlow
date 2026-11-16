@@ -442,6 +442,13 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok(kind("2026-11-06").countAsFull === true && kind("2026-11-09").parts.length === 1 && kind("2026-11-09").parts[0].target === 7200, "Days view: count-as-full shown; 9 Nov kept its saved 2 h target and ticks");
   ok(D.base === salaryPaise / 100 && D.days.reduce((t, x) => t + x.paise, 0) === salaryPaise, "Days view: salary = the sum of the days shown, to the paisa (₹7,000)", `${D.base}`);
   ok(D.commission === 902 && D.trial.count === 1 && D.regular.count === 104, "commission so far: 1 trial × ₹100 + 10 % of ₹8,019.50 = ₹902", JSON.stringify({ c: D.commission, t: D.trial.count, r: D.regular.count }));
+  // fee type "Other" = events / special payments (client, 17 Nov 2026): no commission, not a joining
+  mock.extra.push(pay("other-1", "2026-11-15", 5_000_000, "Other"));
+  // as of 22 Nov: a date range not fetched before, so the school site is really asked (no 2-minute cache)
+  const withOther = (await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&as_of=2026-11-22`)).data;
+  mock.extra.length = 0;
+  ok(withOther.payments === undefined && withOther.commission === 902 && withOther.regular.count === 104 && withOther.trial.count === 1,
+    "fee type Other (₹50,000 event payment): no commission and not counted as a joining", JSON.stringify({ c: withOther.commission, r: withOther.regular.count }));
   ok(JSON.stringify(D.extras) === JSON.stringify([{ name: "Bonus", amount: 500 }]) && JSON.stringify(D.deductions) === JSON.stringify([{ name: "Late", amount: 395 }]), "extras and deductions so far: only those started by today; 5 % of salary + commission ₹7,902 = ₹395", JSON.stringify({ e: D.extras, d: D.deductions }));
   ok(D.total === total, "earned so far: ₹7,000 + ₹902 + ₹500 − ₹395 = ₹8,007", `${D.total}`);
 
