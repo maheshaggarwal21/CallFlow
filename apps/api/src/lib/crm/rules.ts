@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { istMidnight, istParts } from "../dateRange";
 
 // The client's sheet codes: one capital letter each. Which letters exist and what each means is a
 // CRM setting ("codes") the owner edits; new letters can be added there.
@@ -44,20 +43,10 @@ export function sheetAmount(cell: string | null | undefined): number | null {
   return Number.isFinite(n) && n <= 100000 ? n : null;
 }
 
-export type RetryRule = { hours?: number; next_day_at?: string };
+
 /** max_attempts: drop the lead after this many "no contact" saves in a row; 0 = never (client, 7 Nov). */
 export type RetryRules = { invalid?: { never?: boolean }; max_attempts?: number };
 export const DEFAULT_RETRY: Required<Pick<RetryRules, "max_attempts">> & RetryRules = { invalid: { never: true }, max_attempts: 0 };
-
-/** When a retry becomes due: now + N hours, or the next IST day at HH:MM. */
-export function retryAt(rule: RetryRule | undefined, now: Date): Date {
-  if (rule?.next_day_at) {
-    const [h, m] = rule.next_day_at.split(":").map(Number);
-    const p = istParts(now);
-    return new Date(istMidnight(p.year, p.month, p.day + 1).getTime() + (h * 60 + m) * 60_000);
-  }
-  return new Date(now.getTime() + (rule?.hours ?? 3) * 3_600_000);
-}
 
 export const outcomeSchema = z.object({
   version: z.number().int().positive(),
@@ -106,7 +95,8 @@ export function nextState(prevAttempts: number, o: OutcomeInput, rules: RetryRul
     const max = rules.max_attempts ?? DEFAULT_RETRY.max_attempts;
     const invalid = o.reason === INVALID_REASON && rules.invalid?.never !== false;
     if (invalid || (max > 0 && attempts >= max)) return { ...base, status: "dropped", next_followup_at: null, attempts };
-    return { ...base, status: "retry", next_followup_at: o.callback_at ? new Date(o.callback_at) : retryAt(c, now), attempts };
+    // no automatic retry time any more (client, 17 Nov 2026): a follow-up only when the rep sets the date and time
+    return { ...base, status: "retry", next_followup_at: o.callback_at ? new Date(o.callback_at) : null, attempts };
   }
   if (c?.role === "callback") {
     return { ...base, status: "callback", next_followup_at: new Date(o.callback_at!), attempts: 0 };

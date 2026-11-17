@@ -293,15 +293,10 @@ function ContactField({ phone10, times }: { phone10: string; times: number }) {
   );
 }
 
-/** The automatic follow-up for "no contact" outcomes, using the same retry rules as the server. */
-function autoRetry(rule: CodeMeta | undefined, attempts: number, rules: CrmConfig["retry_rules"]): string | null {
-  const max = rules.max_attempts ?? 0; // 0 = never drop
-  if (!rule || (max > 0 && attempts + 1 >= max)) return null; // this try drops the lead
-  if (rule.next_day_at) {
-    const day = new Date(Date.now() + 86_400_000).toLocaleDateString("en-CA", { timeZone: IST });
-    return new Date(`${day}T${rule.next_day_at}:00+05:30`).toISOString();
-  }
-  return new Date(Date.now() + (rule.hours ?? 3) * 3_600_000).toISOString();
+/** True when this "no contact" try drops the lead (the Codes tab's maximum number of tries; 0 = never). */
+function dropsLead(attempts: number, rules: CrmConfig["retry_rules"]): boolean {
+  const max = rules.max_attempts ?? 0;
+  return max > 0 && attempts + 1 >= max;
 }
 
 /** Status dropdown with the code chips and their colours (a native select can't show them). */
@@ -425,8 +420,11 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
   const [repId, setRepId] = useState<string>(l.assigned_to ?? lastRep ?? meId ?? "");
   const [guitar, setGuitar] = useState(l.has_guitar == null ? "" : l.has_guitar ? "Yes" : "No");
   const [code, setCode] = useState<Code | "">("");
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
+  // the follow-up the lead already has (still ahead) is filled in, so saving a status never wipes it unseen
+  const ahead = l.next_followup_at && ["retry", "callback"].includes(l.status) && new Date(l.next_followup_at).getTime() > Date.now()
+    ? istParts(l.next_followup_at) : null;
+  const [date, setDate] = useState(ahead?.date ?? "");
+  const [time, setTime] = useState(ahead?.time ?? "");
   const [amount, setAmount] = useState(l.amount == null ? "" : String(Number(l.amount))); // from the sheet; 0 = Free
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
@@ -468,17 +466,15 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
   const talked = kind === "callback" || kind === "paid" || kind === "closed";
   const needsNote = kind === "callback" || kind === "paid";
   const noFollowUp = kind === "paid" || kind === "closed";
-  const drops = kind === "retry" && !autoRetry(meta(code), l.attempts, cfg.retry_rules);
+  const drops = kind === "retry" && dropsLead(l.attempts, cfg.retry_rules);
   const dateOff = noFollowUp || drops;
 
   const pickStatus = (c: Code) => {
     setCode(c);
     setErr("");
     const k = meta(c)?.kind;
-    if (k === "paid" || k === "closed") { setDate(""); setTime(""); return; }
-    // "No contact" outcomes pre-fill the automatic retry time unless the rep already chose one
-    const auto = k === "retry" && !(date && time) ? autoRetry(meta(c), l.attempts, cfg.retry_rules) : null;
-    if (auto) { const p = istParts(auto); setDate(p.date); setTime(p.time); }
+    if (k === "paid" || k === "closed") { setDate(""); setTime(""); }
+    // no automatic retry time (client, 17 Nov 2026): the follow-up is only what the rep sets
   };
   // A status picked in the table that needs more (note, date, guitar) arrives here already chosen
   useEffect(() => { if (presetCode) pickStatus(presetCode); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -604,7 +600,7 @@ function LeadForm({ d, cfg, presetCode, readOnly, onSaved, onReload }: {
               <input type="time" value={time} disabled={dateOff} onChange={(e) => setTime(e.target.value)} aria-label="Next follow-up time"
                 style={{ ...inputStyle, opacity: dateOff ? 0.5 : 1 }} /></label>
           </div>
-          {kind === "retry" && !drops && <div style={{ fontSize: 12, color: R.mute, marginTop: -4 }}>Filled automatically from the follow-up rules on the Codes tab. Change it if needed.</div>}
+          {kind === "retry" && !drops && !(date && time) && <div style={{ fontSize: 12, color: R.mute, marginTop: -4 }}>No follow-up unless you set a date and time: without one the lead leaves Follow-ups today.</div>}
           <label>
             <span style={{ ...labelStyle, display: "flex" }}>Notes / conversation summary{star(needsNote)}
               <span style={{ marginLeft: "auto", textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>{note.length} / {NOTE_MAX}</span></span>

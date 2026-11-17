@@ -17,11 +17,11 @@ export const inkOn = (hex: string) => {
 };
 export type CodeMeta = CodeSetting & { code: Code; kind: Role; rule: string };
 export const ROLE_LABEL: Record<Role, string> = {
-  retry: "No contact · follows up by itself", callback: "Talked · rep sets the follow-up",
+  retry: "No contact · follow-up only if the rep sets one", callback: "Talked · rep sets the follow-up",
   paid: "Converted (paid)", closed: "Closed · no more calls", other: "Other (write what it does)", unused: "Not used",
 };
 const ruleText = (s: CodeSetting) =>
-  s.role === "retry" ? `No contact · retried ${s.next_day_at ? `next day at ${s.next_day_at}` : `after ${s.hours ?? 3} h`}`
+  s.role === "retry" ? "No contact · follow-up only if the rep sets a date and time"
   : s.role === "other" ? s.description || "Other" : ROLE_LABEL[s.role];
 /** The codes in the settings, A→Z. */
 export const codeList = (codes?: Record<Code, CodeSetting>): CodeMeta[] =>

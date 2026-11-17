@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { groupPhone, isProbableTypo, phone10 } from "./phone";
 import { bucketOf, compareQueue, type QueueLead } from "./queue";
-import { DEFAULT_CODES, nextState, outcomeSchema, retryAt, sheetAmount, validateOutcome, type OutcomeInput } from "./rules";
+import { DEFAULT_CODES, nextState, outcomeSchema, sheetAmount, validateOutcome, type OutcomeInput } from "./rules";
 
 test("phone10 normalisation", () => {
   assert.equal(phone10("09465658112"), "9465658112");
@@ -70,13 +70,13 @@ test("D/E/F validation", () => {
   assert.equal(outcomeSchema.safeParse({ version: 1, code: "AB" }).success, false); // one capital letter only
 });
 
-test("next state: retry waits, drop after 6 failed attempts or an invalid number, F takes the amount given", () => {
+test("next state: no automatic retry time, drop after 6 failed attempts or an invalid number, F takes the amount given", () => {
   const now = new Date("2026-11-06T12:00:00Z"); // 17:30 IST
   const rules = { A: { hours: 6 }, B: { hours: 3 }, C: { next_day_at: "10:00" }, invalid: { never: true }, max_attempts: 6 };
-  assert.deepEqual(nextState(0, base({ code: "B" }), rules, now).next_followup_at, new Date("2026-11-06T15:00:00Z"));
-  // A time the rep picked beats the automatic retry
+  // client, 17 Nov 2026: no automatic retry — "no contact" without a date has no follow-up; with one, exactly that
+  assert.equal(nextState(0, base({ code: "B" }), rules, now).next_followup_at, null);
+  assert.equal(nextState(0, base({ code: "C" }), rules, now).next_followup_at, null);
   assert.deepEqual(nextState(0, base({ code: "B", callback_at: "2026-11-07T06:00:00Z" }), rules, now).next_followup_at, new Date("2026-11-07T06:00:00Z"));
-  assert.deepEqual(retryAt(rules.C, now), new Date("2026-11-07T04:30:00Z")); // 10:00 IST next day
   assert.equal(nextState(4, base({ code: "A" }), rules, now).status, "retry");
   assert.equal(nextState(5, base({ code: "A" }), rules, now).status, "dropped");
   assert.equal(nextState(0, base({ code: "A", reason: "Invalid number" }), rules, now).status, "dropped");

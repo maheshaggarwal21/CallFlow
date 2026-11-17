@@ -308,3 +308,13 @@ against the running local API. (The old Playwright walkthrough and its screensho
   + each re-enquiry (`lead_interactions` kind `reenquiry`), with a small "i"; hovering says "This lead number is
   present X times in the database". Red from 2, grey for 1. `TimesBadge` in `components/crm/kit.tsx`; the count is
   part of `LEAD_LIST_COLS` and the lead detail query. On 17 Nov: 7,811 numbers once, 307 more than once (max 5).
+
+## No automatic retry (client, 17 Nov 2026)
+
+- A "no contact" status (role retry, e.g. A Not picked) **no longer schedules a retry by itself** (it used to add 3 h or
+  the Codes tab's hours). A lead gets a follow-up **only when the rep sets the date and time**; without one it leaves
+  Follow-ups today and rests in All leads. The Codes tab's retry hours are no longer used.
+- The lead form **fills in the follow-up the lead already has** (when it is still ahead), so saving a new status keeps
+  it unless the rep changes it. (Case that led to this: LMS-113836 — a date set in the table was replaced by "+3 h"
+  when status A was saved a minute later.)
+- "Max tries" (drop after N no-contacts; 0 = never) still works as before.
