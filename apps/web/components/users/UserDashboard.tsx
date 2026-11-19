@@ -37,7 +37,7 @@ type Summary = {
     date: string; is_today: boolean; final: boolean; call_secs: number; trial: number; regular: number;
     targets: { call_secs: number; trial: number; regular: number; tick_call: boolean; tick_trial: boolean; tick_regular: boolean };
     /** daily pay only: that day's share and salary, exactly as the Days view and the Employee Tracker count it */
-    pay: { kind: "working" | "away"; num: number; den: number; salary: number; count_as_full: boolean; parts: { key: "call" | "trial" | "regular"; quarters: number }[] } | null;
+    pay: { kind: "working" | "away"; num: number; den: number; salary: number; count_as_full: boolean; custom?: boolean; parts: { key: "call" | "trial" | "regular"; quarters: number }[] } | null;
   };
   earnings: PeriodEarning;
   /** a longer period: how often each ticked target was met (null when one day is picked) */
@@ -387,7 +387,7 @@ export default function UserDashboard({ id }: { id?: string }) {
         {daily && s.today.pay && (
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #f1e8da", display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13.5 }}>
             <span>Fixed base monthly salary for this day: <b>{inr(s.today.pay.salary)}</b></span>
-            <span style={{ color: R.mute }}>{s.today.pay.kind === "away" ? "not working here that day" : s.today.pay.count_as_full ? "counted as full by the Super Admin"
+            <span style={{ color: R.mute }}>{s.today.pay.kind === "away" ? "not working here that day" : s.today.pay.custom ? "custom amount set by the Super Admin" : s.today.pay.count_as_full ? "counted as full by the Super Admin"
               : s.today.pay.parts.length === 0 ? "no targets ticked: full day" : `${Math.floor((s.today.pay.num * 1000) / s.today.pay.den) / 10}% of the day salary`}</span>
           </div>
         )}

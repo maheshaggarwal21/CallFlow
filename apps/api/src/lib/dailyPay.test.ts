@@ -95,3 +95,42 @@ test("a month: working, away (before joining / switched off), holidays, Sundays,
   const full = dayPaise(12000, 1, 1, W);
   assert.equal(r.salary_paise, 7 * full + dayPaise(12000, 2, 4, W));
 });
+
+test("count as full and a custom ₹ for a day (client, 19 Nov 2026): each moves the total by exactly its own difference", () => {
+  const wd = [1, 2, 3, 4, 5, 6], none = new Map<string, string>();
+  const W = workingDaysOf("2026-11", wd, none).length;
+  const base = () => {
+    const m = new Map<string, PayDayInput>();
+    for (const day of monthDays("2026-11")) m.set(day, { day, targets: T(), done: { call_secs: 6 * 3600, trial: 2, regular: 0 }, countAsFull: false });
+    m.set("2026-11-04", { day: "2026-11-04", targets: T(), done: { call_secs: 3 * 3600, trial: 1, regular: 0 }, countAsFull: false }); // ½ day
+    return m;
+  };
+  const run = (m: Map<string, PayDayInput>) => dailySalary(plan, "2026-11", "2026-11-12", wd, none, m);
+  const full = dayPaise(12000, 1, 1, W), half = dayPaise(12000, 2, 4, W);
+  const r0 = run(base());
+
+  // count as full on the ½ day: + (full − half), nothing else changes
+  const m1 = base(); m1.set("2026-11-04", { ...m1.get("2026-11-04")!, countAsFull: true });
+  const r1 = run(m1);
+  assert.equal(r1.salary_paise - r0.salary_paise, full - half);
+  assert.equal(r1.days.find((d) => d.day === "2026-11-04")!.countAsFull, true);
+
+  // custom ₹250.50 on the ½ day: that day pays exactly 25050 paise; it wins over count as full
+  const m2 = base(); m2.set("2026-11-04", { ...m2.get("2026-11-04")!, countAsFull: true, customPaise: 25050 });
+  const r2 = run(m2), d4 = r2.days.find((d) => d.day === "2026-11-04")!;
+  assert.equal(d4.paise, 25050);
+  assert.equal(d4.customPaise, 25050);
+  assert.equal(d4.countAsFull, false);
+  assert.equal(d4.num * 4, 2 * d4.den);               // the share still shows what the targets alone gave (½)
+  assert.equal(r2.salary_paise - r0.salary_paise, 25050 - half);
+
+  // custom ₹0 on a full day takes exactly one full day off
+  const m3 = base(); m3.set("2026-11-06", { ...m3.get("2026-11-06")!, customPaise: 0 });
+  assert.equal(r0.salary_paise - run(m3).salary_paise, full);
+
+  // a custom amount on a non-working day (Sunday) or a future day is ignored: those days never earn
+  const m4 = base(); m4.set("2026-11-08", { ...m4.get("2026-11-08")!, customPaise: 99900 }); m4.set("2026-11-20", { ...m4.get("2026-11-20")!, customPaise: 99900 });
+  assert.equal(run(m4).salary_paise, r0.salary_paise);
+  // and every total is the sum of its days
+  for (const r of [r0, r1, r2]) assert.equal(r.salary_paise, r.days.reduce((t, d) => t + d.paise, 0));
+});

@@ -232,7 +232,7 @@ async function livePay(emps: PayEmployee[], month: string, today: string, previe
       `SELECT employee_id, to_char(day, 'YYYY-MM-DD') AS day, target_call_secs, target_trial, target_regular, tick_call, tick_trial, tick_regular
        FROM day_targets WHERE day BETWEEN $1 AND $2`, [b.from, b.to]),
     pool.query("SELECT key, value FROM pay_settings WHERE key IN ('closed_from', 'closed_through')"),
-    pool.query("SELECT employee_id, to_char(day, 'YYYY-MM-DD') AS day FROM day_overrides WHERE employee_id = ANY($1::uuid[]) AND day BETWEEN $2 AND $3", [ids, b.from, b.to]),
+    pool.query("SELECT employee_id, to_char(day, 'YYYY-MM-DD') AS day, amount_paise FROM day_overrides WHERE employee_id = ANY($1::uuid[]) AND day BETWEEN $2 AND $3", [ids, b.from, b.to]),
   ]);
   const secs = new Map(calls.rows.map((r) => [`${r.employee_id}|${r.day}`, Number(r.secs)]));
   const snap = new Map(snaps.rows.filter((r) => ids.includes(r.employee_id)).map((r) => [`${r.employee_id}|${r.day}`, r as DayTargets]));
@@ -240,7 +240,9 @@ async function livePay(emps: PayEmployee[], month: string, today: string, previe
   const kv = (k: string) => { const v = era.rows.find((r) => r.key === k)?.value; return typeof v === "string" ? v : null; };
   const closedFrom = kv("closed_from"), closedThrough = kv("closed_through");
   const isClosed = (day: string) => !!closedFrom && !!closedThrough && day >= closedFrom && day <= closedThrough;
-  const full = new Set(overrides.rows.map((r) => `${r.employee_id}|${r.day}`));
+  // a row without an amount = Count as full; with one = that day's custom salary (migration 031)
+  const full = new Set(overrides.rows.filter((r) => r.amount_paise === null).map((r) => `${r.employee_id}|${r.day}`));
+  const custom = new Map(overrides.rows.filter((r) => r.amount_paise !== null).map((r) => [`${r.employee_id}|${r.day}`, Number(r.amount_paise)]));
 
   return emps.map((e) => {
     const { list, error } = pay.get(e.id)!;
@@ -264,7 +266,7 @@ async function livePay(emps: PayEmployee[], month: string, today: string, previe
       else if (isClosed(day)) targets = e.join_date && e.created_on && day >= e.join_date && day < e.created_on && onByRecord(day) ? e : null;
       else targets = onByRecord(day) ? e : null;                               // not closed (before closing began): current record
       const pd = byDay.get(day) ?? { trial: 0, regular: 0 };
-      input.set(day, { day, targets, done: { call_secs: secs.get(`${e.id}|${day}`) ?? 0, trial: pd.trial, regular: pd.regular }, countAsFull: full.has(`${e.id}|${day}`) });
+      input.set(day, { day, targets, done: { call_secs: secs.get(`${e.id}|${day}`) ?? 0, trial: pd.trial, regular: pd.regular }, countAsFull: full.has(`${e.id}|${day}`), customPaise: custom.get(`${e.id}|${day}`) ?? null });
     }
     const sal = dailySalary(e, month, cutoff, cal.weekdays, holidays, input);
     const c = commissionOn(e, list);

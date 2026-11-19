@@ -170,6 +170,8 @@ export type PayDayInput = {
   targets: DayTargets | null;
   done: DayDone;
   countAsFull: boolean;
+  /** a custom salary for this day set by the Super Admin (client, 19 Nov 2026): the day pays exactly this */
+  customPaise?: number | null;
 };
 export type PayDay = {
   day: string; weekday: number;
@@ -177,6 +179,8 @@ export type PayDay = {
   kind: "working" | "off" | "holiday" | "future" | "away";
   holiday: string | null;
   done: DayDone | null; parts: DayPart[]; noTargets: boolean; countAsFull: boolean;
+  /** set → the day pays exactly this (num/den still show what the targets alone would give) */
+  customPaise: number | null;
   num: number; den: number; paise: number;
 };
 
@@ -189,15 +193,16 @@ export function dailySalary(plan: PayPlan, month: string, cutoff: string, weekda
   const W = working.length;
   const workSet = new Set(working);
   const days: PayDay[] = monthDays(month).map((day) => {
-    const base = { day, weekday: isoWeekday(day), holiday: holidays.get(day) ?? null, done: null, parts: [], noTargets: false, countAsFull: false, num: 0, den: 1, paise: 0 };
+    const base = { day, weekday: isoWeekday(day), holiday: holidays.get(day) ?? null, done: null, parts: [], noTargets: false, countAsFull: false, customPaise: null, num: 0, den: 1, paise: 0 };
     if (holidays.has(day)) return { ...base, kind: "holiday" as const };
     if (!workSet.has(day)) return { ...base, kind: "off" as const };
     if (day > cutoff) return { ...base, kind: "future" as const };
     const i = input.get(day);
     if (!i || !i.targets) return { ...base, kind: "away" as const, done: i?.done ?? null };
-    const s = dayShare(i.targets, i.done, i.countAsFull);
-    return { ...base, kind: "working" as const, done: i.done, parts: s.parts, noTargets: s.parts.length === 0, countAsFull: i.countAsFull,
-      num: s.num, den: s.den, paise: dayPaise(plan.fix_salary, s.num, s.den, W) };
+    const custom = i.customPaise ?? null;
+    const s = dayShare(i.targets, i.done, custom === null && i.countAsFull);
+    return { ...base, kind: "working" as const, done: i.done, parts: s.parts, noTargets: s.parts.length === 0, countAsFull: custom === null && i.countAsFull,
+      customPaise: custom, num: s.num, den: s.den, paise: custom ?? dayPaise(plan.fix_salary, s.num, s.den, W) };
   });
   const paise = days.reduce((t, d) => t + d.paise, 0);
   return {

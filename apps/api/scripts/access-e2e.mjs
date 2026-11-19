@@ -519,6 +519,26 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   const undo = await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`);
   ok(undo.data?.days?.find((x) => x.day === "2026-11-06")?.paise === 0, "count as full undone: 6 Nov back to ₹0", `${undo.status} ${undo.msg}`);
 
+  // a custom ₹ for a day (client, 19 Nov 2026): the day pays exactly that; the month moves by exactly the difference
+  const put6 = (tok, body) => call(tok, "PUT", `/pay/overrides?${AS}`, { employee_id: rid, day: "2026-11-06", ...body });
+  ok((await put6(owner, { full: true, amount: 123.45 })).status === 200, "custom ₹: ₹123.45 on 6 Nov");
+  const cu = (await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data, c6 = cu.days.find((x) => x.day === "2026-11-06");
+  ok(c6?.paise === 12345 && c6.customPaise === 12345 && c6.countAsFull === false, "custom ₹: 6 Nov pays exactly ₹123.45", JSON.stringify(c6 && { p: c6.paise, c: c6.customPaise, f: c6.countAsFull }));
+  ok(Math.round((cu.base - undo.data.base) * 100) === 12345, "custom ₹: the month's salary moves by exactly ₹123.45", `${undo.data.base} → ${cu.base}`);
+  const ctr = (await get(owner, `/employees/payroll?month=2026-11&${AS}`)).data.people.find((x) => x.id === rid);
+  ok(ctr?.base === cu.base && ctr.total === cu.total, "custom ₹: Employee Tracker = the Days list", `${ctr?.base}/${ctr?.total} vs ${cu.base}/${cu.total}`);
+  const cd = (await get(owner, `/employees/${rid}/summary?date_from=2026-11-06&date_to=2026-11-06&${AS}`)).data;
+  ok(cd?.today?.pay?.custom === true && cd.today.pay.salary === 123.45 && cd.earnings.salary === 123.45, "custom ₹: the dashboard shows that day's custom salary", JSON.stringify(cd?.today?.pay && { c: cd.today.pay.custom, s: cd.today.pay.salary, e: cd.earnings.salary }));
+  ok((await put6(owner, { full: true, amount: 999999 })).status === 400, "custom ₹: more than the monthly fixed salary is refused");
+  ok((await put6(owner, { full: true, amount: -5 })).status === 400, "custom ₹: a negative amount is refused");
+  ok((await put6(repTok, { full: true, amount: 50 })).status === 403, "custom ₹: only the Super Admin");
+  ok((await put6(owner, { full: true })).status === 200, "custom ₹ → Count as full on the same day");
+  const cf = (await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data.days.find((x) => x.day === "2026-11-06");
+  ok(cf?.paise === 100000 && cf.countAsFull === true && cf.customPaise === null, "…then 6 Nov pays the full day (₹1,000), no custom amount left", JSON.stringify(cf && { p: cf.paise, f: cf.countAsFull, c: cf.customPaise }));
+  await put6(owner, { full: false });
+  const cz = (await get(owner, `/pay/days?employee_id=${rid}&month=2026-11&${AS}`)).data;
+  ok(cz.days.find((x) => x.day === "2026-11-06")?.paise === 0 && cz.base === undo.data.base && cz.total === undo.data.total, "Undo: 6 Nov and the month back exactly as before", `${cz.base}/${cz.total}`);
+
   // on/off history (client's check, 15 Nov 2026): switched off on the 12th, back on the 16th. The nightly close saves a day
   // only for people working that day, so 13–14 Nov stay unpaid even though the record now just says "active"
   await pool.query("DELETE FROM day_targets WHERE employee_id = $1 AND day >= '2026-11-12'", [rid]);

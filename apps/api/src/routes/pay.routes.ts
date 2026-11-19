@@ -83,8 +83,12 @@ router.get("/days", async (req, res) => {
   return res.json({ ...rest, name: e.name, fix_salary: e.fix_salary, today });
 });
 
-/** "Count as full" on one working day (or undo it). Super Admin only; only a day that has happened. */
-const overrideSchema = z.object({ employee_id: z.string().uuid(), day, full: z.boolean() });
+/**
+ * "Count as full" on one working day, or a custom salary for it (`amount` in ₹, client 19 Nov 2026), or undo either
+ * (`full: false`). Super Admin only; only a day that has happened.
+ */
+const overrideSchema = z.object({ employee_id: z.string().uuid(), day, full: z.boolean(),
+  amount: z.number({ invalid_type_error: "Amount must be a number" }).min(0, "Amount can't be negative").optional() });
 router.put("/overrides", requireOwner, async (req, res) => {
   const p = overrideSchema.safeParse(req.body);
   if (!p.success) return bad(res, 400, p.error.issues[0].message);
@@ -94,14 +98,20 @@ router.put("/overrides", requireOwner, async (req, res) => {
   const cal = await payCalendar();
   const hol = await holidaysBetween(p.data.day, p.data.day);
   if (!workingDaysOf(p.data.day.slice(0, 7), cal.weekdays, hol).includes(p.data.day)) return bad(res, 400, "That day is not a working day");
-  const { rows: [e] } = await pool.query("SELECT id FROM employees WHERE id = $1", [p.data.employee_id]);
+  const { rows: [e] } = await pool.query("SELECT id, fix_salary FROM employees WHERE id = $1", [p.data.employee_id]);
   if (!e) return bad(res, 404, "Not found");
+  const amount = p.data.full && p.data.amount !== undefined ? Math.round(p.data.amount * 100) : null;
+  // a typo can't pay more than the whole month's fixed salary for one day
+  if (amount !== null && amount > Math.round(Number(e.fix_salary) * 100)) return bad(res, 400, `Amount can't be more than the monthly fixed salary (₹${Number(e.fix_salary)})`);
   if (p.data.full) {
-    await pool.query("INSERT INTO day_overrides (employee_id, day, set_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [p.data.employee_id, p.data.day, req.user!.sub]);
+    await pool.query(
+      `INSERT INTO day_overrides (employee_id, day, set_by, amount_paise) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (employee_id, day) DO UPDATE SET amount_paise = EXCLUDED.amount_paise, set_by = EXCLUDED.set_by, created_at = NOW()`,
+      [p.data.employee_id, p.data.day, req.user!.sub, amount]);
   } else {
     await pool.query("DELETE FROM day_overrides WHERE employee_id = $1 AND day = $2", [p.data.employee_id, p.data.day]);
   }
-  return res.json({ employee_id: p.data.employee_id, day: p.data.day, full: p.data.full });
+  return res.json({ employee_id: p.data.employee_id, day: p.data.day, full: p.data.full, amount: amount === null ? null : amount / 100 });
 });
 
 /** Tests only (not in production): close the months whose 10 days have passed by `today`, then look for late payments. */

@@ -1,7 +1,7 @@
 "use client";
 
 // One person's month, day by day (daily salary, 15 Nov 2026; docs/salary-commission/EMPLOYEE-PAYMENT-FLOW.md).
-// Shown in the Employee Tracker (Super Admin, with "Count as full") and on the rep's own dashboard (read-only).
+// Shown in the Employee Tracker (Super Admin, with "Count as full" or a custom ₹ for a day) and on the rep's own dashboard (read-only).
 // Every number comes from GET /pay/days — the same calculation as the tracker row and the dashboard's Pay card —
 // and the totals here are the server's totals, never re-added in the browser.
 import { useState } from "react";
@@ -14,6 +14,8 @@ type Part = { key: "call" | "trial" | "regular"; done: number; target: number; q
 type Day = {
   day: string; weekday: number; kind: "working" | "off" | "holiday" | "future" | "away"; holiday: string | null;
   done: { call_secs: number; trial: number; regular: number } | null; parts: Part[]; noTargets: boolean; countAsFull: boolean;
+  /** a custom salary for the day set by the Super Admin (client, 19 Nov 2026) */
+  customPaise: number | null;
   num: number; den: number; paise: number;
 };
 export type DaysData = {
@@ -43,13 +45,25 @@ export default function DaysView({ employeeId, month, canOverride = false, onCha
   const { data, error, mutate, isLoading } = useSWR<DaysData>(key, fetcher);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
 
-  const setFull = async (day: string, full: boolean) => {
+  /** Count as full, a custom ₹ for the day (`amount`), or undo either (`full` false). */
+  const setFull = async (day: string, full: boolean, amount?: number) => {
     if (!employeeId) return;
     setBusy(day); setErr("");
-    try { await api.put("/pay/overrides", { employee_id: employeeId, day, full }); await mutate(); onChanged?.(); }
+    try {
+      await api.put("/pay/overrides", { employee_id: employeeId, day, full, ...(amount === undefined ? {} : { amount }) });
+      setAmounts((a) => ({ ...a, [day]: "" }));
+      await mutate(); onChanged?.();
+    }
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(""); }
+  };
+  const setCustom = (day: string) => {
+    const v = (amounts[day] ?? "").trim();
+    const n = Number(v);
+    if (!v || !Number.isFinite(n) || n < 0) { setErr("Type the day's salary in ₹ (0 or more), then Set"); return; }
+    void setFull(day, true, n);
   };
 
   if (error) return <p role="alert" style={{ margin: 0, color: C.red, fontSize: 14 }}>{(error as Error).message}</p>;
@@ -71,7 +85,8 @@ export default function DaysView({ employeeId, month, canOverride = false, onCha
   };
 
   const th = { textAlign: "left", fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, padding: "8px 10px", whiteSpace: "nowrap" } as const;
-  const td = { padding: "8px 10px", fontSize: 13, color: C.textSub, borderTop: `1px solid ${C.borderLight}`, verticalAlign: "middle" } as const;
+  const btn = { borderRadius: 8, padding: "4px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer" } as const;
+  const td = { padding: "8px 8px", fontSize: 13, color: C.textSub, borderTop: `1px solid ${C.borderLight}`, verticalAlign: "middle" } as const;
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -110,16 +125,25 @@ export default function DaysView({ employeeId, month, canOverride = false, onCha
                     ? <td style={{ ...td, color: C.muted }} colSpan={2}>Not working here that day (before joining, or switched off)</td>
                     : <><td style={td}>{cell(d, "call")}</td><td style={td}>{cell(d, "trial")}</td></>}
                   <td style={{ ...td, whiteSpace: "nowrap" }} title={`${d.num} / ${d.den} of the day`}>
-                    {d.kind === "away" ? "—" : d.countAsFull ? <b style={{ color: C.green }}>Full · set by Super Admin</b> : d.noTargets ? "Full · no targets ticked" : pct(d.num, d.den)}</td>
+                    {d.kind === "away" ? "—" : d.customPaise !== null ? <b style={{ color: C.green }}>Custom · Super Admin</b>
+                      : d.countAsFull ? <b style={{ color: C.green }}>Full · Super Admin</b> : d.noTargets ? "Full · no targets ticked" : pct(d.num, d.den)}</td>
                   <td style={{ ...td, textAlign: "right", fontWeight: 700, color: d.paise ? C.text : C.muted, whiteSpace: "nowrap" }}>{inr(d.paise / 100)}</td>
                   {canOverride && (
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
-                      {d.kind === "working" && !data.final && (
-                        <button type="button" disabled={busy === d.day} onClick={() => setFull(d.day, !d.countAsFull)}
-                          style={{ border: `1px solid ${d.countAsFull ? C.border : C.orangeBdr}`, background: d.countAsFull ? C.card : C.orangeLight, color: d.countAsFull ? C.textSub : C.orange,
-                            borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                          {busy === d.day ? "…" : d.countAsFull ? "Undo" : "Count as full"}</button>
-                      )}
+                      {d.kind === "working" && !data.final && (d.countAsFull || d.customPaise !== null
+                        ? <button type="button" disabled={busy === d.day} onClick={() => setFull(d.day, false)} style={{ ...btn, border: `1px solid ${C.border}`, background: C.card, color: C.textSub }}>
+                            {busy === d.day ? "…" : "Undo"}</button>
+                        : <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                            {/* a custom salary for this day (client, 19 Nov 2026) */}
+                            <input type="number" inputMode="decimal" min={0} step="any" placeholder="Custom ₹" aria-label={`Custom salary for ${label}`}
+                              value={amounts[d.day] ?? ""} onChange={(e) => setAmounts((a) => ({ ...a, [d.day]: e.target.value }))}
+                              onKeyDown={(e) => { if (e.key === "Enter") setCustom(d.day); }}
+                              style={{ width: 72, border: `1px solid ${C.border}`, borderRadius: 8, padding: "4px 6px", fontSize: 12, color: C.text, background: C.card }} />
+                            <button type="button" disabled={busy === d.day || !(amounts[d.day] ?? "").trim()} onClick={() => setCustom(d.day)}
+                              style={{ ...btn, border: `1px solid ${C.border}`, background: C.card, color: C.text, opacity: (amounts[d.day] ?? "").trim() ? 1 : 0.5 }}>Set</button>
+                            <button type="button" disabled={busy === d.day} onClick={() => setFull(d.day, true)} style={{ ...btn, border: `1px solid ${C.orangeBdr}`, background: C.orangeLight, color: C.orange }}>
+                              {busy === d.day ? "…" : "Count as full"}</button>
+                          </span>)}
                     </td>
                   )}
                 </tr>
@@ -129,7 +153,7 @@ export default function DaysView({ employeeId, month, canOverride = false, onCha
         </table>
       </div>
       <p style={{ margin: 0, fontSize: 12, color: C.muted }}>
-        Day salary = fixed salary ÷ {data.working_days} working days. Targets: calling time and trial joining. Any ticked target met (100 %) → the full day; otherwise the best one decides: 50 % or more → half the day, under 50 % → ₹0. None ticked: the full day. Today moves live; past days use the targets they had.</p>
+        Day salary = fixed salary ÷ {data.working_days} working days. Targets: calling time and trial joining. Any ticked target met (100 %) → the full day; otherwise the best one decides: 50 % or more → half the day, under 50 % → ₹0. None ticked: the full day. Today moves live; past days use the targets they had.{canOverride ? " Custom ₹: the day pays exactly that amount (Undo to go back)." : ""}</p>
     </div>
   );
 }

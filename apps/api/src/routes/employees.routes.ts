@@ -197,7 +197,7 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
         tick_call: !!t0.tick_call, tick_trial: !!t0.tick_trial, tick_regular: !!t0.tick_regular },
       // daily pay: that day's share and salary, exactly as the Days view and the Employee Tracker count it
       pay: dayRow && (dayRow.kind === "working" || dayRow.kind === "away")
-        ? { kind: dayRow.kind, num: dayRow.num, den: dayRow.den, salary: dayRow.paise / 100, count_as_full: dayRow.countAsFull, parts: dayRow.parts }
+        ? { kind: dayRow.kind, num: dayRow.num, den: dayRow.den, salary: dayRow.paise / 100, count_as_full: dayRow.countAsFull, custom: dayRow.customPaise !== null, parts: dayRow.parts }
         : null,
     },
     // the box beside the month total follows the period picker (client, 19 Nov 2026): salary + commission on its fees
