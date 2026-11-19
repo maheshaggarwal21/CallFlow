@@ -26,7 +26,7 @@ function world(rows = [], props = {}) {
   const grid = [HEADER.slice(), ...rows.map((r) => r.slice())];
   const P = { CRM_SECRET: "s".repeat(40), ...props };
   const log = { posts: [], pings: [], mails: [], flushes: 0, events: [] };
-  const server = { byId: new Map(), byPhone: new Map(), seq: 100, errorPhones: new Map(), down: 0, missing: new Set() };
+  const server = { statuses: [], byId: new Map(), byPhone: new Map(), seq: 100, errorPhones: new Map(), down: 0, missing: new Set() };
   let triggers = [{ fn: "onFormSubmit", owner: "other" }];
   let lockFree = true, mailBroken = false;
 
@@ -37,7 +37,7 @@ function world(rows = [], props = {}) {
     setValues: (v) => { v.forEach((row, i) => row.forEach((x, j) => { cellsOf(r + i)[c - 1 + j] = x; })); log.events.push(`write:${r}`); },
     setValue: (x) => { cellsOf(r)[c - 1] = x; log.events.push(`write:${r}`); },
   });
-  const sheet = { getLastRow: lastRow, getLastColumn: () => Math.max(...grid.map((r) => r.length)), getRange: range };
+  const sheet = { getName: () => "Lead", getLastRow: lastRow, getLastColumn: () => Math.max(...grid.map((r) => r.length)), getRange: range };
 
   function ingest(rows) {
     return rows.map((row, index) => {
@@ -59,7 +59,7 @@ function world(rows = [], props = {}) {
   const env = {
     Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(clock); } static now() { return clock; } },
     console: { error: () => {}, log: () => {} },
-    LockService: { getScriptLock: () => ({
+    LockService: { getDocumentLock: () => ({ tryLock: () => true, releaseLock: () => {} }), getScriptLock: () => ({
       tryLock: () => { if (!lockFree) return false; lockFree = false; return true; },
       waitLock: () => { if (!lockFree) throw new Error("Lock timeout"); lockFree = false; },
       releaseLock: () => { lockFree = true; },
@@ -78,6 +78,7 @@ function world(rows = [], props = {}) {
       if (server.down > 0) { server.down--; return res(504, "<html>Gateway Time-out</html>"); }
       const body = JSON.parse(o.payload);
       if (url.endsWith("/leads/ingest")) { assert.ok(body.length <= 500); log.posts.push(body.length); return res(200, { results: ingest(body) }); }
+      if (url.endsWith("/leads/sheet-status")) { server.statuses.push(...body); return res(200, { results: body.map((_, index) => ({ index, result: "updated" })) }); }
       if (url.endsWith("/leads/reconcile")) return res(200, { checked: body.external_ids.length, missing: body.external_ids.filter((id) => !server.byId.has(id) || server.missing.has(id)) });
       return res(404, "not found");
     } },
@@ -85,7 +86,7 @@ function world(rows = [], props = {}) {
       getProjectTriggers: () => triggers.filter((t) => t.owner === "me").map((t) => ({ getHandlerFunction: () => t.fn, t })),
       deleteTrigger: (x) => { triggers = triggers.filter((t) => t !== x.t); },
       newTrigger: (fn) => { const t = { fn, owner: "me" }; const b = { timeBased: () => b, everyMinutes: (n) => ((t.every = `${n}m`), b), everyHours: (n) => ((t.every = `${n}h`), b),
-        atHour: () => b, nearMinute: () => b, everyDays: (n) => ((t.every = `${n}d`), b), inTimezone: (z) => ((t.tz = z), b), create: () => { triggers.push(t); } }; return b; },
+        atHour: () => b, nearMinute: () => b, forSpreadsheet: () => b, onEdit: () => ((t.every = "edit"), b), everyDays: (n) => ((t.every = `${n}d`), b), inTimezone: (z) => ((t.tz = z), b), create: () => { triggers.push(t); } }; return b; },
     },
   };
   const ctx = vm.createContext({ ...env, JSON, Math, Number, String, Object, Array, Error, RegExp });
@@ -99,11 +100,11 @@ function world(rows = [], props = {}) {
   };
 }
 
-test("A1/A3: setup() creates exactly the three triggers, never touches other triggers, re-running adds no duplicates", () => {
+test("A1/A3: setup() creates exactly the four triggers, never touches other triggers, re-running adds no duplicates", () => {
   const w = world();
   w.run("setup"); w.run("setup");
   const mine = w.triggers().filter((t) => t.owner === "me").map((t) => `${t.fn}:${t.every}`).sort();
-  assert.deepEqual(mine, ["reconcileYesterday:1d", "sweepUnsynced:1h", "syncLeads:1m"]);
+  assert.deepEqual(mine, ["pushStatus:edit", "reconcileYesterday:1d", "sweepUnsynced:1h", "syncLeads:1m"]);
   assert.ok(w.triggers().some((t) => t.fn === "onFormSubmit" && t.owner === "other"));
   assert.equal(w.triggers().find((t) => t.fn === "reconcileYesterday").tz, "Asia/Kolkata");
   assert.ok(!/newTrigger|deleteTrigger/.test(SRC.slice(SRC.indexOf("function syncLeads"))), "no trigger changes outside setup()");
@@ -256,4 +257,43 @@ test("TEST_MODE guard: refuses production; test helpers only work in TEST_MODE a
   t.run("syncLeads");
   assert.match(t.sync(2), /^synced /); assert.match(t.sync(3), /^synced /);
   assert.equal(t.sync(4), "duplicate");
+});
+
+// ── pushStatus: a Status typed in the sheet goes to the CRM ──
+const edit = (w, row, col, rows = 1, cols = 1) => w.call(`pushStatus({ range: { getSheet: function () { return SpreadsheetApp.getActive().getSheetByName("Lead"); },
+  getRow: function () { return ${row}; }, getLastRow: function () { return ${row + rows - 1}; }, getColumn: function () { return ${col}; }, getLastColumn: function () { return ${col + cols - 1}; } } })`);
+
+test("pushStatus: a typed or pasted Status is sent with its phone; other columns, the header and blank rows are not", () => {
+  const w = world([lead(1), lead(2), lead(3)]);
+  w.grid[1][6] = "g"; w.grid[2][6] = "D";
+  edit(w, 2, 7);                          // one cell in Status (column G)
+  assert.deepEqual(w.server.statuses, [{ phone: "9100000001", status: "g" }]);
+  edit(w, 1, 1, 4, 9);                    // a paste over rows 1–4 incl. the header row and the empty row 5
+  assert.deepEqual(w.server.statuses.slice(1).map((x) => x.phone), ["9100000001", "9100000002", "9100000003"]);
+  const before = w.server.statuses.length;
+  edit(w, 2, 2);                          // Name column: not a status edit
+  assert.equal(w.server.statuses.length, before);
+});
+
+test("pushStatus: server down → queued by row ID, re-sent by syncLeads with the status the row has THEN", () => {
+  const w = world([lead(1)], { LAST_SYNCED_ROW: "2" });
+  w.grid[1][6] = "A";
+  w.server.down = 1;
+  edit(w, 2, 7);
+  assert.equal(w.server.statuses.length, 0);
+  assert.equal(JSON.parse(w.P.STATUS_RETRY).length, 1);
+  assert.match(w.log.mails[0].subject, /status not sent yet/);
+  w.grid[1][6] = "N";                     // the rep changes it again before the retry
+  w.run("syncLeads");
+  assert.deepEqual(w.server.statuses, [{ phone: "9100000001", status: "N" }], "newest value, never the stale one");
+  assert.equal(w.P.STATUS_RETRY, undefined);
+});
+
+test("pushStatus: a failing retry stays queued and does not block new-row sync", () => {
+  const w = world([lead(1)], { LAST_SYNCED_ROW: "2", STATUS_RETRY: JSON.stringify([{ external_id: "", row_hint: 2 }]) });
+  w.grid.push(lead(2));
+  w.server.down = 1;                      // only the status retry hits the outage
+  w.run("syncLeads");
+  assert.equal(w.P.LAST_SYNCED_ROW, "3", "the new row still synced");
+  assert.equal(JSON.parse(w.P.STATUS_RETRY).length, 1);
 });

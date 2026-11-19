@@ -580,6 +580,50 @@ function fromSheet(row: z.infer<typeof ingestRowSchema>, codes: CodeSettings, re
   };
 }
 
+export const sheetStatusSchema = z.object({
+  phone: z.coerce.string().trim().min(1).max(40),
+  status: z.coerce.string().trim().max(20).nullish(),
+});
+export type SheetStatusResult = { index: number; result: "updated" | "unchanged" | "ignored" | "not_found" | "invalid" | "error"; lead_code?: string; error?: string };
+
+/**
+ * A Status a rep typed in the lead sheet (pushStatus in LeadSync.gs, client 19 Nov 2026). The latest edit
+ * wins over the CRM, the same rules as a code change in Settings: the follow-up is kept only for retry/callback.
+ * Blank or non-letter values ("NA") are ignored, so clearing a cell never clears the CRM.
+ */
+export async function applySheetStatuses(input: unknown[]): Promise<SheetStatusResult[]> {
+  const out: SheetStatusResult[] = [];
+  const codes = await getCodes();
+  for (const [index, raw] of input.entries()) {
+    const parsed = sheetStatusSchema.safeParse(raw);
+    if (!parsed.success) { out.push({ index, result: "invalid", error: parsed.error.issues[0]?.message }); continue; }
+    const p10 = phone10(parsed.data.phone);
+    if (!isFullPhone10(p10)) { out.push({ index, result: "invalid", error: "Phone needs 10 digits" }); continue; }
+    const letter = (parsed.data.status ?? "").toUpperCase();
+    if (!CODE_RE.test(letter)) { out.push({ index, result: "ignored" }); continue; }
+    try {
+      if (!codes[letter]) await addUnknownCode(codes, letter);
+      const status = STATUS_OF_ROLE[codes[letter].role];
+      // One statement: update + history row when the code differs; otherwise just report the lead
+      const { rows: [l] } = await pool.query(
+        `WITH upd AS (
+           UPDATE leads SET current_code = $2, status = $3::text,
+             next_followup_at = CASE WHEN $3::text IN ('retry','callback') THEN next_followup_at END,
+             version = version + 1, updated_by = NULL, updated_at = NOW()
+           WHERE phone10 = $1 AND current_code IS DISTINCT FROM $2 RETURNING id, lead_code),
+         ix AS (INSERT INTO lead_interactions (lead_id, kind, code, note, meta) SELECT id, 'system', $2, $4, $5 FROM upd)
+         SELECT lead_code, true AS updated FROM upd
+         UNION ALL SELECT lead_code, false FROM leads WHERE phone10 = $1 AND NOT EXISTS (SELECT 1 FROM upd)`,
+        [p10, letter, status, `Status ${letter} · ${codes[letter].label} typed in the lead sheet`, JSON.stringify({ source: "sheet-edit" })]
+      );
+      out.push(l ? { index, result: l.updated ? "updated" : "unchanged", lead_code: l.lead_code } : { index, result: "not_found" });
+    } catch (e) {
+      out.push({ index, result: "error", error: (e as Error).message.slice(0, 200) });
+    }
+  }
+  return out;
+}
+
 /** The external_ids from one day's sheet that the server has never seen. */
 export async function reconcile(ids: string[]): Promise<string[]> {
   const { rows } = await pool.query(

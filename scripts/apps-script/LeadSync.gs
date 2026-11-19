@@ -1,12 +1,13 @@
 /**
  * CallFlow CRM — Google Sheet → CRM lead sync. Install, test and checklist: README.md.
  *
- * Triggers (setup() creates exactly these three and never touches any other trigger):
- *   syncLeads           every minute   new rows below the pointer, then the retry list
+ * Triggers (setup() creates exactly these four and never touches any other trigger):
+ *   syncLeads           every minute   new rows below the pointer, then the retry lists
  *   sweepUnsynced       every hour     rows above the pointer whose CRM Sync cell is blank
  *   reconcileYesterday  daily ~00:15   yesterday's rows vs the server; emails "OK n / n" or "MISMATCH"
- * No onEdit/onChange/onFormSubmit (they miss rows written by integrations and can't hold a lock),
- * and no run creates or deletes triggers: the pace is fixed. Run time is measured and reported
+ *   pushStatus          on edit        a Status a rep types in the sheet goes to the CRM at once (client, 19 Nov 2026)
+ * New rows never rely on onEdit/onChange/onFormSubmit (they miss rows written by integrations and can't
+ * hold a lock); pushStatus only carries typed Status edits. No run creates or deletes triggers: the pace is fixed. Run time is measured and reported
  * nightly instead (see track_).
  *
  * Script properties (Project Settings → Script properties):
@@ -16,7 +17,7 @@
  *   HC_NIGHTLY_URL   Healthchecks.io ping URL for reconcileYesterday
  *   API_BASE         optional override of CONFIG.API_BASE (test copy: tunnel URL + /api/v1/crm)
  *   TEST_MODE        "true" on a test copy: refuses to run against production
- * Kept by the script: LAST_SYNCED_ROW, RETRY, ALERT_*, RUN_MS_*, RUNS_*, SWEPT_*
+ * Kept by the script: LAST_SYNCED_ROW, RETRY, STATUS_RETRY, ALERT_*, RUN_MS_*, RUNS_*, SWEPT_*
  */
 var CONFIG = {
   API_BASE: 'https://callflow.maxmusicschool.co.in/api/v1/crm',
@@ -40,10 +41,10 @@ var CONFIG = {
              guitar: ['Do you have a guitar?', 'Do you have guitar'], guitar_old: 'Guitar',
              class_time: ['Class time', 'Select your preferred class time', 'Preferred class time'] },  // the sheet's header is "Class time" (client, 16 Nov 2026)
 };
-var HANDLERS = ['syncLeads', 'sweepUnsynced', 'reconcileYesterday'];
+var HANDLERS = ['syncLeads', 'sweepUnsynced', 'reconcileYesterday', 'pushStatus'];
 var TZ = 'Asia/Kolkata';
 
-/** Run once by hand. Re-runnable: replaces only this script's three triggers. */
+/** Run once by hand. Re-runnable: replaces only this script's four triggers. */
 function setup() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (HANDLERS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -51,6 +52,7 @@ function setup() {
   ScriptApp.newTrigger('syncLeads').timeBased().everyMinutes(1).create();
   ScriptApp.newTrigger('sweepUnsynced').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('reconcileYesterday').timeBased().atHour(0).nearMinute(15).everyDays(1).inTimezone(TZ).create();
+  ScriptApp.newTrigger('pushStatus').forSpreadsheet(SpreadsheetApp.getActive()).onEdit().create();
 }
 
 // ── every minute ────────────────────────────────────────────────────────────
@@ -64,9 +66,10 @@ function syncLeads() {
     var props = PropertiesService.getScriptProperties();
     var sheet = sheet_();
     // Fast exit before any network call
-    if (sheet.getLastRow() <= pointer_(props) && !retryList_(props).length) { hc_('HC_SYNC_URL', false); return; }
+    if (sheet.getLastRow() <= pointer_(props) && !retryList_(props).length && !props.getProperty('STATUS_RETRY')) { hc_('HC_SYNC_URL', false); return; }
     var ctx = { sheet: sheet, props: props, h: headers_(sheet) };
     retryQueued_(ctx);
+    retryStatuses_(ctx);
     while (Date.now() - started < CONFIG.RUN_MS) {
       var last = sheet.getLastRow(), from = pointer_(props);
       if (last <= from) break;
@@ -182,6 +185,81 @@ function reconcileYesterday() {
   } finally {
     lock.releaseLock();
     track_(started);
+  }
+}
+
+// ── on edit: Status typed in the sheet → CRM ────────────────────────────────
+
+/**
+ * Installable onEdit. Rows whose Status cell was typed or pasted are sent at once; the CRM takes the
+ * latest edit. A failed send queues the rows (by ID) and syncLeads re-sends their status as it is then,
+ * so an older value never overwrites a newer one.
+ */
+function pushStatus(e) {
+  var range = e && e.range;
+  if (!range || range.getSheet().getName() !== CONFIG.SHEET_NAME) return;
+  var sheet = range.getSheet(), h = headers_(sheet), col = h.cols.status + 1;
+  if (col < 1 || col < range.getColumn() || col > range.getLastColumn()) return;
+  var first = Math.max(range.getRow(), 2), last = range.getLastRow();
+  if (last < first) return;
+  var items = sheet.getRange(first, 1, last - first + 1, h.width).getValues()
+    .map(function (v, i) { return { row: first + i, values: v }; })
+    .filter(function (x) { return String(cell_(x.values, h, 'phone') || '').trim() !== ''; });
+  if (!items.length) return;
+  try {
+    guard_();
+    postStatuses_(h, items);
+  } catch (err) {
+    queueStatuses_(items.map(function (x) { return { external_id: rowId_(x.values, h), row_hint: x.row }; }));
+    alert_('status:' + errorType_(err), 'CallFlow CRM: status not sent yet', String(err && err.message || err) +
+      '\n\nRows ' + items.map(function (x) { return x.row; }).join(', ') + ' are queued and re-sent every minute.');
+  }
+}
+
+function postStatuses_(h, items) {
+  return post_('/leads/sheet-status', items.map(function (x) {
+    return { phone: String(cell_(x.values, h, 'phone') || '').trim(), status: String(cell_(x.values, h, 'status') || '').trim() };
+  }));
+}
+
+/** Read-modify-write of STATUS_RETRY under the document lock (syncLeads holds the script lock). */
+function withStatusQueue_(fn) {
+  var lock = LockService.getDocumentLock();
+  if (!lock.tryLock(10000)) throw new Error('could not get the status queue lock');
+  try {
+    var props = PropertiesService.getScriptProperties(), list;
+    try { list = JSON.parse(props.getProperty('STATUS_RETRY') || '[]'); } catch (e) { list = []; }
+    list = fn(list);
+    if (list.length) props.setProperty('STATUS_RETRY', JSON.stringify(list)); else props.deleteProperty('STATUS_RETRY');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function queueStatuses_(entries) {
+  var dropped = 0;
+  withStatusQueue_(function (list) {
+    entries.forEach(function (en) {
+      if (list.some(function (q) { return q.external_id ? q.external_id === en.external_id : q.row_hint === en.row_hint; })) return;
+      if (JSON.stringify(list.concat([en])).length > CONFIG.RETRY_MAX_CHARS) dropped++; else list.push(en);
+    });
+    return list;
+  });
+  if (dropped) alert_('status:queue-full', 'CallFlow CRM: status queue full', dropped + ' status edit(s) could not be queued. Retype them once the CRM is reachable.');
+}
+
+/** Called by syncLeads: re-send queued rows with the status they have now. Still failing → stay queued. */
+function retryStatuses_(ctx) {
+  var taken = [];
+  withStatusQueue_(function (list) { taken = list; return []; });
+  if (!taken.length) return;
+  var items = [];
+  taken.forEach(function (en) { var at = locate_(ctx, en); if (at) items.push({ row: at.row, values: at.values }); });   // gone from the sheet: dropped
+  try {
+    if (items.length) postStatuses_(ctx.h, items);
+  } catch (err) {   // never blocks the new-row sync after it
+    queueStatuses_(taken);
+    alert_('status:' + errorType_(err), 'CallFlow CRM: status not sent yet', String(err && err.message || err) + '\n\nStill queued; re-sent every minute.');
   }
 }
 

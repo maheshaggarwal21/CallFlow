@@ -7,16 +7,17 @@ feeds leads in; reps update statuses in the CRM (client, 7 Nov 2026).
 > sync pointer; the hourly sweep catches them, but only up to an hour later.
 
 ## Triggers
-`setup()` creates exactly these three, and only ever deletes these three:
+`setup()` creates exactly these four, and only ever deletes these four:
 
 | Handler | When | Does |
 |---|---|---|
 | `syncLeads` | every minute | Fast exit if nothing is new. Else: re-sends the retry list (one batch), then new rows below the pointer in batches of 50 for up to 4 min |
 | `sweepUnsynced` | every hour | Sends every row above the pointer whose **CRM Sync** cell is blank (rows moved by a sort, inserted rows, cleared cells) |
 | `reconcileYesterday` | daily ~00:15 IST | Yesterday's rows (by their own Timestamp) vs the server: re-sends what is missing, emails `OK n / n` or `MISMATCH n / m` every night |
+| `pushStatus` | on edit | A **Status** a rep types or pastes goes to the CRM at once (`POST /leads/sheet-status`, matched by phone; latest edit wins; blank/"NA" ignored). If the CRM can't be reached the rows are queued (`STATUS_RETRY`) and `syncLeads` re-sends the status they have then (client, 19 Nov 2026) |
 
-No `onEdit` / `onChange` / `onFormSubmit` (they miss rows written by integrations and can't hold a
-lock), and no run creates or deletes triggers: the pace is fixed. All three share one script lock;
+New rows never rely on `onEdit` / `onChange` / `onFormSubmit` (they miss rows written by integrations and
+can't hold a lock); `pushStatus` only carries typed Status edits. No run creates or deletes triggers. The three timed jobs share one script lock;
 a run that can't get it exits quietly (`tryLock(1000)`; the nightly job waits up to 60 s and alerts if it can't).
 
 ## Script properties (Project Settings → Script properties)
@@ -43,7 +44,7 @@ To skip rows on purpose, put any text (e.g. `skipped`) in their CRM Sync cell.
    (Healthchecks → Integrations → Telegram → follow the bot link) to both:
    - *CallFlow Lead Sync*: Schedule **Simple**, Period **1 minute**, Grace **10 minutes** → `HC_SYNC_URL`
    - *CallFlow Nightly*: Period **1 day**, Grace **1 hour** → `HC_NIGHTLY_URL`
-5. Editor → choose `setup` → **Run** → approve the permissions. Check the Triggers page: the three above.
+5. Editor → choose `setup` → **Run** → approve the permissions. Check the Triggers page: the four above.
 
 **Upgrading the copy installed on 8 Nov:** paste the new `LeadSync.gs` over the old one, then do steps 2–5.
 Move the ping URL you typed into `CONFIG.HEALTHCHECK_URL` into the `HC_SYNC_URL` property, and the old

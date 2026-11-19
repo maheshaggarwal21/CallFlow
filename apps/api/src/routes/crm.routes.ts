@@ -8,7 +8,7 @@ import { fillTemplate, inboxUrl, listTemplates, sendTemplate, watiConfigured, wa
 import { requirePermission } from "../middleware/requirePermission";
 import { CODE_RE, ROLES, outcomeSchema } from "../lib/crm/rules";
 import {
-  CrmError, LEAD_LIST_COLS, LEAD_LIST_JOINS, MAX_INGEST_ROWS, claimLock, getCodes, getSetting, ingestRows, leadDetail, leadFilters,
+  CrmError, LEAD_LIST_COLS, LEAD_LIST_JOINS, MAX_INGEST_ROWS, applySheetStatuses, claimLock, getCodes, getSetting, ingestRows, leadDetail, leadFilters,
   leadPatchSchema, queue, queueFilterSchema, reapplyCodeRoles, reconcile, releaseLock, saveOutcome, updateLeadFields,
 } from "../services/crm.service";
 import { audioUrlsFor } from "../services/audioUrls";
@@ -50,6 +50,11 @@ router.post("/leads/reconcile", requireIngestSecret, async (req, res) => {
   const body = parse(z.object({ external_ids: z.array(z.coerce.string().trim().min(1).max(150)).max(5000) }), req.body);
   const missing = await reconcile(body.external_ids);
   return res.json({ checked: body.external_ids.length, missing });
+});
+
+router.post("/leads/sheet-status", requireIngestSecret, async (req, res) => {
+  const rows = parse(z.array(z.unknown()).min(1).max(MAX_INGEST_ROWS), req.body);
+  return res.json({ results: await applySheetStatuses(rows) });
 });
 
 // ── Everything else needs a login ───────────────────────────────────────────
