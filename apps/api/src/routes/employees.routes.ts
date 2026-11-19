@@ -9,7 +9,7 @@ import { open as unsealPassword, seal as sealPassword, vaultConfigured } from ".
 import { resolveRange, istDateKey } from "../lib/dateRange";
 import { commissionOn, feeCommission, isTrial, monthBounds, monthPayout, proRated, type PayPlan } from "../lib/payroll";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "../services/payments.service";
-import { addDays, monthPay, PAY_COLS, periodTargets, requestToday, type PayEmployee } from "../services/pay.service";
+import { monthPay, PAY_COLS, periodTargets, requestToday, type PayEmployee } from "../services/pay.service";
 
 // The Users tab (client, 12 Nov 2026): one account per person with rank, tabs, salary rule, line and targets.
 const router = Router();
@@ -176,18 +176,16 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
   // the pay shown is for the month the picked period ends in, from the same calculation as the Employee Tracker
   // and the Days view (services/pay.service.ts), so the three can never disagree
   const [p] = await monthPay([payRow.rows[0] as PayEmployee], lastDay.slice(0, 7), today);
-  const { payments: monthPayments, days: payDays, ...payOut } = p;
-  // one day's earning, from the same calculation: its salary (daily pay) and the commission on that day's fees
-  const earning = (d: string) => {
-    if (d < p.from || d > p.to || d > today) return null;
-    const row = payDays?.find((x) => x.day === d) ?? null;
-    const c = commissionOn(u, monthPayments.filter((x) => x.paidDate === d));
-    return { date: d, salary: p.mode === "daily" ? (row?.paise ?? 0) / 100 : null, kind: row?.kind ?? null,
-      commission: c.commission, fees: c.trial.count + c.regular.count };
-  };
+  const { payments: _monthPayments, days: payDays, ...payOut } = p;
   const dayRow = payDays?.find((x) => x.day === targetDay) ?? null;
   // a longer period: how often each ticked target was met, day by day (client, 16 Nov 2026), instead of today's box
-  const period = istDateKey(start) === lastDay ? null : await periodTargets(payRow.rows[0] as PayEmployee, istDateKey(start), lastDay, today, p);
+  const oneDay = istDateKey(start) === lastDay;
+  const period = oneDay ? null : await periodTargets(payRow.rows[0] as PayEmployee, istDateKey(start), lastDay, today, p);
+  // the picked period's salary, from the same per-day pay as the Days view: one day's share, or the daily-pay days
+  // in a longer period; null when not on daily pay or the period is over 3 months (client, 19 Nov 2026)
+  const periodSalary = oneDay
+    ? (p.mode === "daily" ? (dayRow?.paise ?? 0) / 100 : null)
+    : (period && !period.too_long && period.salary ? period.salary.earned : null);
   const t0 = saved.rows[0] ?? u;
   return res.json({
     ...u,
@@ -202,7 +200,8 @@ router.get(["/me/summary", "/:id/summary"], async (req, res) => {
         ? { kind: dayRow.kind, num: dayRow.num, den: dayRow.den, salary: dayRow.paise / 100, count_as_full: dayRow.countAsFull, parts: dayRow.parts }
         : null,
     },
-    earnings: { today: earning(today), yesterday: earning(addDays(today, -1)) },
+    // the box beside the month total follows the period picker (client, 19 Nov 2026): salary + commission on its fees
+    earnings: { from: istDateKey(start), to: lastDay, salary: periodSalary, commission: c.commission, fees: c.trial.count + c.regular.count },
     income: { joinings: c.trial.count + c.regular.count, trial: c.trial.commission, regular: c.regular.commission, total: c.commission,
       trial_count: c.trial.count, regular_count: c.regular.count, fees: c.trial.fees + c.regular.fees },
     payments: { connected: paymentsConfigured() && !error, error, list: list.map(paymentRow(u)) },

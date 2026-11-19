@@ -467,14 +467,19 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   // the redesigned dashboard: earnings at the top and the targets box come from the same calculation
   ok(mine?.status === "active" && mine.today.final === false && mine.today.targets.call_secs === 3600 && mine.today.targets.tick_call === true, "dashboard: status, today's live targets and ticks", JSON.stringify(mine && { s: mine.status, f: mine.today.final, t: mine.today.targets }));
   ok(mine?.today?.pay?.salary === kind("2026-11-21").paise / 100 && mine.today.pay.num === kind("2026-11-21").num && mine.today.pay.den === kind("2026-11-21").den, "dashboard: today's share and salary = the Days row", JSON.stringify(mine?.today?.pay));
-  ok(mine?.earnings?.today?.salary === 1000 && mine.earnings.today.commission === 0 && mine.earnings.today.fees === 0, "dashboard: today = ₹1,000 salary (calling met), no fees", JSON.stringify(mine?.earnings?.today));
-  ok(mine?.earnings?.yesterday?.date === "2026-11-20" && mine.earnings.yesterday.salary === 0 && mine.earnings.yesterday.commission === 102 && mine.earnings.yesterday.fees === 102, "dashboard: yesterday = ₹0 salary (only regular joinings) + ₹102 commission on 102 fees", JSON.stringify(mine?.earnings?.yesterday));
+  // the box beside the month total follows the period picked (client, 19 Nov 2026)
+  ok(mine?.earnings?.from === "2026-11-21" && mine.earnings.to === "2026-11-21" && mine.earnings.salary === 1000 && mine.earnings.commission === 0 && mine.earnings.fees === 0, "dashboard: period Today = ₹1,000 salary (calling met), no fees", JSON.stringify(mine?.earnings));
+  const y = (await get(repTok, `/employees/me/summary?date_from=2026-11-20&date_to=2026-11-20&${AS}`)).data?.earnings;
+  ok(y?.from === "2026-11-20" && y.salary === 0 && y.commission === 102 && y.fees === 102, "dashboard: period Yesterday = ₹0 salary (only regular joinings) + ₹102 commission on 102 fees", JSON.stringify(y));
   const d9 = (await get(repTok, `/employees/me/summary?date_from=2026-11-09&date_to=2026-11-09&${AS}`)).data?.today;
   ok(d9?.final === true && d9.targets.call_secs === 7200 && d9.targets.tick_trial === false && d9.pay?.salary === 500, "dashboard: a closed day shows its SAVED targets (2 h, only calling) and is final", JSON.stringify(d9 && { f: d9.final, t: d9.targets, p: d9.pay?.salary }));
   // a longer period: how often each ticked target was met (client, 16 Nov 2026), worked by hand for 2–10 Nov
   // (8 working days; the 9th was saved with only calling ticked): calling met 2, 7, 10 → 3 of 8; trial met 3 Nov → 1 of 7;
   // regular is no longer a target; salary = the Days rows 2–10 = ₹6,000 of 8 × ₹1,000
-  const per = (await get(repTok, `/employees/me/summary?date_from=2026-11-02&date_to=2026-11-10&${AS}`)).data?.period;
+  const perAll = (await get(repTok, `/employees/me/summary?date_from=2026-11-02&date_to=2026-11-10&${AS}`)).data;
+  const per = perAll?.period;
+  ok(perAll?.earnings?.salary === 6000 && perAll.earnings.commission === perAll.income.total && perAll.earnings.fees === perAll.income.joinings,
+     "dashboard: period 2–10 Nov box = the Days salary (₹6,000) + that period's commission", JSON.stringify(perAll?.earnings));
   const pk = (k) => per?.targets?.find((t) => t.key === k);
   ok(per?.too_long === false && per.working_days === 8 && pk("call")?.met === 3 && pk("call")?.of === 8 && pk("trial")?.met === 1 && pk("trial")?.of === 7
      && pk("regular") === undefined && per.salary?.earned === 6000 && per.salary?.possible === 8000,

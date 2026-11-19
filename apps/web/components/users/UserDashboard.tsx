@@ -21,7 +21,7 @@ type PaymentRow = {
   id: string; name: string; paid_date: string; mode: string; fee_type: string; linked_to: string;
   amount: number; commission: number; trial: boolean; receipt_url: string | null;
 };
-type Earning = { date: string; salary: number | null; kind: string | null; commission: number; fees: number };
+type PeriodEarning = { from: string; to: string; salary: number | null; commission: number; fees: number };
 type Summary = {
   name: string; phone: string | null; email: string; employee_code: number; designation: string | null;
   fix_salary: number;
@@ -39,7 +39,7 @@ type Summary = {
     /** daily pay only: that day's share and salary, exactly as the Days view and the Employee Tracker count it */
     pay: { kind: "working" | "away"; num: number; den: number; salary: number; count_as_full: boolean; parts: { key: "call" | "trial" | "regular"; quarters: number }[] } | null;
   };
-  earnings: { today: Earning | null; yesterday: Earning | null };
+  earnings: PeriodEarning;
   /** a longer period: how often each ticked target was met (null when one day is picked) */
   period: PeriodTargets | null;
   income: { joinings: number; trial: number; regular: number; total: number; trial_count: number; regular_count: number; fees: number };
@@ -57,15 +57,15 @@ type Summary = {
 };
 
 const CSS = `
+  .me-earn{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:24px;align-items:start}
+  @media (max-width:900px){.me-earn{grid-template-columns:minmax(0,1fr)}}
   .me{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;align-items:start}
   .me-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
   .me-2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}
-  .me-earn{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:24px;align-items:start}
   .me-tg{display:grid;grid-template-columns:auto minmax(0,1fr);gap:22px;align-items:center}
   @media (max-width:760px){.me-tg{grid-template-columns:minmax(0,1fr)}}
   .me-det{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 40px}
   @media (max-width:800px){.me-det{grid-template-columns:minmax(0,1fr)}}
-  @media (max-width:900px){.me-earn{grid-template-columns:minmax(0,1fr)}}
   @media (max-width:1150px){.me{grid-template-columns:minmax(0,1fr)}.me-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media (max-width:700px){.me-2{grid-template-columns:minmax(0,1fr)}}
 `;
@@ -215,25 +215,23 @@ function PeriodTargetsBox({ p, label }: { p: PeriodTargets; label: string }) {
   );
 }
 
-/** Yesterday, inside the brown earnings card (client, 15 Nov 2026): that day's salary (daily pay) and the commission on fees paid that day. Final. */
-function Yesterday({ e, daily }: { e: Earning | null; daily: boolean }) {
-  const line = (label: string, value: string) => (
+const PERIOD_NAME: Record<string, string> = { week: "Last 7 days", month: "This month", last_month: "Last month", all: "All time" };
+
+/** Beside the month total (client, 19 Nov 2026): the salary and commission earned in the period picked above. */
+function PeriodEarningBox({ e, title, live }: { e: PeriodEarning; title: string; live: boolean }) {
+  const line = (label: string, value: ReactNode) => (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13.5, color: "#e9dccb" }}><span>{label}</span><b style={{ color: "#fff", whiteSpace: "nowrap" }}>{value}</b></div>
   );
-  const paid = e && (e.kind === "working" || e.kind === "away");
   return (
     <div style={{ background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "14px 16px", display: "grid", gap: 10, alignContent: "start", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ ...capLabel, color: "#e3b778" }}>Yesterday{e ? ` · ${dayLabel(e.date)}` : ""}</span>
-        <span style={{ fontSize: 11, fontWeight: 800, color: "#d9c8b4" }} title="A payment entered late for this date still adds to it until the month ends">Day ended</span>
+        <span style={{ ...capLabel, color: "#e3b778" }}>{title}</span>
+        {live && <span style={{ fontSize: 11, fontWeight: 800, color: "#f4a36b" }}>● Live</span>}
       </div>
-      {!e ? <div style={{ fontSize: 13.5, color: "#d9c8b4" }}>Not in this month</div> : (
-        <>
-          <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1 }}>{inr((paid ? e.salary ?? 0 : 0) + e.commission)}</div>
-          {daily && line("Salary", paid ? inr(e.salary ?? 0) : e.kind === "holiday" ? "holiday" : "not a working day")}
-          {line(`Commission · ${e.fees} fee${e.fees === 1 ? "" : "s"}`, inr(e.commission))}
-        </>
-      )}
+      <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1 }}>{inr((e.salary ?? 0) + e.commission)}</div>
+      {line("Salary", e.salary === null
+        ? <span title="Salary by day shows for daily pay, for periods up to 3 months">—</span> : inr(e.salary))}
+      {line(`Commission · ${e.fees} fee${e.fees === 1 ? "" : "s"}`, inr(e.commission))}
     </div>
   );
 }
@@ -329,8 +327,8 @@ export default function UserDashboard({ id }: { id?: string }) {
         </Panel>
       )}
 
-      {/* ── 1. Earnings at the top (client, 15 Nov 2026): one live card, the total in bold, then each part by name; and yesterday (final) ── */}
-      <section aria-label={my("Earnings")} className={inactive ? undefined : "me-earn"} style={{ background: `linear-gradient(160deg, #4a3527, ${R.espresso})`, color: "#fff", borderRadius: 14,
+      {/* ── 1. Earnings at the top (client, 15 Nov 2026): one live card, the total in bold, then each part by name; beside it the period picked (client, 19 Nov 2026) ── */}
+      <section aria-label={my("Earnings")} className="me-earn" style={{ background: `linear-gradient(160deg, #4a3527, ${R.espresso})`, color: "#fff", borderRadius: 14,
         padding: "18px 20px", boxShadow: "0 14px 30px -18px rgba(43,33,24,.7)" }}>
         <div style={{ display: "grid", gap: 12, alignContent: "start", minWidth: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -350,17 +348,14 @@ export default function UserDashboard({ id }: { id?: string }) {
                 <span>• {x.name}</span><b style={{ color: x.color, whiteSpace: "nowrap" }}>{x.amount}</b></li>
             ))}
           </ul>
-          {/* today's share of the total above (what the old Today card showed) */}
-          {!inactive && !payClosed && s.earnings.today && (
-            <div style={{ fontSize: 13, color: "#e9dccb" }}>Today so far <b style={{ color: "#fff" }}>{inr((s.earnings.today.salary ?? 0) + s.earnings.today.commission)}</b>
-              {" "}({daily ? `${s.earnings.today.kind === "working" || s.earnings.today.kind === "away" ? inr(s.earnings.today.salary ?? 0) : "no"} salary · ` : ""}{inr(s.earnings.today.commission)} commission on {s.earnings.today.fees} fee{s.earnings.today.fees === 1 ? "" : "s"})</div>
-          )}
           <div style={{ fontSize: 12, color: "#d9c8b4" }}>{inactive ? `Left on ${s.left_on ? fmtDay(s.left_on) : "—"} · nothing more is added`
             : payClosed ? (s.pay.final || !s.pay.open_until ? "This month has ended: final"
               : `Open until ${fmtDay(s.pay.open_until)}: late payments dated this month still count`)
             : `Paid at the end of the month${daily ? " · grows every working day" : ""}`}</div>
         </div>
-        {!inactive && <Yesterday e={s.earnings.yesterday} daily={daily} />}
+        <PeriodEarningBox e={s.earnings} live={!inactive && s.earnings.to >= istToday()}
+          title={period === "today" ? `Today · ${dayLabel(s.earnings.to)}` : period === "yesterday" ? `Yesterday · ${dayLabel(s.earnings.to)}`
+            : PERIOD_NAME[period] ?? (s.earnings.from === s.earnings.to ? dayLabel(s.earnings.to) : `${dayLabel(s.earnings.from)} – ${dayLabel(s.earnings.to)}`)} />
       </section>
 
       {/* ── 2. Targets: today live, or a closed day with its saved targets ── */}
