@@ -108,10 +108,14 @@ async function insertCall(data: {
     `INSERT INTO calls (
         source, source_file_key, device_id, line_number, intercom_code,
         call_direction, caller_phone, student_name, called_at, duration_secs,
-        employee_id, is_misc, misc_reason, audio_storage_key, resolution_status
+        employee_id, is_misc, misc_reason, audio_storage_key, resolution_status, calling_number
       ) VALUES (
-        'korecall', $1, NULL, $2, $3, $4, $5, $6,
-        $7, $8, $9, $10, $11, $12, $13
+        'korecall', $1, NULL, $2::varchar, $3::varchar, $4, $5, $6,
+        $7, $8, $9, $10, $11, $12, $13,
+        -- the line's calling number as it is now, kept with the call (migration 030): a later number change leaves it.
+        -- $2/$3 are cast the same everywhere: mixed text/varchar uses fail the whole insert.
+        COALESCE((SELECT phone_number FROM intercoms WHERE intercom_code = $3::varchar),
+                 (SELECT phone_number FROM intercoms WHERE $3::varchar IS NULL AND line_number = $2::varchar LIMIT 1))
       )
       ON CONFLICT (source_file_key) DO NOTHING
       RETURNING id`,

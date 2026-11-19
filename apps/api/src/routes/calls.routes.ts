@@ -74,13 +74,14 @@ const CALL_COLS =
   "c.id, c.source, c.device_id, c.line_number, COALESCE(c.intercom_code, li.intercom_code) AS intercom_code, " +
   "c.call_direction, c.caller_phone, c.student_name, c.called_at, c.duration_secs, " +
   "c.employee_id, c.is_misc, c.misc_reason, c.resolution_status, c.created_at, c.updated_at, " +
-  "COALESCE(i.phone_number, li.phone_number) AS intercom_phone_number, " +
+  "COALESCE(c.calling_number, i.phone_number, li.phone_number) AS intercom_phone_number, " +
   "'KoreCall' AS source_label, " +
   "e.color_index AS color_index, e.name AS employee_name";
 
 // The recording's file name no longer carries the intercom (since 22 May), so a call without one takes the intercom
-// that is on its line now (client, 15 Nov 2026): the Intercom and Calling number rows of the call details.
-// shortcut: that is today's intercom on the line, not necessarily the one at the time of an old call.
+// that is on its line now (client, 15 Nov 2026): the Intercom row of the call details. The Calling number is the one
+// saved with the call when it arrived (migration 030); today's number only for a call that has none.
+// shortcut: the Intercom row is still today's intercom on the line, not necessarily the one at the time of an old call.
 const CALL_JOINS =
   "LEFT JOIN intercoms i ON i.intercom_code = c.intercom_code " +
   "LEFT JOIN intercoms li ON c.intercom_code IS NULL AND li.line_number = c.line_number " +
