@@ -205,7 +205,7 @@ function PeriodTargetsBox({ p, label }: { p: PeriodTargets; label: string }) {
       </div>}
       {p.salary && (
         <div style={{ paddingTop: 12, borderTop: "1px solid #f1e8da", fontSize: 13.5 }}>
-          Salary earned in these days <b>{inr(p.salary.earned)}</b> <span style={{ color: R.mute }}>of {inr(p.salary.possible)} possible</span></div>
+          Fixed base monthly salary earned in these days <b>{inr(p.salary.earned)}</b> <span style={{ color: R.mute }}>of {inr(p.salary.possible)} possible</span></div>
       )}
       {p.targets.length > 0 && <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: R.mute }}>
         <span><b style={{ color: R.good }}>●</b> met</span><span><b style={{ color: R.out }}>●</b> 50 %+ (½ day)</span><span><b style={{ color: R.bad }}>●</b> under 50 %</span>
@@ -386,7 +386,7 @@ export default function UserDashboard({ id }: { id?: string }) {
         )}
         {daily && s.today.pay && (
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #f1e8da", display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13.5 }}>
-            <span>Salary for this day: <b>{inr(s.today.pay.salary)}</b></span>
+            <span>Fixed base monthly salary for this day: <b>{inr(s.today.pay.salary)}</b></span>
             <span style={{ color: R.mute }}>{s.today.pay.kind === "away" ? "not working here that day" : s.today.pay.count_as_full ? "counted as full by the Super Admin"
               : s.today.pay.parts.length === 0 ? "no targets ticked: full day" : `${Math.floor((s.today.pay.num * 1000) / s.today.pay.den) / 10}% of the day salary`}</span>
           </div>
