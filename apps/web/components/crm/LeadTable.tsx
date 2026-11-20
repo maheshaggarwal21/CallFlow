@@ -21,7 +21,7 @@ const actBtn: CSSProperties = { width: 24, height: 24, borderRadius: 8, border: 
 // (sums to the table's width on a 1440 px screen; wider screens share out the extra)
 // 1106px in all = fits a 1440px screen beside the sidebar (it used to be 1210, which hid Follow-up alert behind Actions);
 // Actions holds WhatsApp, WATI and Open (24px each); the alert column has room for ✓ Done
-const COL_PX = [32, 88, 120, 112, 100, 56, 60, 52, 76, 88, 96, 130, 96];
+const COL_PX = [48, 88, 120, 112, 96, 56, 56, 48, 72, 88, 96, 130, 96];
 // Actions stays visible while the table scrolls sideways; its cell needs the row's own background
 const STICKY_CSS = `
   .crm-sticky{position:sticky;right:0;z-index:1;box-shadow:-8px 0 10px -8px rgba(43,33,24,.18)}
