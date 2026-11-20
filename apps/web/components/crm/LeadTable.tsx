@@ -15,7 +15,7 @@ export type SortState = { sort: string; dir: "asc" | "desc" };
 
 const IST = "Asia/Kolkata";
 const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric" });
-const actBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: `1px solid ${R.line}`, background: R.card, color: R.ink,
+const actBtn: CSSProperties = { width: 24, height: 24, borderRadius: 8, border: `1px solid ${R.line}`, background: R.card, color: R.ink,
   display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, textDecoration: "none" };
 // #, Received, Name, Contact, Assigned to (representative), Status, Amount, Guitar, Class time, Last contacted, Next follow-up, Follow-up alert, Actions
 // (sums to the table's width on a 1440 px screen; wider screens share out the extra)
@@ -77,7 +77,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
     const on = sort && key && sort.sort === key;
     const click = key && onSort ? () => onSort({ sort: key, dir: on && sort!.dir === "desc" ? "asc" : "desc" }) : undefined;
     return (
-      <th key={label} className={label === "Actions" ? "crm-sticky" : undefined} style={{ ...thStyle, whiteSpace: "normal", padding: "10px 11px", ...style, cursor: click ? "pointer" : "default" }} onClick={click}
+      <th key={label} className={label === "Actions" ? "crm-sticky" : undefined} style={{ ...thStyle, whiteSpace: "normal", padding: "6px 8px", ...style, cursor: click ? "pointer" : "default" }} onClick={click}
         aria-sort={on ? (sort!.dir === "asc" ? "ascending" : "descending") : undefined}>
         {label}{on ? (sort!.dir === "asc" ? " ↑" : " ↓") : ""}
       </th>
@@ -96,7 +96,8 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
         </tr></thead>
         <tbody>
           {rows.map((l, i) => {
-            const td = (extra?: CSSProperties): CSSProperties => ({ ...tdStyle, padding: "12px 11px", ...extra });
+            // tight rows like the Google Sheet (client, 20 Nov 2026)
+            const td = (extra?: CSSProperties): CSSProperties => ({ ...tdStyle, padding: "3px 8px", lineHeight: 1.25, ...extra });
             const alert = followUpAlert(l, now);
             const hasF = ["retry", "callback"].includes(l.status);
             const f = l.next_followup_at && hasF ? l.next_followup_at : null;
@@ -129,7 +130,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                   {/* The letter only, in its colour; the full name on hover (client, 8 Nov) */}
                   {l.status === "new" || !l.current_code
                     ? <Tag tone="neu">{l.status === "dropped" ? "Dropped" : "New"}</Tag>
-                    : <span title={edit?.codes.find((c) => c.code === l.current_code)?.label}><CodeChip code={l.current_code} big /></span>}
+                    : <span title={edit?.codes.find((c) => c.code === l.current_code)?.label}><CodeChip code={l.current_code} /></span>}
                   {edit && <select aria-label={`Status for ${l.name}`} value={l.status === "new" ? "" : l.current_code ?? ""} style={OVERLAY}
                     onChange={(e) => e.target.value && edit.status(l, e.target.value)}>
                     <option value="">{l.status === "new" ? "New: choose a status" : "Choose a status"}</option>
@@ -174,7 +175,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                     <a className="crm-btn" style={{ ...actBtn, color: "#1fa855" }} href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer"
                       title="Chat on WhatsApp" aria-label={`WhatsApp ${l.name}`}><WhatsAppIcon size={15} /></a>
                     {watiOn && <button className="crm-btn" style={actBtn} title="Open this chat in WATI" aria-label={`Open ${l.name} in WATI`}
-                      onClick={() => { setWatiErr(""); openWati(l.id).then((hint) => hint && setWatiErr(hint)).catch((e) => setWatiErr((e as Error).message)); }}><WatiIcon size={19} /></button>}
+                      onClick={() => { setWatiErr(""); openWati(l.id).then((hint) => hint && setWatiErr(hint)).catch((e) => setWatiErr((e as Error).message)); }}><WatiIcon size={17} /></button>}
                     <button className="crm-btn" style={{ ...actBtn, color: R.out }} onClick={() => onOpen(l.id)} title="Open lead form" aria-label={`Open lead form for ${l.name}`}>
                       <Icon name="open" size={15} /></button>
                   </span>

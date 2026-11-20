@@ -277,7 +277,9 @@ function Section({ title, rows, onOpen, now, meId, empty, anchor, edit }: {
   title: string; rows: LeadRow[]; onOpen: (id: string) => void; now: number; meId: string; empty: string; anchor?: React.Ref<HTMLElement>; edit?: TableEdit;
 }) {
   return (
-    <section ref={anchor} style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "12px 14px", scrollMarginTop: 12 }}>
+    <section ref={anchor} style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "12px 14px",
+      // the bell and "View follow-ups" land with the title and table headers just under the pinned Leads band (52 px bar + band)
+      scrollMarginTop: 120 }}>
       <SectionTitle count={rows.length}>{title}</SectionTitle>
       <LeadTable rows={rows} onOpen={onOpen} now={now} meId={meId} empty={empty} edit={edit} />
     </section>
