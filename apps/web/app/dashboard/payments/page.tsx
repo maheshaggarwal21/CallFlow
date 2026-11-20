@@ -20,7 +20,7 @@ const PER_PAGE = 50;
 
 type Pay = {
   id: string; name: string; linked_to: string; email: string; phone: string; amount: number;
-  paid_date: string; mode: string; rep: string; fee_type: string; receipt_url: string | null;
+  paid_date: string; mode: string; rep: string; fee_type: string; receipt_url: string | null; created_at: string | null;
   /** Status code 1, 2, 3… (named on CRM & Pay Settings); every payment starts on 1. */
   status: string;
 };
@@ -173,7 +173,8 @@ export default function PaymentsPage() {
                     <td style={td}>{p.fee_type ? <Tag label={p.fee_type} color={trial ? C.blue : C.teal} bg={trial ? C.blueLight : C.tealLight} style={{ fontSize: 12 }} /> : "—"}</td>
                     <td style={td}>{p.receipt_url
                       ? <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" style={{ color: C.orange, fontWeight: 700 }}>View</a>
-                      : <span style={{ color: C.muted }}>—</span>}</td>
+                      : <span style={{ color: C.muted }}>—</span>}
+                      <EnteredAt at={p.created_at} paidDate={p.paid_date} /></td>
                   </tr>
                 );
               })}
@@ -229,5 +230,20 @@ function StatusCell({ code, codes, codeIds, label, onPick }: {
         {codeIds.map((c) => <option key={c} value={c}>{label(c)}</option>)}
       </select>
     </span>
+  );
+}
+
+/** Under the receipt: when the payment was entered on the school site (UPI form + screenshot, or Razorpay), HH:MM:SS IST (client, 20 Nov 2026).
+ *  The date is added only when it isn't the paid date. */
+function EnteredAt({ at, paidDate }: { at: string | null; paidDate: string }) {
+  if (!at) return null;
+  const d = new Date(at);
+  const time = d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour12: false });
+  const day = d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });   // YYYY-MM-DD
+  const full = d.toLocaleString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  return (
+    <div title={`Entered on the school site ${full}`} style={{ fontSize: 11.5, color: C.muted, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", marginTop: 2 }}>
+      {day !== paidDate ? `${day.slice(8)}/${day.slice(5, 7)} ` : ""}{time}
+    </div>
   );
 }

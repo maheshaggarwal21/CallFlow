@@ -28,6 +28,8 @@ const paymentSchema = z.object({
   representativeName: z.string().max(200).nullish().transform((v) => v ?? ""),
   // only an https link is passed on, so a bad value can never become a javascript: link in the browser
   receiptUrl: z.string().max(2000).nullish().transform((v) => (v && /^https:\/\//i.test(v) ? v : null)),
+  // when the payment was entered on the school site: the UPI form with its screenshot, or Razorpay's webhook (client, 20 Nov 2026)
+  createdAt: z.string().datetime({ offset: true }).nullish().catch(null).transform((v) => v ?? null),
 });
 const answerSchema = z.object({
   data: z.object({

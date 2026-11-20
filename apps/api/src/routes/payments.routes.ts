@@ -59,7 +59,7 @@ router.get("/", async (req, res) => {
     .sort((a, b) => (a.paidDate < b.paidDate ? 1 : a.paidDate > b.paidDate ? -1 : 0))
     .map((p) => ({
       id: p.id, name: p.name, linked_to: p.linkedTo, email: p.email, phone: p.phone, amount: p.amountPaise / 100,
-      paid_date: p.paidDate, mode: p.paymentMode, rep: p.rep, fee_type: p.feeType, receipt_url: p.receiptUrl,
+      paid_date: p.paidDate, mode: p.paymentMode, rep: p.rep, fee_type: p.feeType, receipt_url: p.receiptUrl, created_at: p.createdAt,
       status: statusOf.get(p.id) ?? "1",
     }));
   return res.json({ from, to, connected, codes, payments, missing: missing.sort((a, b) => a.name.localeCompare(b.name)) });
