@@ -21,6 +21,26 @@ const RANGE_CSS = `.crm-range input::-webkit-calendar-picker-indicator{position:
   .crm-range input:focus{outline:none}.crm-range:focus-within{background:#fff4e3;box-shadow:inset 0 -2px 0 ${R.out}}`;
 const IS_DEV = process.env.NODE_ENV !== "production";
 const IST = "Asia/Kolkata";
+// The follow-up bell on the Leads band (client, 20 Nov 2026): swings and its red count pulses while follow-ups are due
+const BELL_CSS = `@keyframes crm-ring{0%,60%,100%{transform:rotate(0)}6%,18%,30%{transform:rotate(16deg)}12%,24%,36%{transform:rotate(-16deg)}}
+  @keyframes crm-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.6)}50%{box-shadow:0 0 0 6px rgba(220,38,38,0)}}
+  .crm-bell-on svg{animation:crm-ring 1.8s ease-in-out infinite;transform-origin:50% 8%}
+  .crm-bell-on .crm-bell-n{animation:crm-pulse 1.4s ease-in-out infinite}
+  @media (prefers-reduced-motion:reduce){.crm-bell-on svg,.crm-bell-on .crm-bell-n{animation:none}}`;
+/** A short two-strike bell made in the browser (no sound file). Browsers stay silent until the page has been clicked once. */
+function ringBell() {
+  try {
+    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new AC();
+    for (const t of [0, 0.45]) for (const [hz, vol] of [[880, 0.25], [2200, 0.08]] as const) {
+      const o = ctx.createOscillator(), g = ctx.createGain(), at = ctx.currentTime + t;
+      o.frequency.value = hz; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.8);
+      o.start(at); o.stop(at + 0.85);
+    }
+    setTimeout(() => ctx.close(), 1600);
+  } catch { /* no sound on this browser */ }
+}
 type Filters = { q: string; status: string; code: string; assigned: string; fdate: string; from: string; to: string };
 const EMPTY: Filters = { q: "", status: "", code: "", assigned: "", fdate: "", to: "", from: "" };
 const istDay = (d: string | number) => new Date(d).toLocaleDateString("en-CA", { timeZone: IST });
@@ -81,6 +101,14 @@ function LeadsBoard() {
   // One list (client, 8 Nov): due now / overdue / retries first, then the rest of today
   const followUps = [...due, ...upcoming];
   const next = data?.sections.due_now[0];
+  // Ring once for every follow-up that comes into its "due now" window (15 min before its time) while the page is open
+  const seenDue = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const ids = data.sections.due_now.map((l) => l.id);
+    if (seenDue.current && ids.some((id) => !seenDue.current!.has(id))) ringBell();
+    seenDue.current = new Set([...(seenDue.current ?? []), ...ids]);
+  }, [data]);
 
   // One select for the client's statuses: "New"/"Dropped" are lead states, the rest are outcome codes
   const statusValue = f.code ? `c:${f.code}` : f.status ? `s:${f.status}` : "";
@@ -145,7 +173,7 @@ function LeadsBoard() {
   const filterLabel = { display: "grid", gap: 3, fontSize: 10.5, fontWeight: 700, color: R.mute, textTransform: "uppercase", letterSpacing: ".05em" } as const;
   return (
     <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 14 }}>
-      <style>{CRM_CSS + RANGE_CSS}</style>
+      <style>{CRM_CSS + RANGE_CSS + BELL_CSS}</style>
       {/* Slim band (client, 8 Nov): title and the four numbers on one line */}
       {/* stays on screen under the top bar while the page scrolls (client, 20 Nov 2026) */}
       <section style={{ position: "sticky", top: 52, zIndex: 20, boxShadow: "0 6px 14px -8px rgba(43,33,24,.45)",
@@ -158,7 +186,16 @@ function LeadsBoard() {
             <b style={{ fontSize: 17, color: c, fontVariantNumeric: "tabular-nums" }}>{v ?? "—"}</b>
           </span>
         ))}
-        {IS_DEV && <span style={{ marginLeft: "auto" }}><Btn kind="light" onClick={simulate} disabled={simulating} title="Dev only: sends one fake lead through the intake endpoint">
+        {/* due now + overdue + retries whose wait is over: the same count as "View follow-ups (N due)" */}
+        <button type="button" className={due.length ? "crm-bell-on" : undefined} onClick={() => dueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          title={due.length ? `${due.length} follow-up${due.length === 1 ? "" : "s"} due now or overdue` : "No follow-ups due"} aria-label={`${due.length} follow-ups due`}
+          style={{ marginLeft: "auto", position: "relative", width: 38, height: 38, borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "rgba(255,255,255,.08)",
+            color: due.length ? R.gold : "rgba(255,255,255,.7)", display: "inline-grid", placeItems: "center", cursor: "pointer", padding: 0 }}>
+          <Icon name="bell" size={20} />
+          {due.length > 0 && <span className="crm-bell-n" style={{ position: "absolute", top: -6, right: -6, minWidth: 20, height: 20, padding: "0 5px", borderRadius: 10,
+            background: "#dc2626", color: "#fff", fontSize: 11, fontWeight: 800, display: "grid", placeItems: "center", border: "2px solid #4a3527" }}>{due.length > 99 ? "99+" : due.length}</span>}
+        </button>
+        {IS_DEV && <span><Btn kind="light" onClick={simulate} disabled={simulating} title="Dev only: sends one fake lead through the intake endpoint">
           {simulating ? "Sending…" : "＋ Simulate new lead"}</Btn></span>}
       </section>
 

@@ -10,7 +10,8 @@ import AssignIntercomModal from "@/components/modals/AssignIntercomModal";
 import SwapLinesModal from "@/components/modals/SwapLinesModal";
 import type { Intercom, Line } from "@callflow/shared-types";
 
-const COLS = "90px minmax(130px,1fr) 60px minmax(160px,1.3fr) minmax(70px,0.5fr) minmax(130px,1fr) 90px";
+// Person is about a name wide and Office takes the free space, so the office number sits midway between the name and the Calls bar (client, 20 Nov 2026)
+const COLS = "90px minmax(130px,1fr) 60px 130px minmax(70px,1fr) minmax(130px,1fr) 90px";
 // Office of a line (client, 20 Nov 2026): his lines 01–04 are office/team 1, 05–08 office/team 2
 const officeOf = (line: string | null) => { const n = Number(line); return n >= 1 && n <= 4 ? 1 : n >= 5 && n <= 8 ? 2 : null; };
 
