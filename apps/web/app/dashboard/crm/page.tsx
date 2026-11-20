@@ -162,13 +162,13 @@ function LeadsBoard() {
 
       {toast && <div role="status" style={{ background: toast.startsWith("!") ? "#f8e3df" : "#e5efe0", color: toast.startsWith("!") ? R.bad : R.good, borderRadius: 12, padding: "10px 14px", fontWeight: 600, fontSize: 13.5 }}>{toast}</div>}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end", background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: 10 }}>
-        <span style={{ display: "grid", gap: 8, flex: "2 1 220px" }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start", background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: 10 }}>
+        <span style={{ display: "grid", gap: 6, flex: "2 1 220px" }}>
           <label style={filterLabel}>Search
             <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && setF((x) => ({ ...x, q }))} placeholder="Name or contact…" style={sel("1")} /></label>
-          {/* below Search (client, 20 Nov 2026): how many leads one page of All leads shows */}
-          <label style={filterLabel}>Leads per page
-            <select value={size} onChange={(e) => setSize(Number(e.target.value))} style={sel("1")}>
+          {/* small, under Search (client, 20 Nov 2026): how many leads one page of All leads shows; the filters stay on one line */}
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: R.mute }}>Leads per page
+            <select value={size} onChange={(e) => setSize(Number(e.target.value))} style={{ ...inputStyle, width: "auto", padding: "3px 6px", fontSize: 12 }}>
               {[50, 100, 150, 200, 250, 300].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
         </span>
         <label style={{ ...filterLabel, flex: "1 1 130px" }}>Lead status
@@ -197,12 +197,14 @@ function LeadsBoard() {
             ))}
           </span></div>
         {/* After the filters (client, 8 Nov). Filters apply as you type or pick; Search / Enter applies the text at once */}
-        <span style={{ display: "flex", gap: 8, alignItems: "end", marginLeft: "auto" }}>
+        {/* an empty label line keeps the buttons level with the boxes, as before */}
+        <span style={{ ...filterLabel, marginLeft: "auto" }}><span aria-hidden>&nbsp;</span>
+        <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Btn onClick={() => setF((x) => ({ ...x, q }))} title="Apply the search now">Search</Btn>
           <Btn kind="ghost" onClick={clearFilters} title="Clear every filter">Clear</Btn>
           {can("export_leads") && <Btn kind="good" onClick={exportCsv} disabled={exporting} title="Download exactly the leads these filters show (CSV)">
             {exporting ? "Downloading…" : "⇩ Download"}</Btn>}
-        </span>
+        </span></span>
       </div>
 
       {next && (

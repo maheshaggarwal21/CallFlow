@@ -10,7 +10,7 @@ import AssignIntercomModal from "@/components/modals/AssignIntercomModal";
 import SwapLinesModal from "@/components/modals/SwapLinesModal";
 import type { Intercom, Line } from "@callflow/shared-types";
 
-const COLS = "90px minmax(130px,1fr) 60px minmax(160px,1.3fr) 60px minmax(130px,1fr) 90px";
+const COLS = "90px minmax(130px,1fr) 60px minmax(160px,1.3fr) minmax(70px,0.5fr) minmax(130px,1fr) 90px";
 // Office of a line (client, 20 Nov 2026): his lines 01–04 are office/team 1, 05–08 office/team 2
 const officeOf = (line: string | null) => { const n = Number(line); return n >= 1 && n <= 4 ? 1 : n >= 5 && n <= 8 ? 2 : null; };
 
@@ -61,7 +61,7 @@ export default function IntercomsPage() {
           <div style={{ minWidth: 820 }}>
             <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 12, padding: "12px 20px", background: C.bgDeep, borderBottom: `1px solid ${C.border}` }}>
               {["Intercom", "Calling Number", "Line", "Person", "Office", "Calls Today", ""].map((h, i) => (
-                <span key={i} style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.9 }}>{h}</span>
+                <span key={i} style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.9, textAlign: h === "Office" ? "center" : undefined }}>{h}</span>
               ))}
             </div>
             {(intercoms ?? []).map((ic, i) => {
@@ -81,7 +81,7 @@ export default function IntercomsPage() {
                           {line.employee_code != null && <span style={{ fontSize: 12, color: C.muted }}>Reg No. {line.employee_code}</span>}</>
                       : <span style={{ fontSize: 14, color: C.dim }}>{line ? "No one" : "—"}</span>}
                   </span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: officeOf(ic.line_number) ? C.text : C.dim }}>{officeOf(ic.line_number) ?? "—"}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, textAlign: "center", color: officeOf(ic.line_number) ? C.text : C.dim }}>{officeOf(ic.line_number) ?? "—"}</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ flex: 1, height: 4, background: C.bgDeep, borderRadius: 4 }}>
                       <span style={{ display: "block", width: `${(calls / maxCalls) * 100}%`, height: "100%", background: C.orange, borderRadius: 4 }} />
