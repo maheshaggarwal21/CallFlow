@@ -44,8 +44,8 @@ function LeadsBoard() {
   const codes = useCrmCodes();
   const [f, setF] = useState<Filters>(EMPTY);
   const [q, setQ] = useState("");
+  const [size, setSize] = useState(50);   // leads per page in All leads (client, 20 Nov 2026)
   const [open, setOpen] = useState<string | null>(null);
-  const [preset, setPreset] = useState<string | null>(null);   // status picked in the table that needs the form
   const openedAt = useRef(Date.now());
   const knownTotal = useRef<number | null>(null);
   const [toast, setToast] = useState("");
@@ -127,13 +127,11 @@ function LeadsBoard() {
         refreshAll();
       }
     },
-    // Statuses that need nothing more save straight away; ones needing a note, a date or Guitar open the form
+    // Any status picked in the table saves straight away, with no note or date needed (client, 20 Nov 2026);
+    // the lead form still asks for them. A follow-up date can be set in the row's Next follow-up cell.
     status: async (l, code) => {
-      const role = codes.meta(code)?.kind;
-      const direct = role === "retry" || role === "other" || (role === "closed" && l.has_guitar != null);
-      if (!direct) { setPreset(code); setOpen(l.id); return; }
       try {
-        await api.post(`/crm/leads/${l.id}/outcome`, { version: l.version, code, assigned_to: l.assigned_to ?? null });
+        await api.post(`/crm/leads/${l.id}/outcome`, { version: l.version, code, assigned_to: l.assigned_to ?? null, quick: true });
         setToast(`${l.name || "Lead"} saved as ${code} · ${codes.meta(code)?.label ?? ""}`);
       } catch (e) {
         setToast(`! ${(e as Error).message}`);
@@ -165,8 +163,14 @@ function LeadsBoard() {
       {toast && <div role="status" style={{ background: toast.startsWith("!") ? "#f8e3df" : "#e5efe0", color: toast.startsWith("!") ? R.bad : R.good, borderRadius: 12, padding: "10px 14px", fontWeight: 600, fontSize: 13.5 }}>{toast}</div>}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end", background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: 10 }}>
-        <label style={{ ...filterLabel, flex: "2 1 220px" }}>Search
-          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && setF((x) => ({ ...x, q }))} placeholder="Name or contact…" style={sel("1")} /></label>
+        <span style={{ display: "grid", gap: 8, flex: "2 1 220px" }}>
+          <label style={filterLabel}>Search
+            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && setF((x) => ({ ...x, q }))} placeholder="Name or contact…" style={sel("1")} /></label>
+          {/* below Search (client, 20 Nov 2026): how many leads one page of All leads shows */}
+          <label style={filterLabel}>Leads per page
+            <select value={size} onChange={(e) => setSize(Number(e.target.value))} style={sel("1")}>
+              {[50, 100, 150, 200, 250, 300].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+        </span>
         <label style={{ ...filterLabel, flex: "1 1 130px" }}>Lead status
           <select value={statusValue} onChange={(e) => setStatus(e.target.value)} style={sel("1")}>
             <option value="">All statuses</option><option value="s:new">New</option>
@@ -215,10 +219,10 @@ function LeadsBoard() {
         : <>
           <Section anchor={dueRef} title="Follow-ups today" rows={followUps} onOpen={setOpen} now={now} meId={meId} edit={edit}
             empty="Nothing due now and nothing more scheduled for today" />
-          <AllLeads f={f} onOpen={setOpen} now={now} meId={meId} newSince={openedAt.current} edit={edit} />
+          <AllLeads f={f} size={size} onOpen={setOpen} now={now} meId={meId} newSince={openedAt.current} edit={edit} />
         </>}
 
-      <LeadDrawer leadId={open} presetCode={preset} onClose={() => { setOpen(null); setPreset(null); refreshAll(); }} onSaved={(m) => { setToast(m); refreshAll(); }} isOwner={isOwner} />
+      <LeadDrawer leadId={open} onClose={() => { setOpen(null); refreshAll(); }} onSaved={(m) => { setToast(m); refreshAll(); }} isOwner={isOwner} />
     </div>
   );
 }
@@ -239,10 +243,9 @@ function Section({ title, rows, onOpen, now, meId, empty, anchor, edit }: {
   );
 }
 
-function AllLeads({ f, onOpen, now, meId, newSince, edit }: { f: Filters; onOpen: (id: string) => void; now: number; meId: string; newSince: number; edit?: TableEdit }) {
+function AllLeads({ f, size, onOpen, now, meId, newSince, edit }: { f: Filters; size: number; onOpen: (id: string) => void; now: number; meId: string; newSince: number; edit?: TableEdit }) {
   const [sort, setSort] = useState<SortState>({ sort: "created_at", dir: "desc" });
   const [page, setPage] = useState(1);
-  const [size, setSize] = useState(25);
   useEffect(() => setPage(1), [f, sort, size]);
   const { data } = useSWR<{ data: LeadRow[]; total: number }>(`/crm/leads?${qs(f, { ...sort, limit: size, offset: (page - 1) * size })}`, fetcher, { refreshInterval: 30_000 });
   const first = (page - 1) * size + 1;
@@ -250,8 +253,6 @@ function AllLeads({ f, onOpen, now, meId, newSince, edit }: { f: Filters; onOpen
     <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "12px 14px" }}>
       <SectionTitle count={data?.total} right={data && (
         <span style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12.5, color: R.mute }}>
-          <label>Show <select value={size} onChange={(e) => setSize(Number(e.target.value))} style={{ ...inputStyle, width: "auto", padding: "4px 8px" }}>
-            {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} rows</option>)}</select></label>
           {data.total ? `${first}–${Math.min(first + size - 1, data.total)} of ${data.total}` : ""}
         </span>
       )}>All leads</SectionTitle>

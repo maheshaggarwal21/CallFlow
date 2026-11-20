@@ -107,3 +107,16 @@ test("sheet Amount cell (client, 17 Nov 2026): the number, Free = 0, blank stays
   assert.equal(sheetAmount("NA"), null);
   assert.equal(sheetAmount("9999999"), null);   // not a price: left blank
 });
+
+test("a status picked in the Leads table (quick) needs no note and no date (client, 20 Nov 2026)", () => {
+  const now = new Date("2026-11-20T10:00:00Z");
+  const q = (code: string): OutcomeInput => outcomeSchema.parse({ version: 1, code, quick: true });
+  for (const code of ["A", "D", "E", "F", "G"]) assert.equal(validateOutcome(q(code), now), null, code);
+  const d = nextState(0, q("D"), {}, now);
+  assert.equal(d.status, "callback");
+  assert.equal(d.next_followup_at, null);   // rests in All leads until a date is set in the row
+  assert.equal(bucketOf({ status: d.status, next_followup_at: null, created_at: now }, now), "later");
+  // the lead form (no quick) still asks for both
+  assert.match(validateOutcome(outcomeSchema.parse({ version: 1, code: "D" }), now)!, /15 characters/);
+  assert.match(validateOutcome(outcomeSchema.parse({ version: 1, code: "D", note: "called, will think about it" }), now)!, /callback/);
+});

@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { R } from "@/components/report/kit";
 import { api, fetcher } from "@/lib/api";
-import { CODE_LETTERS, codeList, type Code, type CodeMeta, type CodeSetting } from "@/lib/crm";
+import { CODE_LETTERS, codeList, type Code, type CodeMeta, type CodeSetting, type CrmConfig } from "@/lib/crm";
 import { useCrmMe } from "@/hooks/useCrmMe";
 import ColorPalette from "@/components/crm/ColorPalette";
 import { Btn, CRM_CSS, HeaderBand, NoAccess, inputStyle, tdStyle, thStyle } from "@/components/crm/kit";
@@ -31,6 +31,7 @@ export default function CrmSettingsPage() {
           <Statuses codes={data.values.codes} onSaved={() => mutate()} />
           <PayStatuses codes={data.values.pay_codes ?? {}} onSaved={() => mutate()} />
         </div>}
+      {allowed && <UserColors />}
     </div>
   );
 }
@@ -155,6 +156,57 @@ function PayStatuses({ codes, onSaved }: { codes: Record<string, { label: string
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}>
         <Btn onClick={save}>Save</Btn>
+        {saved && <span role="status" style={{ color: R.good, fontSize: 13, fontWeight: 600 }}>Saved ✓</span>}
+        {err && <span role="alert" style={{ color: R.bad, fontSize: 13 }}>{err}</span>}
+      </div>
+    </section>
+  );
+}
+
+/** A colour per user (client, 20 Nov 2026): their name shows in it on the Recordings and Leads tabs. Below the code cards. */
+function UserColors() {
+  const { data: cfg, mutate } = useSWR<CrmConfig>("/crm/config", fetcher);
+  const [v, setV] = useState<Record<string, string | null>>({});   // only the users changed here
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(false), 2500); return () => clearTimeout(t); }, [saved]);
+  if (!cfg) return null;
+  const save = async () => {
+    setErr("");
+    try {
+      await api.patch("/crm/user-colors", v);
+      setV({});
+      setSaved(true);
+      await mutate();
+      // names on the Recordings tab pick the colour up on their next load
+      globalMutate((k) => typeof k === "string" && k.startsWith("/calls"));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  return (
+    <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px", minWidth: 0 }}>
+      <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>User colours</h3>
+      <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>
+        Pick a colour for each user from the Palette: their name is shown in that colour on the Recordings and Leads tabs.</p>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 13.5 }}>
+          <thead><tr><th style={thStyle}>User</th><th style={thStyle}>Colour</th></tr></thead>
+          <tbody>
+            {cfg.reps.map((r) => {
+              const color = r.id in v ? v[r.id] : r.color ?? null;
+              return (
+                <tr key={r.id}>
+                  <td style={{ ...tdStyle, fontWeight: 700, color: color ?? R.ink, minWidth: 180 }}>{r.name}</td>
+                  <td style={tdStyle}><ColorPalette code={r.name.split(" ")[0]} value={color ?? undefined} onSelect={(c) => setV({ ...v, [r.id]: c ?? null })} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}>
+        <Btn onClick={save} disabled={!Object.keys(v).length}>Save</Btn>
         {saved && <span role="status" style={{ color: R.good, fontSize: 13, fontWeight: 600 }}>Saved ✓</span>}
         {err && <span role="alert" style={{ color: R.bad, fontSize: 13 }}>{err}</span>}
       </div>

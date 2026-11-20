@@ -39,7 +39,7 @@ const stop = (e: MouseEvent) => e.stopPropagation();
 const istLocal = (d: string) => new Date(d).toLocaleString("sv-SE", { timeZone: IST, hour12: false }).slice(0, 16).replace(" ", "T");
 
 export type TableEdit = {
-  reps: { id: string; name: string }[];
+  reps: { id: string; name: string; color?: string | null }[];
   codes: CodeMeta[];
   /** "Edit Leads": Amount and Guitar change in the row too (client, 16 Nov 2026); without it they are read-only */
   details: boolean;
@@ -98,7 +98,9 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
           {rows.map((l, i) => {
             const td = (extra?: CSSProperties): CSSProperties => ({ ...tdStyle, padding: "12px 11px", ...extra });
             const alert = followUpAlert(l, now);
-            const f = l.next_followup_at && ["retry", "callback"].includes(l.status) ? l.next_followup_at : null;
+            const hasF = ["retry", "callback"].includes(l.status);
+            const f = l.next_followup_at && hasF ? l.next_followup_at : null;
+            const repColor = edit?.reps.find((r) => r.id === l.assigned_to)?.color ?? undefined;
             return (
               <tr key={l.id} className={`crm-row${alert && alert.tone === "gold" ? " crm-due" : ""}`} tabIndex={0} style={{ cursor: "pointer" }}
                 onClick={() => onOpen(l.id)} onKeyDown={(e) => e.key === "Enter" && onOpen(l.id)}>
@@ -116,7 +118,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                 {/* the "times in the database" badge is on the lead form only (client, 17 Nov 2026) */}
                 <td style={td({ fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" })}>{groupPhone(l.phone10)}</td>
                 <td className={edit ? "crm-edit" : undefined} style={td({ fontSize: 12.5, overflowWrap: "anywhere" })} onClick={edit && stop}>
-                  {l.assigned_to_name ?? <span style={{ color: "#c2b39c" }}>—</span>}
+                  {l.assigned_to_name ? <span style={repColor ? { color: repColor, fontWeight: 700 } : undefined}>{l.assigned_to_name}</span> : <span style={{ color: "#c2b39c" }}>—</span>}
                   {edit && <select aria-label={`Assigned to for ${l.name}`} value={l.assigned_to ?? ""} style={OVERLAY}
                     onChange={(e) => edit.patch(l, { assigned_to: e.target.value || null })}>
                     <option value="">— Not assigned —</option>
@@ -158,13 +160,13 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                     onClick={(e) => { try { e.currentTarget.showPicker(); } catch { /* older browsers open it on focus */ } }}
                     onBlur={(e) => { const v = e.target.value; if (v && v !== (l.last_contacted_at ? istLocal(l.last_contacted_at) : "")) edit.patch(l, { last_contacted_at: `${v}:00+05:30` }); }} />}
                 </td>
-                {/* Editable only when the status has a follow-up (retry / callback) */}
-                <td className={edit && f ? "crm-edit" : undefined} style={td({ fontSize: 12.5, whiteSpace: "nowrap" })} onClick={edit && f ? stop : undefined}
-                  title={edit && !f ? "Choose a status with a follow-up first" : undefined}>
+                {/* Editable when the status has a follow-up (retry / callback), also with no date yet: a status saved from this table needs none */}
+                <td className={edit && hasF ? "crm-edit" : undefined} style={td({ fontSize: 12.5, whiteSpace: "nowrap" })} onClick={edit && hasF ? stop : undefined}
+                  title={edit && !hasF ? "Choose a status with a follow-up first" : undefined}>
                   {f ? <><b>{day(f)}</b><div style={{ fontWeight: 700, fontSize: 12 }}>{time(f)}</div></> : "—"}
-                  {edit && f && <input type="datetime-local" aria-label={`Next follow-up for ${l.name}`} defaultValue={istLocal(f)} style={OVERLAY}
+                  {edit && hasF && <input key={l.version} type="datetime-local" aria-label={`Next follow-up for ${l.name}`} defaultValue={f ? istLocal(f) : ""} style={OVERLAY}
                     onClick={(e) => { try { e.currentTarget.showPicker(); } catch { /* older browsers open it on focus */ } }}
-                    onBlur={(e) => { const v = e.target.value; if (v && v !== istLocal(f)) edit.patch(l, { next_followup_at: `${v}:00+05:30` }); }} />}
+                    onBlur={(e) => { const v = e.target.value; if (v && v !== (f ? istLocal(f) : "")) edit.patch(l, { next_followup_at: `${v}:00+05:30` }); }} />}
                 </td>
                 <td style={td()}>{alert ? <Tag tone={alert.tone}>{alert.tone === "gold" ? "🔔 " : ""}{alert.text}</Tag> : <span style={{ color: "#c2b39c" }}>—</span>}</td>
                 <td className="crm-sticky" style={td({ whiteSpace: "nowrap" })} onClick={(e) => e.stopPropagation()}>

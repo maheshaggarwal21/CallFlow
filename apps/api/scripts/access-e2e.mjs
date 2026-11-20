@@ -626,6 +626,36 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
 
 mock.server.close();
 
+// ── 20 Nov 2026: user colours, leads per page, status from the table without a note ──
+{
+  const nehaRow = (await pool.query("SELECT id, color FROM employees WHERE email = 'neha@crm-demo.local'")).rows[0];
+  ok((await call(owner, "PATCH", "/crm/user-colors", { [nehaRow.id]: "#2f6fd6" })).status === 200, "user colour: Super Admin sets one");
+  ok((await call(owner, "GET", "/crm/config")).data?.reps?.find((r) => r.id === nehaRow.id)?.color === "#2f6fd6", "user colour: shown in the reps list");
+  const cid = (await pool.query(`INSERT INTO calls (source, source_file_key, line_number, call_direction, caller_phone, called_at, duration_secs, employee_id)
+    VALUES ('korecall', $1, '01', 'outbound', '09000000000', now(), 30, $2) RETURNING id`, [`e2e/${stamp}/color.wav`, nehaRow.id])).rows[0].id;
+  ok((await call(owner, "GET", `/calls/${cid}`)).data?.employee_color === "#2f6fd6" || (await call(owner, "GET", `/calls?limit=50`)).data?.data?.find((c) => c.id === cid)?.employee_color === "#2f6fd6", "user colour: on the call in Recordings");
+  ok((await call(owner, "PATCH", "/crm/user-colors", { [nehaRow.id]: "blue" })).status === 400, "user colour: a bad colour is refused");
+  { const r = await call(rep, "PATCH", "/crm/user-colors", { [nehaRow.id]: "#000000" }); ok([401, 403].includes(r.status) && (await pool.query("SELECT color FROM employees WHERE id = $1", [nehaRow.id])).rows[0].color === "#2f6fd6", "user colour: a rep without Codes can't set it", String(r.status)); }
+  await call(owner, "PATCH", "/crm/user-colors", { [nehaRow.id]: nehaRow.color });
+  await pool.query("DELETE FROM calls WHERE id = $1", [cid]);
+
+  ok((await call(owner, "GET", "/crm/leads?limit=300")).status === 200, "leads per page: 300 allowed");
+  ok((await call(owner, "GET", "/crm/leads?limit=301")).status === 400, "leads per page: above 300 refused");
+
+  const l = (await call(owner, "GET", "/crm/leads?limit=1")).data.data[0];
+  const before = (await pool.query("SELECT status, current_code, next_followup_at, attempts, callback_set_by, version FROM leads WHERE id = $1", [l.id])).rows[0];
+  ok((await call(owner, "POST", `/crm/leads/${l.id}/outcome`, { version: before.version, code: "D" })).status === 400, "lead form: D still needs a note and date");
+  const q = await call(owner, "POST", `/crm/leads/${l.id}/outcome`, { version: before.version, code: "D", quick: true });
+  const after = (await pool.query("SELECT status, current_code, next_followup_at FROM leads WHERE id = $1", [l.id])).rows[0];
+  ok(q.status === 200 && after.current_code === "D" && after.status === "callback" && after.next_followup_at === null, "table: D saved with no note or date", q.msg);
+  const v2 = (await pool.query("SELECT version FROM leads WHERE id = $1", [l.id])).rows[0].version;
+  const at = new Date(Date.now() + 86_400_000).toISOString();
+  ok((await call(owner, "PATCH", `/crm/leads/${l.id}`, { version: v2, next_followup_at: at })).status === 200, "table: a date can be set afterwards in the row");
+  await pool.query("DELETE FROM lead_interactions WHERE lead_id = $1 AND created_at >= $2", [l.id, new Date(Date.now() - 120_000)]);
+  await pool.query("UPDATE leads SET status = $2, current_code = $3, next_followup_at = $4, attempts = $5, callback_set_by = $6 WHERE id = $1",
+    [l.id, before.status, before.current_code, before.next_followup_at, before.attempts, before.callback_set_by]);
+}
+
 // ── clean up: test users, line 99, intercom links as they were ──
 await pool.query("DELETE FROM employees WHERE email LIKE $1 OR email LIKE $2 OR email LIKE $3", [`e2e${stamp}%`, `x${stamp}%`, `y${stamp}%`]);
 for (const i of icBefore) await pool.query("UPDATE intercoms SET line_number = NULL WHERE id = $1", [i.id]);

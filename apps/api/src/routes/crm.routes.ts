@@ -73,7 +73,7 @@ router.get("/me", async (req, res) => {
 router.get("/config", async (_req, res) => {
   const [retry, codes, reps] = await Promise.all([
     getSetting("retry_rules", {}), getCodes(),
-    pool.query("SELECT id, name FROM employees WHERE role <> 'owner' AND status = 'active' ORDER BY name"),
+    pool.query("SELECT id, name, color FROM employees WHERE role <> 'owner' AND status = 'active' ORDER BY name"),
   ]);
   return res.json({ retry_rules: retry, codes, reps: reps.rows });
 });
@@ -89,7 +89,7 @@ const SORTS: Record<string, string> = {
 const listSchema = queueFilterSchema.extend({
   sort: z.enum(Object.keys(SORTS) as [string, ...string[]]).default("created_at"),
   dir: z.enum(["asc", "desc"]).default("desc"),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
+  limit: z.coerce.number().int().min(1).max(300).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
 
@@ -274,6 +274,19 @@ const VALUE_SCHEMAS: Record<string, ZodTypeAny> = {
     color: z.string().regex(/^#[0-9a-f]{6}$/i, "Colour must look like #a1b2c3").optional(),
   })).refine((v) => Object.keys(v).length >= 1, "At least one status"),
 };
+
+// Each user's name colour on the Recordings and Leads tabs (client, 20 Nov 2026): { employee id: "#a1b2c3" | null }
+router.patch("/user-colors", settingsAccess, async (req, res) => {
+  const body = parse(z.record(z.string().uuid(), z.string().regex(/^#[0-9a-f]{6}$/i, "Colour must look like #a1b2c3").nullable()), req.body);
+  const ids = Object.keys(body);
+  if (ids.length) {
+    await pool.query(
+      `UPDATE employees e SET color = v.color FROM unnest($1::uuid[], $2::text[]) AS v(id, color) WHERE e.id = v.id`,
+      [ids, ids.map((id) => body[id])]
+    );
+  }
+  return res.json({ ok: true, updated: ids.length });
+});
 
 router.patch("/settings/values/:key", settingsAccess, async (req, res) => {
   const schema = VALUE_SCHEMAS[req.params.key];

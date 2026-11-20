@@ -230,7 +230,7 @@ export default function CallTable({ calls, total, page, pageSize, onPageChange, 
                       display: "flex", alignItems: "center", justifyContent: "center",
                       fontSize: 10, fontWeight: 800, color: empClr.t,
                     }}>{init(call.employee_name)}</div>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: empClr.t, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ fontSize: 12, fontWeight: call.employee_color ? 700 : 600, color: call.employee_color ?? empClr.t, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {call.employee_name.split(" ")[0]}
                     </span>
                   </>

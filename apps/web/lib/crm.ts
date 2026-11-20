@@ -103,7 +103,7 @@ export type LeadDetail = {
   server_now: string;
 };
 export type CrmConfig = {
-  reps: { id: string; name: string }[];
+  reps: { id: string; name: string; color?: string | null }[];
   retry_rules: { invalid?: { never?: boolean }; max_attempts?: number };
   codes: Record<Code, CodeSetting>;
 };

@@ -136,6 +136,8 @@ export type Call = {
   duration_secs: number;
   employee_id: string | null;
   employee_name?: string | null;
+  /** the colour picked for this user on the Codes tab (client, 20 Nov 2026) */
+  employee_color?: string | null;
   color_index: number | null;
   is_misc: boolean;
   misc_reason: string | null;

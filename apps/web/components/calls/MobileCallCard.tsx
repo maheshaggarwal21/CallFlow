@@ -81,7 +81,7 @@ export default function MobileCallCard({ call, onMore, isLast = false }: Props) 
               >
                 {init(call.employee_name)}
               </div>
-              <span style={{ fontSize: 12, fontWeight: 600, color: empClr.t }}>{call.employee_name}</span>
+              <span style={{ fontSize: 12, fontWeight: call.employee_color ? 700 : 600, color: call.employee_color ?? empClr.t }}>{call.employee_name}</span>
             </div>
           ) : (
             <span style={{ fontSize: 12, color: C.dim }}>-</span>

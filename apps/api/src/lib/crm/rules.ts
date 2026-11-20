@@ -57,6 +57,8 @@ export const outcomeSchema = z.object({
   amount: z.number().min(0).max(100000).nullish(),   // 0 = Free
   assigned_to: z.string().uuid().nullish(),
   has_guitar: z.boolean().nullish(),
+  /** A status picked in the Leads table, not the lead form: no note and no date needed (client, 20 Nov 2026) */
+  quick: z.boolean().optional(),
 });
 export type OutcomeInput = z.infer<typeof outcomeSchema>;
 
@@ -65,10 +67,10 @@ export function validateOutcome(o: OutcomeInput, now: Date, codes: CodeSettings 
   const role = codes[o.code]?.role ?? "unused";
   if (role === "unused") return `Code ${o.code} is not in use (CRM Settings)`;
   const needsCallback = role === "callback";
-  if (needsCallback || role === "paid") {
+  if (!o.quick && (needsCallback || role === "paid")) {
     if ((o.note ?? "").length < MIN_NOTE) return `Code ${o.code} needs a note of at least ${MIN_NOTE} characters`;
   }
-  if (needsCallback && !o.callback_at) return `Code ${o.code} needs a callback date and time`;
+  if (!o.quick && needsCallback && !o.callback_at) return `Code ${o.code} needs a callback date and time`;
   // Retry codes may also carry a follow-up time the rep chose instead of the automatic one
   if (o.callback_at) {
     const at = new Date(o.callback_at).getTime();
@@ -99,7 +101,8 @@ export function nextState(prevAttempts: number, o: OutcomeInput, rules: RetryRul
     return { ...base, status: "retry", next_followup_at: o.callback_at ? new Date(o.callback_at) : null, attempts };
   }
   if (c?.role === "callback") {
-    return { ...base, status: "callback", next_followup_at: new Date(o.callback_at!), attempts: 0 };
+    // without a date (a quick save from the table) the lead rests in All leads until one is set
+    return { ...base, status: "callback", next_followup_at: o.callback_at ? new Date(o.callback_at) : null, attempts: 0 };
   }
   // "Other": a follow-up only if the rep set one; without it the lead rests in All leads
   if (c?.role === "other") return { ...base, status: "callback", next_followup_at: o.callback_at ? new Date(o.callback_at) : null, attempts: 0 };
