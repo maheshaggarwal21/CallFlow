@@ -2,7 +2,7 @@
 
 // Lead rows for the Leads page: the client's columns, one row per lead, click to open the form.
 // With `edit`, Assigned to / Status / Amount / Guitar / Last contacted / Next follow-up change right in the row (client, 8 Nov, 10 Nov).
-import { useState, type CSSProperties, type MouseEvent } from "react";
+import { createContext, useContext, useState, type CSSProperties, type MouseEvent } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import { R } from "@/components/report/kit";
@@ -12,6 +12,10 @@ import { CodeChip, Tag, tdStyle, thStyle } from "./kit";
 import { Icon } from "./icons";
 
 export type SortState = { sort: string; dir: "asc" | "desc" };
+
+/** The lead this person is working on (client, 20 Nov 2026): stays highlighted, like a selected row in Google Sheets,
+ *  until they touch another lead. The Leads page provides it; each browser has its own. */
+export const ActiveLead = createContext<{ id: string | null; set: (id: string) => void }>({ id: null, set: () => {} });
 
 const IST = "Asia/Kolkata";
 const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric" });
@@ -29,6 +33,8 @@ const STICKY_CSS = `
   .crm-row .crm-sticky{background:${R.card}}
   .crm-row:hover .crm-sticky{background:${R.soft}}
   .crm-due .crm-sticky{background:#fff4dc}
+  .crm-row.crm-active td,.crm-row.crm-active:hover td,.crm-row.crm-active .crm-sticky{background:#e3edfd}
+  .crm-row.crm-active td:first-child{box-shadow:inset 3px 0 0 #2f6fd6}
   .crm-edit{position:relative;cursor:pointer}
   .crm-edit:hover{box-shadow:inset 0 0 0 1.5px ${R.gold};border-radius:8px}
   .crm-edit:focus-within{box-shadow:inset 0 0 0 2px ${R.gold};border-radius:8px}
@@ -70,6 +76,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
   edit?: TableEdit;
 }) {
   const [watiErr, setWatiErr] = useState("");
+  const active = useContext(ActiveLead);
   // same request as the lead form's template sender (SWR shares it); no WATI set up = no WATI button
   const { data: wati } = useSWR<WatiTemplates>("/crm/wati/templates", fetcher, { revalidateOnFocus: false });
   const watiOn = !!(wati?.configured && wati.inbox);
@@ -104,7 +111,10 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
             const f = l.next_followup_at && hasF ? l.next_followup_at : null;
             const repColor = edit?.reps.find((r) => r.id === l.assigned_to)?.color ?? undefined;
             return (
-              <tr key={l.id} className={`crm-row${alert && alert.tone === "gold" ? " crm-due" : ""}`} tabIndex={0} style={{ cursor: "pointer" }}
+              <tr key={l.id} className={`crm-row${alert && alert.tone === "gold" ? " crm-due" : ""}${active.id === l.id ? " crm-active" : ""}`} tabIndex={0} style={{ cursor: "pointer" }}
+                aria-selected={active.id === l.id}
+                // capture: also counts touches on the row's own controls (status, assigned, Done, WhatsApp…), which stop the click
+                onPointerDownCapture={() => active.set(l.id)} onFocusCapture={() => active.set(l.id)}
                 onClick={() => onOpen(l.id)} onKeyDown={(e) => e.key === "Enter" && onOpen(l.id)}>
                 <td style={td({ color: R.mute, fontSize: 12, fontVariantNumeric: "tabular-nums" })}>{serialFrom !== undefined ? serialFrom - i : start + i}</td>
                 <td style={td({ fontSize: 12.5, whiteSpace: "nowrap" })}>{day(l.created_at)}<div style={{ color: R.mute, fontSize: 11.5 }}>{time(l.created_at)}</div></td>

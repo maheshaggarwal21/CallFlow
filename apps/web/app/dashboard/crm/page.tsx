@@ -11,7 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useCrmMe } from "@/hooks/useCrmMe";
 import { useCrmCodes } from "@/hooks/useCrmCodes";
 import { Btn, CRM_CSS, NoAccess, SectionTitle, inputStyle } from "@/components/crm/kit";
-import LeadTable, { type SortState, type TableEdit } from "@/components/crm/LeadTable";
+import LeadTable, { ActiveLead, type SortState, type TableEdit } from "@/components/crm/LeadTable";
 import LeadDrawer from "@/components/crm/LeadDrawer";
 import { Icon } from "@/components/crm/icons";
 import Pagination from "@/components/ui/Pagination";
@@ -66,6 +66,19 @@ function LeadsBoard() {
   const [q, setQ] = useState("");
   const [size, setSize] = useState(50);   // leads per page in All leads (client, 20 Nov 2026)
   const [open, setOpen] = useState<string | null>(null);
+  // The lead this person last touched stays highlighted (client, 20 Nov 2026); kept in this browser across reloads,
+  // per login, so two reps sharing a computer each keep their own
+  const activeKey = meId ? `crm-active-lead:${meId}` : null;
+  const [activeId, setActiveId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!activeKey) return;
+    try { setActiveId(localStorage.getItem(activeKey)); } catch { setActiveId(null); /* storage blocked: highlight just isn't remembered */ }
+  }, [activeKey]);
+  const setActive = (id: string) => {
+    setActiveId(id);
+    try { if (activeKey) localStorage.setItem(activeKey, id); } catch { /* as above */ }
+  };
+  useEffect(() => { if (open) setActive(open); }, [open]);
   const openedAt = useRef(Date.now());
   const knownTotal = useRef<number | null>(null);
   const [toast, setToast] = useState("");
@@ -258,9 +271,11 @@ function LeadsBoard() {
       {error ? <p role="alert" style={{ color: R.bad }}>{(error as Error).message}</p>
         : !data ? <p style={{ color: R.mute }}>Loading leads…</p>
         : <>
+          <ActiveLead.Provider value={{ id: activeId, set: setActive }}>
           <Section anchor={dueRef} title="Follow-ups today" rows={followUps} onOpen={setOpen} now={now} meId={meId} edit={edit}
             empty="Nothing due now and nothing more scheduled for today" />
           <AllLeads f={f} size={size} onOpen={setOpen} now={now} meId={meId} newSince={openedAt.current} edit={edit} />
+          </ActiveLead.Provider>
         </>}
 
       <LeadDrawer leadId={open} onClose={() => { setOpen(null); refreshAll(); }} onSaved={(m) => { setToast(m); refreshAll(); }} isOwner={isOwner} />
