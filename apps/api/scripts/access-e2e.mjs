@@ -651,6 +651,18 @@ mock.server.close();
   const v2 = (await pool.query("SELECT version FROM leads WHERE id = $1", [l.id])).rows[0].version;
   const at = new Date(Date.now() + 86_400_000).toISOString();
   ok((await call(owner, "PATCH", `/crm/leads/${l.id}`, { version: v2, next_followup_at: at })).status === 200, "table: a date can be set afterwards in the row");
+  // ✓ Done beside a due follow-up: same status, no date, back to All leads, a "Followed up" line in the history
+  const v3 = (await pool.query("SELECT version FROM leads WHERE id = $1", [l.id])).rows[0].version;
+  const done = await call(owner, "PATCH", `/crm/leads/${l.id}`, { version: v3, followed_up: true });
+  const afterDone = (await pool.query("SELECT status, current_code, next_followup_at, last_contacted_at FROM leads WHERE id = $1", [l.id])).rows[0];
+  const ix = (await pool.query("SELECT note, meta FROM lead_interactions WHERE lead_id = $1 ORDER BY created_at DESC LIMIT 1", [l.id])).rows[0];
+  ok(done.status === 200 && afterDone.status === "callback" && afterDone.current_code === "D" && afterDone.next_followup_at === null
+    && Date.now() - new Date(afterDone.last_contacted_at).getTime() < 60_000, "Done: same status, follow-up cleared, last contacted now", done.msg);
+  ok(ix?.meta?.source === "followed-up" && ix.note === "Status D kept", "Done: noted in the history with date and time", ix?.note);
+  const qAfter = (await call(owner, "GET", "/crm/queue")).data;
+  ok(!!qAfter?.sections && !Object.values(qAfter.sections).flat().some((x) => x.id === l.id), "Done: the lead left Follow-ups");
+  const newLead = (await pool.query("SELECT id, version FROM leads WHERE status = 'new' LIMIT 1")).rows[0];
+  if (newLead) ok((await call(owner, "PATCH", `/crm/leads/${newLead.id}`, { version: newLead.version, followed_up: true })).status === 400, "Done: refused on a lead with no follow-up");
   await pool.query("DELETE FROM lead_interactions WHERE lead_id = $1 AND created_at >= $2", [l.id, new Date(Date.now() - 120_000)]);
   await pool.query("UPDATE leads SET status = $2, current_code = $3, next_followup_at = $4, attempts = $5, callback_set_by = $6 WHERE id = $1",
     [l.id, before.status, before.current_code, before.next_followup_at, before.attempts, before.callback_set_by]);

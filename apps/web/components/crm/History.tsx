@@ -135,7 +135,7 @@ function Entry({ e, first, isOwner, onChanged }: { e: TimelineEntry; first: bool
   if (e.kind === "reenquiry" || e.kind === "system") {
     return (
       <li style={{ ...box, background: R.soft, borderStyle: "dashed" }}>{dot(R.gold)}
-        <div style={{ fontSize: 12.5 }}><b>{e.kind === "reenquiry" ? "Re-enquired" : "System"}</b> · <span style={{ color: R.mute }}>{e.note} · {when(e.at)}</span></div>
+        <div style={{ fontSize: 12.5 }}><b>{e.kind === "reenquiry" ? "Re-enquired" : e.meta?.source === "followed-up" ? "Followed up" : "System"}</b> · <span style={{ color: R.mute }}>{e.note} · {when(e.at)}</span></div>
       </li>
     );
   }

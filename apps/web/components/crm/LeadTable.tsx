@@ -19,8 +19,9 @@ const actBtn: CSSProperties = { width: 24, height: 24, borderRadius: 8, border: 
   display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, textDecoration: "none" };
 // #, Received, Name, Contact, Assigned to (representative), Status, Amount, Guitar, Class time, Last contacted, Next follow-up, Follow-up alert, Actions
 // (sums to the table's width on a 1440 px screen; wider screens share out the extra)
-// 1106px in all = fits a 1440px screen beside the sidebar; Actions holds WhatsApp, WATI and Open (28px each)
-const COL_PX = [40, 94, 128, 112, 112, 66, 70, 64, 104, 90, 106, 110, 114];
+// 1106px in all = fits a 1440px screen beside the sidebar (it used to be 1210, which hid Follow-up alert behind Actions);
+// Actions holds WhatsApp, WATI and Open (24px each); the alert column has room for ✓ Done
+const COL_PX = [32, 88, 120, 112, 100, 56, 60, 52, 76, 88, 96, 130, 96];
 // Actions stays visible while the table scrolls sideways; its cell needs the row's own background
 const STICKY_CSS = `
   .crm-sticky{position:sticky;right:0;z-index:1;box-shadow:-8px 0 10px -8px rgba(43,33,24,.18)}
@@ -43,7 +44,7 @@ export type TableEdit = {
   codes: CodeMeta[];
   /** "Edit Leads": Amount and Guitar change in the row too (client, 16 Nov 2026); without it they are read-only */
   details: boolean;
-  patch: (l: LeadRow, p: { assigned_to?: string | null; has_guitar?: boolean | null; next_followup_at?: string; amount?: number | null; last_contacted_at?: string }) => void;
+  patch: (l: LeadRow, p: { assigned_to?: string | null; has_guitar?: boolean | null; next_followup_at?: string; amount?: number | null; last_contacted_at?: string; followed_up?: true }) => void;
   status: (l: LeadRow, code: string) => void;
 };
 const NAME_CLAMP: CSSProperties = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere", wordBreak: "break-word" };
@@ -169,7 +170,14 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                     onClick={(e) => { try { e.currentTarget.showPicker(); } catch { /* older browsers open it on focus */ } }}
                     onBlur={(e) => { const v = e.target.value; if (v && v !== (f ? istLocal(f) : "")) edit.patch(l, { next_followup_at: `${v}:00+05:30` }); }} />}
                 </td>
-                <td style={td()}>{alert ? <Tag tone={alert.tone}>{alert.tone === "gold" ? "🔔 " : ""}{alert.text}</Tag> : <span style={{ color: "#c2b39c" }}>—</span>}</td>
+                <td style={td()} onClick={alert && edit ? stop : undefined}>
+                  {alert ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                    <Tag tone={alert.tone}>{alert.tone === "gold" ? "🔔 " : ""}{alert.text}</Tag>
+                    {/* Done (client, 20 Nov 2026): followed up now; same status, the lead goes back to All leads */}
+                    {edit && <button type="button" className="crm-btn" title="Mark this follow-up done: same status, back to All leads, noted in the history"
+                      aria-label={`Follow-up done for ${l.name}`} onClick={() => edit.patch(l, { followed_up: true })}
+                      style={{ border: `1px solid ${R.good}`, background: "#e5efe0", color: R.good, borderRadius: 6, padding: "1px 6px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓ Done</button>}
+                  </span> : <span style={{ color: "#c2b39c" }}>—</span>}</td>
                 <td className="crm-sticky" style={td({ whiteSpace: "nowrap" })} onClick={(e) => e.stopPropagation()}>
                   <span style={{ display: "inline-flex", gap: 4 }}>
                     <a className="crm-btn" style={{ ...actBtn, color: "#1fa855" }} href={`https://wa.me/91${l.phone10}`} target="_blank" rel="noopener noreferrer"

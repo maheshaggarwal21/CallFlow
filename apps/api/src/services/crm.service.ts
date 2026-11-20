@@ -350,6 +350,8 @@ export const leadPatchSchema = z.object({
   next_followup_at: z.string().datetime({ offset: true }).optional(),
   amount: z.number().min(0).max(100000).nullable().optional(),   // 0 = Free
   last_contacted_at: z.string().datetime({ offset: true }).optional(),
+  /** "Done" beside a due follow-up (client, 20 Nov 2026): same status, no follow-up date any more, back to All leads */
+  followed_up: z.literal(true).optional(),
 }).refine((p) => Object.keys(p).some((k) => k !== "version" && p[k as keyof typeof p] !== undefined), "Nothing to change");
 export type LeadPatch = z.infer<typeof leadPatchSchema>;
 
@@ -362,7 +364,7 @@ export async function updateLeadFields(leadId: string, user: User, p: LeadPatch,
   try {
     await client.query("BEGIN");
     const { rows: [lead] } = await client.query(
-      `SELECT l.status, l.version, l.locked_by, l.locked_until, u.name AS updated_by_name, k.name AS locked_by_name
+      `SELECT l.status, l.current_code, l.version, l.locked_by, l.locked_until, u.name AS updated_by_name, k.name AS locked_by_name
        FROM leads l LEFT JOIN employees u ON u.id = l.updated_by LEFT JOIN employees k ON k.id = l.locked_by
        WHERE l.id = $1 FOR UPDATE OF l`,
       [leadId]
@@ -381,6 +383,14 @@ export async function updateLeadFields(leadId: string, user: User, p: LeadPatch,
     const set = (col: string, v: unknown) => { values.push(v); sets.push(`${col} = $${values.length}`); };
     const details = [p.name, p.phone, p.email, p.preferred_class_time, p.has_guitar, p.amount].some((v) => v !== undefined);
     if (details && !canEditLeads(user)) throw new CrmError(403, "Only someone with Edit Leads can change these details");
+    if (p.followed_up) {
+      if (!["retry", "callback"].includes(lead.status)) throw new CrmError(400, "Only a lead with a follow-up can be marked done");
+      if (p.next_followup_at !== undefined) throw new CrmError(400, "Mark it done or set a new follow-up, not both");
+      set("next_followup_at", null);
+      set("last_contacted_at", now);
+      // the history line shows "Followed up · Status D kept · <date and time of the click>"
+      notes.push(lead.current_code ? `Status ${lead.current_code} kept` : "Status kept");
+    }
     if (p.name !== undefined) { set("name", p.name); notes.push(`Name: ${p.name}`); }
     if (p.phone !== undefined) {
       const p10 = phone10(p.phone);
@@ -427,8 +437,9 @@ export async function updateLeadFields(leadId: string, user: User, p: LeadPatch,
       [...values, user.sub]
     );
     await client.query(
-      "INSERT INTO lead_interactions (lead_id, employee_id, kind, note) VALUES ($1, $2, 'system', $3)",
-      [leadId, user.sub, `Edited: ${notes.join(" · ")}`]
+      "INSERT INTO lead_interactions (lead_id, employee_id, kind, note, meta) VALUES ($1, $2, 'system', $3, $4)",
+      [leadId, user.sub, p.followed_up ? notes.join(" · ") : `Edited: ${notes.join(" · ")}`,
+       p.followed_up ? JSON.stringify({ source: "followed-up" }) : null]
     );
     await client.query("COMMIT");
     return { version: saved.version };
