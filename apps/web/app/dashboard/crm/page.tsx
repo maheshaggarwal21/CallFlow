@@ -147,7 +147,9 @@ function LeadsBoard() {
     <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 14 }}>
       <style>{CRM_CSS + RANGE_CSS}</style>
       {/* Slim band (client, 8 Nov): title and the four numbers on one line */}
-      <section style={{ background: "linear-gradient(160deg,#3b2a1e,#5a4231 75%,#6f4f35)", color: "#fff", borderRadius: 12, padding: "8px 14px",
+      {/* stays on screen under the top bar while the page scrolls (client, 20 Nov 2026) */}
+      <section style={{ position: "sticky", top: 52, zIndex: 20, boxShadow: "0 6px 14px -8px rgba(43,33,24,.45)",
+        background: "linear-gradient(160deg,#3b2a1e,#5a4231 75%,#6f4f35)", color: "#fff", borderRadius: 12, padding: "8px 14px",
         display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Leads</h1>
         {([["Total", data?.kpis.total, "#fff"], ["New", data?.kpis.new_leads, "#fff"], ["Due today", data?.kpis.due_today, "#fff"], ["Converted", data?.kpis.converted, "#a9d39b"]] as const).map(([label, v, c]) => (
@@ -162,15 +164,11 @@ function LeadsBoard() {
 
       {toast && <div role="status" style={{ background: toast.startsWith("!") ? "#f8e3df" : "#e5efe0", color: toast.startsWith("!") ? R.bad : R.good, borderRadius: 12, padding: "10px 14px", fontWeight: 600, fontSize: 13.5 }}>{toast}</div>}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start", background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: 10 }}>
-        <span style={{ display: "grid", gap: 6, flex: "2 1 220px" }}>
-          <label style={filterLabel}>Search
-            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && setF((x) => ({ ...x, q }))} placeholder="Name or contact…" style={sel("1")} /></label>
-          {/* small, under Search (client, 20 Nov 2026): how many leads one page of All leads shows; the filters stay on one line */}
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: R.mute }}>Leads per page
-            <select value={size} onChange={(e) => setSize(Number(e.target.value))} style={{ ...inputStyle, width: "auto", padding: "3px 6px", fontSize: 12 }}>
-              {[50, 100, 150, 200, 250, 300].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
-        </span>
+      {/* Two lines (client, 20 Nov 2026): the filters, then a small Leads per page under Search with the buttons on its right */}
+      <div style={{ display: "grid", gap: 6, background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: 10 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
+        <label style={{ ...filterLabel, flex: "2 1 220px" }}>Search
+          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && setF((x) => ({ ...x, q }))} placeholder="Name or contact…" style={sel("1")} /></label>
         <label style={{ ...filterLabel, flex: "1 1 130px" }}>Lead status
           <select value={statusValue} onChange={(e) => setStatus(e.target.value)} style={sel("1")}>
             <option value="">All statuses</option><option value="s:new">New</option>
@@ -196,15 +194,19 @@ function LeadsBoard() {
               </span>
             ))}
           </span></div>
-        {/* After the filters (client, 8 Nov). Filters apply as you type or pick; Search / Enter applies the text at once */}
-        {/* an empty label line keeps the buttons level with the boxes, as before */}
-        <span style={{ ...filterLabel, marginLeft: "auto" }}><span aria-hidden>&nbsp;</span>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: R.mute }}>Leads per page
+          <select value={size} onChange={(e) => setSize(Number(e.target.value))} style={{ ...inputStyle, width: "auto", padding: "3px 6px", fontSize: 12 }}>
+            {[50, 100, 150, 200, 250, 300].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+        {/* Filters apply as you type or pick; Search / Enter applies the text at once */}
         <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Btn onClick={() => setF((x) => ({ ...x, q }))} title="Apply the search now">Search</Btn>
           <Btn kind="ghost" onClick={clearFilters} title="Clear every filter">Clear</Btn>
           {can("export_leads") && <Btn kind="good" onClick={exportCsv} disabled={exporting} title="Download exactly the leads these filters show (CSV)">
             {exporting ? "Downloading…" : "⇩ Download"}</Btn>}
-        </span></span>
+        </span>
+      </div>
       </div>
 
       {next && (
