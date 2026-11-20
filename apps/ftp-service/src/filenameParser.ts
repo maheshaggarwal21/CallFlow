@@ -19,10 +19,19 @@ const DT_FRAG = "20\\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\\d|3[01])\\d{6}";
 // the PBX emits `03--B----20260730144854-Unknown.wav` when caller ID is withheld.
 // Those still carry a valid timestamp, so they must parse (a `\d+` here sent them
 // down the partialParse path, which stamped called_at with the *ingest* time).
+//
+// Since 20 Nov 2026 the client sets his own line number per channel, written between the dashes:
+//   {pbx line}-{his line}-B-…   office 1: 01-01 … 04-04 · office 2: 01-05 … 04-08
+// Calls go by HIS line (client, 20 Nov 2026); the PBX line is ignored. Old `03--B-…` keeps the PBX line.
 const MAIN_RE = new RegExp(
-  "^(\\d{2})--([AB])-(\\d*)---(" + DT_FRAG + ")-(.+)\\.wav$",
+  "^(\\d{2})-(\\d*)-([AB])-(\\d*)---(" + DT_FRAG + ")-(.+)\\.wav$",
   "i"
 );
+
+/** The client's own line when the filename has one, else the PBX line; always 2+ digits like `lines.line_number`. */
+export function lineOf(pbxLine: string, ownLine: string): string {
+  return (ownLine || pbxLine).padStart(2, "0");
+}
 
 function buildCalledAt(ts: string): Date | null {
   if (!/^\d{14}$/.test(ts)) return null;
@@ -58,7 +67,8 @@ export function parseFilename(filename: string): ParsedFilename | null {
   const m = filename.match(MAIN_RE);
   if (!m) return null;
 
-  const [, line, dir, phoneRaw, ts] = m;
+  const [, pbxLine, ownLine, dir, phoneRaw, ts] = m;
+  const line = lineOf(pbxLine, ownLine);
 
   const calledAt = buildCalledAt(ts);
   if (!calledAt) return null;

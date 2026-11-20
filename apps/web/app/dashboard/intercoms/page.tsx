@@ -10,7 +10,9 @@ import AssignIntercomModal from "@/components/modals/AssignIntercomModal";
 import SwapLinesModal from "@/components/modals/SwapLinesModal";
 import type { Intercom, Line } from "@callflow/shared-types";
 
-const COLS = "90px minmax(130px,1fr) 80px minmax(160px,1.3fr) minmax(130px,1fr) 90px";
+const COLS = "90px minmax(130px,1fr) 60px 60px minmax(160px,1.3fr) minmax(130px,1fr) 90px";
+// Office of a line (client, 20 Nov 2026): his lines 01–04 are office/team 1, 05–08 office/team 2
+const officeOf = (line: string | null) => { const n = Number(line); return n >= 1 && n <= 4 ? 1 : n >= 5 && n <= 8 ? 2 : null; };
 
 export default function IntercomsPage() {
   const { data: intercoms, isLoading } = useSWR<Intercom[]>("/intercoms", fetcher);
@@ -56,9 +58,9 @@ export default function IntercomsPage() {
 
       {isLoading ? <p style={{ color: C.muted, fontSize: 14 }}>Loading…</p> : (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflowX: "auto" }}>
-          <div style={{ minWidth: 760 }}>
+          <div style={{ minWidth: 820 }}>
             <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 12, padding: "12px 20px", background: C.bgDeep, borderBottom: `1px solid ${C.border}` }}>
-              {["Intercom", "Calling Number", "Line", "Person", "Calls Today", ""].map((h, i) => (
+              {["Intercom", "Calling Number", "Line", "Office", "Person", "Calls Today", ""].map((h, i) => (
                 <span key={i} style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.9 }}>{h}</span>
               ))}
             </div>
@@ -73,6 +75,7 @@ export default function IntercomsPage() {
                     {ic.intercom_code}</span>
                   <span style={{ fontSize: 14, color: ic.phone_number ? C.text : C.dim }}>{ic.phone_number ?? "—"}</span>
                   <span style={{ fontSize: 14, fontWeight: 700, color: line ? C.text : C.dim }}>{ic.line_number ?? "—"}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: officeOf(ic.line_number) ? C.text : C.dim }}>{officeOf(ic.line_number) ?? "—"}</span>
                   <span style={{ minWidth: 0 }}>
                     {line?.employee_name
                       ? <><span style={{ display: "block", fontSize: 14, fontWeight: 700, color: C.text }}>{line.employee_name}</span>

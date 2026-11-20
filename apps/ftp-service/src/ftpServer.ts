@@ -3,7 +3,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
 import { parseFile } from "music-metadata";
-import { parseFilename, extractCalledAt } from "./filenameParser";
+import { parseFilename, extractCalledAt, lineOf } from "./filenameParser";
 import pool from "./db/pool";
 import { uploadAudioObject } from "./services/storage";
 import { AudioFormat, AUDIO_FORMATS, transcode, checkFfmpeg } from "./transcode";
@@ -134,10 +134,10 @@ async function insertCall(data: {
 
 // Best-effort line/direction extraction when full parsing fails
 function partialParse(fileName: string): { lineNumber: string; direction: "inbound" | "outbound" } {
-  const lineMatch = fileName.match(/^(\d{2})--/);
-  const dirMatch  = fileName.match(/--([AB])-/i);
+  const lineMatch = fileName.match(/^(\d{2})-(\d*)-/);
+  const dirMatch  = fileName.match(/^\d{2}-\d*-([AB])-/i);
   return {
-    lineNumber: lineMatch?.[1] ?? "00",
+    lineNumber: lineMatch ? lineOf(lineMatch[1], lineMatch[2]) : "00",
     direction:  dirMatch?.[1]?.toUpperCase() === "A" ? "inbound" : "outbound",
   };
 }
