@@ -18,14 +18,15 @@ export type SortState = { sort: string; dir: "asc" | "desc" };
 export const ActiveLead = createContext<{ id: string | null; set: (id: string) => void }>({ id: null, set: () => {} });
 
 const IST = "Asia/Kolkata";
-const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short", year: "numeric" });
+// 20/11/2026 above, 16:41:18 below (client, 20 Nov 2026)
+const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "2-digit", year: "numeric" });
 const actBtn: CSSProperties = { width: 24, height: 24, borderRadius: 8, border: `1px solid ${R.line}`, background: R.card, color: R.ink,
   display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, textDecoration: "none" };
 // #, Received, Name, Contact, Assigned to (representative), Status, Amount, Guitar, Class time, Last contacted, Next follow-up, Follow-up alert, Actions
 // (sums to the table's width on a 1440 px screen; wider screens share out the extra)
 // 1106px in all = fits a 1440px screen beside the sidebar (it used to be 1210, which hid Follow-up alert behind Actions);
 // Actions holds WhatsApp, WATI and Open (24px each); the alert column has room for ✓ Done
-const COL_PX = [48, 88, 120, 112, 96, 56, 56, 48, 72, 88, 96, 130, 96];
+const COL_PX = [48, 84, 136, 112, 96, 56, 56, 48, 72, 84, 88, 130, 96];
 // Actions stays visible while the table scrolls sideways; its cell needs the row's own background
 const STICKY_CSS = `
   .crm-sticky{position:sticky;right:0;z-index:1;box-shadow:-8px 0 10px -8px rgba(43,33,24,.18)}
@@ -54,7 +55,7 @@ export type TableEdit = {
   status: (l: LeadRow, code: string) => void;
 };
 const NAME_CLAMP: CSSProperties = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere", wordBreak: "break-word" };
-const time = (d: string) => new Date(d).toLocaleTimeString("en-US", { timeZone: IST, hour: "2-digit", minute: "2-digit", hour12: true });
+const time = (d: string) => new Date(d).toLocaleTimeString("en-GB", { timeZone: IST, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 
 /** Callbacks: "Due in 5 min" / "Due now" (blinks) or "Overdue"; no-contact retries whose wait is over: "Retry due". */
 export function followUpAlert(l: LeadRow, now: number): { text: string; tone: "gold" | "bad" | "neu" } | null {
