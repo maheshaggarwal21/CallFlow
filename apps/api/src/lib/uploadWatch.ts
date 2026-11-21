@@ -1,6 +1,11 @@
 // Silent-office alert (client, 21 Nov 2026): Office 2's KoreCall stopped uploading at 09:44 and nobody knew until 15:35.
 // Office 1 = lines 01–04, Office 2 = lines 05–08 (the client's own lines). Checked 09:00–18:00 IST on working days.
 export const OFFICE_LINES = { 1: ["01", "02", "03", "04"], 2: ["05", "06", "07", "08"] } as const;
+/** Which office's KoreCall made a file: "{pbx}-{own line}-…" goes by the own line, the old "{pbx}--…" is Office 1. */
+export function officeOfFile(key: string): 1 | 2 {
+  const m = key.split("/").pop()!.match(/^(\d{2})-(\d*)-/);
+  return m && Number(m[2] || m[1]) >= 5 ? 2 : 1;
+}
 export const WATCH_FROM = "09:00";
 export const WATCH_TO = "18:00";
 const MIN = 60_000;

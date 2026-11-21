@@ -48,6 +48,7 @@ import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import * as fs from "fs";
 import * as path from "path";
 import pool from "./db/pool";
+import { officeOfFile } from "./lib/uploadWatch";
 
 // A healthy upload lands ~35s after the call starts; subtract it so the
 // corrected time is the call START, not the upload.
@@ -238,7 +239,14 @@ async function main() {
   const recs = await listRecordings(s3, sinceDays);
   log(`  ${recs.length} recordings in window`);
 
-  const { kept, rejected } = findDriftSegments(recs, minSegment);
+  // Each office has its own KoreCall and its own clock (Office 2 since 20 Nov 2026): one box's healthy uploads
+  // between the other's drifted ones would cut the drifted run into pieces too small to trust, so look per box.
+  const kept: Segment[] = [], rejected: Segment[] = [];
+  for (const office of [1, 2] as const) {
+    const r = findDriftSegments(recs.filter((x) => officeOfFile(x.sourceKey) === office), minSegment);
+    kept.push(...r.kept); rejected.push(...r.rejected);
+  }
+  kept.sort((a, b) => +a.items[0].uploadedAt - +b.items[0].uploadedAt);
   const affected = kept.reduce((n, s) => n + s.items.length, 0);
 
   // Informational, not actionable — a stuck singleton would otherwise re-warn on

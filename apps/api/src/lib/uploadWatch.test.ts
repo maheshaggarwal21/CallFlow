@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decide } from "./uploadWatch";
+import { decide, officeOfFile } from "./uploadWatch";
 
 const M = 60_000;
 const start = Date.parse("2026-11-21T09:00:00+05:30");
@@ -24,4 +24,12 @@ test("the night doesn't count: quiet time starts at 09:00", () => {
   assert.deepEqual(decide(at("09:19"), start, at("09:18"), at("08:00") - 13 * 60 * M, {}), []);
   assert.deepEqual(decide(at("09:20"), start, at("09:18"), null, {}), [{ kind: "silent", who: "2", since: start }]);
   assert.deepEqual(decide(at("09:29"), start, null, null, {}), []);
+});
+
+test("a file's office: the own line between the dashes, else the PBX line", () => {
+  assert.equal(officeOfFile("202611/20261121/03-07-B-09465658112---20261121153539-Unknown.wav"), 2);
+  assert.equal(officeOfFile("01-05-A-0919465658112---20261120145515-Unknown.wav"), 2);
+  assert.equal(officeOfFile("04-08-B----20261121154434-Unknown.wav"), 2);
+  assert.equal(officeOfFile("04-04-B-09666727211---20261120133619-Unknown.wav"), 1);
+  assert.equal(officeOfFile("03--B-09465658112---20261119165643-Unknown.wav"), 1);
 });
