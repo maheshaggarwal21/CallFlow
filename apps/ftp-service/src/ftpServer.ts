@@ -7,6 +7,7 @@ import { parseFilename, extractCalledAt, lineOf } from "./filenameParser";
 import pool from "./db/pool";
 import { uploadAudioObject } from "./services/storage";
 import { AudioFormat, AUDIO_FORMATS, transcode, checkFfmpeg } from "./transcode";
+import { dropHungConnections } from "./hungSessions";
 
 const FTP_ROOT = path.join(os.tmpdir(), "korecall_ftp");
 if (!fs.existsSync(FTP_ROOT)) {
@@ -298,6 +299,8 @@ export function startFtpServer() {
       reject(new Error("Invalid credentials"));
     }
   });
+
+  dropHungConnections(ftpServer);
 
   ftpServer.listen().then(() => {
     console.log(`📡 FTP server listening on port ${port} and saving temp files to ${FTP_ROOT}`);
