@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requirePermission } from "../middleware/requirePermission";
-import { IST_TODAY_START } from "../lib/dateRange";
+import { IST_TODAY_START, IST_TZ } from "../lib/dateRange";
 
 const router = Router();
 
@@ -18,6 +18,11 @@ const bad = (res: any, status: number, message: string) => res.status(status).js
 
 router.use(requireAuth);
 
+// Where a line's "no agent" calls start: when it was freed, or for a line that never had anyone (Office 2's new lines,
+// 21 Nov 2026) the start of this IST month, so months-old calls from the old PBX's numbering are never handed out
+const GAP_FROM = (l: string) =>
+  `COALESCE(${l}.freed_at, date_trunc('month', now() AT TIME ZONE '${IST_TZ}') AT TIME ZONE '${IST_TZ}')`;
+
 router.get("/", async (_req, res) => {
   const result = await pool.query(
     "SELECT l.id, l.line_number, l.employee_id, l.purpose, l.assigned_at, l.freed_at, " +
@@ -25,9 +30,10 @@ router.get("/", async (_req, res) => {
       "COALESCE(c.cnt, 0) AS call_count_today, COALESCE(g.n, 0) AS gap_calls " +
     "FROM lines l " +
     "LEFT JOIN employees e ON e.id = l.employee_id " +
-    // calls that came in on this line with no agent since it was freed: they count for nobody until given to someone
-    "LEFT JOIN LATERAL (SELECT COUNT(*) AS n FROM calls g WHERE l.freed_at IS NOT NULL AND g.line_number = l.line_number " +
-      "AND g.employee_id IS NULL AND g.called_at >= l.freed_at) g ON TRUE " +
+    // calls that came in on this line with no agent since it was freed (or this month, for a line that never had anyone):
+    // they count for nobody until given to someone
+    "LEFT JOIN LATERAL (SELECT COUNT(*) AS n FROM calls g WHERE g.line_number = l.line_number " +
+      `AND g.employee_id IS NULL AND g.called_at >= ${GAP_FROM("l")}) g ON TRUE ` +
     "LEFT JOIN ( " +
       "SELECT line_number, COUNT(*) AS cnt " +
       "FROM calls " +
@@ -87,10 +93,10 @@ router.patch("/:id", requirePermission("intercoms"), async (req, res) => {
       `UPDATE lines SET ${fields.join(", ")} WHERE id = $${values.length} RETURNING id, line_number, employee_id, purpose, assigned_at, freed_at`, values);
 
     let claimed = 0;
-    if (u.claim_gap && u.employee_id && row.freed_at) {
+    if (u.claim_gap && u.employee_id) {
       claimed = (await client.query(
-        "UPDATE calls SET employee_id = $1 WHERE line_number = $2 AND employee_id IS NULL AND called_at >= $3",
-        [u.employee_id, row.line_number, row.freed_at])).rowCount ?? 0;
+        `UPDATE calls c SET employee_id = $1 FROM lines l WHERE l.id = $3 AND c.line_number = $2 AND c.employee_id IS NULL AND c.called_at >= ${GAP_FROM("l")}`,
+        [u.employee_id, row.line_number, row.id])).rowCount ?? 0;
     }
     await client.query("COMMIT");
     return res.json({ ...row, claimed });

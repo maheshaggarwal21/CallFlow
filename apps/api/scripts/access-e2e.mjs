@@ -343,6 +343,15 @@ ok((await call(owner, "POST", `/crm/leads/${lead.id}/whatsapp`, { template: "10_
   ok(give.status === 200 && give.data.claimed === 2, "giving the free line to an agent can give her the gap calls", JSON.stringify(give.data));
   ok((await pool.query("SELECT COUNT(*)::int n FROM calls WHERE source_file_key LIKE $1 AND employee_id = $2", [`e2e/${stamp}/%`, ua.id])).rows[0].n === 2 && (await lineOf("97")).gap_calls === 0, "…and the warning count goes to 0");
 
+  // a line that never had anyone (Office 2's new lines, 21 Nov 2026): only this month's no-agent calls, never older ones
+  L["96"] = (await pool.query("INSERT INTO lines (line_number) VALUES ('96') ON CONFLICT (line_number) DO UPDATE SET employee_id = NULL, freed_at = NULL RETURNING id")).rows[0].id;
+  await pool.query("INSERT INTO calls (source_file_key, line_number, called_at, duration_secs, call_direction, caller_phone) VALUES ($1, '96', NOW(), 30, 'outbound', '9876500003'), ($2, '96', NOW() - INTERVAL '40 days', 30, 'outbound', '9876500004')",
+    [`e2e/${stamp}/n1.wav`, `e2e/${stamp}/n2.wav`]);
+  ok((await lineOf("96")).gap_calls === 1, "a never-used line counts only this month's no-agent calls", String((await lineOf("96")).gap_calls));
+  const giveNew = await call(owner, "PATCH", `/lines/${L["96"]}`, { employee_id: other.id, claim_gap: true });
+  const n2 = (await pool.query("SELECT employee_id FROM calls WHERE source_file_key = $1", [`e2e/${stamp}/n2.wav`])).rows[0];
+  ok(giveNew.status === 200 && giveNew.data.claimed === 1 && n2.employee_id === null, "…and giving it to someone hands over this month's only (last month's stays on nobody)", JSON.stringify(giveNew.data && { s: giveNew.status, c: giveNew.data.claimed }));
+
   await pool.query("DELETE FROM calls WHERE source_file_key LIKE $1", [`e2e/${stamp}/%`]);
   await pool.query("DELETE FROM lines WHERE id = ANY($1)", [Object.values(L)]);
   await pool.query("DELETE FROM employees WHERE id = ANY($1)", [[ua.id, ub.id, adminU.id, other.id]]);

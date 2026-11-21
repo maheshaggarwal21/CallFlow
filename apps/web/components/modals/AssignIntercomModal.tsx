@@ -144,7 +144,7 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
             {gap > 0 && lineRow && (agent !== "" || lineRow.employee_id) && (
               <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, padding: "10px 12px", background: C.orangeLight, border: `1px solid ${C.orangeBdr}`, borderRadius: 10, fontSize: 12.5, color: C.text, cursor: "pointer" }}>
                 <input type="checkbox" checked={claim} onChange={(e) => setClaim(e.target.checked)} style={{ marginTop: 2, accentColor: C.orange }} />
-                <span>Also give them the <b>{gap} call{gap === 1 ? "" : "s"}</b> that came in on line {line} with no agent{lineRow.freed_at ? ` since ${new Date(lineRow.freed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}. Until then they count for nobody.</span>
+                <span>Also give them the <b>{gap} call{gap === 1 ? "" : "s"}</b> that came in on line {line} with no agent{lineRow.freed_at ? ` since ${new Date(lineRow.freed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : " this month"}. Until then they count for nobody.</span>
               </label>
             )}
           </div>

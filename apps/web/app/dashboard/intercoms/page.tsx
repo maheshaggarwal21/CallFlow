@@ -51,7 +51,7 @@ export default function IntercomsPage() {
         <div role="status" style={{ padding: "12px 16px", background: C.orangeLight, border: `1px solid ${C.orangeBdr}`, borderRadius: 12, fontSize: 13.5, color: C.text }}>
           {gaps.map((l) => (
             <div key={l.id}>⚠ <b>Line {l.line_number}</b>: {l.gap_calls} call{l.gap_calls === 1 ? "" : "s"}
-              {l.freed_at ? ` since ${new Date(l.freed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""} have no agent, so they count for nobody.</div>
+              {l.freed_at ? ` since ${new Date(l.freed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : " this month"} have no agent, so they count for nobody.</div>
           ))}
           <div style={{ marginTop: 4, color: C.textSub }}>Edit an intercom, pick that line and its agent, and tick the box to give them those calls.</div>
         </div>
