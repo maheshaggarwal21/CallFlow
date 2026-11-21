@@ -10,7 +10,7 @@ import { R } from "@/components/report/kit";
 import { api, fetcher } from "@/lib/api";
 import { CODE_LETTERS, codeList, type Code, type CodeMeta, type CodeSetting, type CrmConfig } from "@/lib/crm";
 import { useCrmMe } from "@/hooks/useCrmMe";
-import ColorPalette from "@/components/crm/ColorPalette";
+import ColorPalette, { ColorChip } from "@/components/crm/ColorPalette";
 import { Btn, CRM_CSS, HeaderBand, NoAccess, inputStyle, tdStyle, thStyle } from "@/components/crm/kit";
 
 type Settings = { values: Record<string, any> };
@@ -68,10 +68,10 @@ function Statuses({ codes, onSaved }: { codes: Record<Code, CodeSetting>; onSave
     <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px", flex: "1 1 460px", minWidth: 0 }}>
       <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Statuses</h3>
       <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>
-        The codes from the lead sheet. Name each one and pick its colour from the Palette: the code is shown in that colour on the Leads tab. Add a new one with + Add status.</p>
+        The codes from the lead sheet. Name each one and pick its colour with the palette button: the code is shown in that colour on the Leads tab. Add a new one with + Add status.</p>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: 13.5 }}>
-          <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>Colour</th></tr></thead>
+          <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={{ ...thStyle, textAlign: "center" }}>Colour</th></tr></thead>
           <tbody>
             {v.map((c, i) => (
               <tr key={c.code}>
@@ -80,10 +80,10 @@ function Statuses({ codes, onSaved }: { codes: Record<Code, CodeSetting>; onSave
                     ? <select aria-label="Letter of the new status" value={c.code} onChange={(e) => set(i, { code: e.target.value })} style={{ ...inputStyle, width: 64, fontWeight: 800 }}>
                         {[c.code, ...free].sort().map((l) => <option key={l} value={l}>{l}</option>)}
                       </select>
-                    : c.code}
+                    : <ColorChip color={c.color}>{c.code}</ColorChip>}
                 </td>
                 <td style={tdStyle}><input aria-label={`Name of code ${c.code}`} value={c.label} maxLength={40} onChange={(e) => set(i, { label: e.target.value })} style={{ ...inputStyle, width: 220 }} /></td>
-                <td style={tdStyle}>
+                <td style={{ ...tdStyle, textAlign: "center" }}>
                   <span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
                     <ColorPalette code={c.code} value={c.color} onSelect={(color) => set(i, { color })} />
                     {isNew(c.code) && <button type="button" aria-label={`Remove new status ${c.code}`} onClick={() => setV(v.filter((_, j) => j !== i))}
@@ -132,16 +132,16 @@ function PayStatuses({ codes, onSaved }: { codes: Record<string, { label: string
     <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px", flex: "1 1 460px", minWidth: 0 }}>
       <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Payment statuses</h3>
       <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>
-        The codes on the Payments tab. Name each one and pick its colour from the Palette. Every payment starts on 1. Add a new one with + Add status.</p>
+        The codes on the Payments tab. Name each one and pick its colour with the palette button. Every payment starts on 1. Add a new one with + Add status.</p>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: 13.5 }}>
-          <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>Colour</th></tr></thead>
+          <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={{ ...thStyle, textAlign: "center" }}>Colour</th></tr></thead>
           <tbody>
             {v.map((c, i) => (
               <tr key={c.code}>
-                <td style={{ ...tdStyle, fontWeight: 800, fontSize: 15 }}>{c.code}</td>
+                <td style={tdStyle}><ColorChip color={c.color}>{c.code}</ColorChip></td>
                 <td style={tdStyle}><input aria-label={`Name of payment status ${c.code}`} value={c.label} maxLength={40} onChange={(e) => set(i, { label: e.target.value })} style={{ ...inputStyle, width: 220 }} /></td>
-                <td style={tdStyle}>
+                <td style={{ ...tdStyle, textAlign: "center" }}>
                   <span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
                     <ColorPalette code={c.code} value={c.color} onSelect={(color) => set(i, { color })} />
                     {isNew(c.code) && <button type="button" aria-label={`Remove new payment status ${c.code}`} onClick={() => setV(v.filter((_, j) => j !== i))}
@@ -188,17 +188,17 @@ function UserColors() {
     <section style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "16px 18px", minWidth: 0 }}>
       <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>User colours</h3>
       <p style={{ margin: "2px 0 12px", fontSize: 12, color: R.mute }}>
-        Pick a colour for each user from the Palette: their name is shown in that colour on the Recordings and Leads tabs.</p>
+        Pick a colour for each user with the palette button: their name is shown in that colour on the Recordings and Leads tabs.</p>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: 13.5 }}>
-          <thead><tr><th style={thStyle}>User</th><th style={thStyle}>Colour</th></tr></thead>
+          <thead><tr><th style={thStyle}>User</th><th style={{ ...thStyle, textAlign: "center" }}>Colour</th></tr></thead>
           <tbody>
             {cfg.reps.map((r) => {
               const color = r.id in v ? v[r.id] : r.color ?? null;
               return (
                 <tr key={r.id}>
                   <td style={{ ...tdStyle, fontWeight: 700, color: color ?? R.ink, minWidth: 180 }}>{r.name}</td>
-                  <td style={tdStyle}><ColorPalette code={r.name.split(" ")[0]} value={color ?? undefined} onSelect={(c) => setV({ ...v, [r.id]: c ?? null })} /></td>
+                  <td style={{ ...tdStyle, textAlign: "center" }}><ColorPalette code={r.name} value={color ?? undefined} onSelect={(c) => setV({ ...v, [r.id]: c ?? null })} /></td>
                 </tr>
               );
             })}

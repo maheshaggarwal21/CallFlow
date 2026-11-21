@@ -15,6 +15,12 @@ const GRID = [
   ["#e2c6a8", "#b98557", "#8a5a2b", "#5e3c1c"], ["#d1d5db", "#9ca3af", "#6b7280", "#374151"],
 ];
 const W = 300;
+const RAINBOW = "conic-gradient(#d64545,#e0a800,#2f9e5b,#0f9d94,#2f6fd6,#7b4fd0,#d6478f,#d64545)";
+
+const chip = (c: string | undefined): CSSProperties => ({ display: "inline-grid", placeItems: "center", minWidth: 30, height: 30, padding: "0 6px", borderRadius: 7,
+  fontWeight: 800, fontSize: 15, background: c ?? "#ece7df", color: c ? inkOn(c) : R.mute });
+/** A code in its colour, for the Code column beside the palette button */
+export const ColorChip = ({ color, children }: { color?: string; children: React.ReactNode }) => <span style={chip(color)}>{children}</span>;
 
 export default function ColorPalette({ code, value, onSelect }: { code: string; value?: string; onSelect: (color: string | undefined) => void }) {
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
@@ -46,20 +52,16 @@ export default function ColorPalette({ code, value, onSelect }: { code: string; 
     };
   }, [at]);
 
-  const chip = (c: string | undefined): CSSProperties => ({ display: "inline-grid", placeItems: "center", minWidth: 30, height: 30, padding: "0 6px", borderRadius: 7,
-    fontWeight: 800, fontSize: 15, background: c ?? "#ece7df", color: c ? inkOn(c) : R.mute });
-
   return (
     <>
-      <button ref={btn} type="button" onClick={() => (at ? close() : open())} aria-haspopup="dialog" aria-expanded={!!at} aria-label={`Colour of code ${code}`}
-        style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "5px 12px 5px 6px", borderRadius: 10, border: `1px solid ${at ? R.out : R.line}`,
-          background: "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: R.ink }}>
-        <span style={chip(value)}>{code}</span>
-        <span aria-hidden style={{ width: 16, height: 16, borderRadius: 5, background: "conic-gradient(#d64545,#e0a800,#2f9e5b,#0f9d94,#2f6fd6,#7b4fd0,#d6478f,#d64545)" }} />
-        Palette
+      {/* the palette icon only (client, 21 Nov 2026): the colour itself shows on the code or name beside it */}
+      <button ref={btn} type="button" onClick={() => (at ? close() : open())} aria-haspopup="dialog" aria-expanded={!!at} aria-label={`Pick a colour for ${code}`} title="Pick a colour"
+        style={{ display: "inline-grid", placeItems: "center", width: 36, height: 36, padding: 0, borderRadius: 10, border: `1px solid ${at ? R.out : R.line}`,
+          background: "#fff", cursor: "pointer", verticalAlign: "middle" }}>
+        <span aria-hidden style={{ width: 20, height: 20, borderRadius: 6, background: RAINBOW }} />
       </button>
       {at && (
-        <div ref={menu} role="dialog" aria-label={`Pick a colour for code ${code}`}
+        <div ref={menu} role="dialog" aria-label={`Colours for ${code}`}
           style={{ position: "fixed", top: at.top, left: at.left, width: W, zIndex: 50, background: "#fff", border: `1px solid ${R.line}`, borderRadius: 14,
             boxShadow: "0 18px 40px -16px rgba(43,33,24,.35)", padding: 14, display: "grid", gap: 12 }}>
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${GRID.length}, 1fr)`, gridAutoFlow: "column", gridTemplateRows: "repeat(4, auto)", gap: 5 }}>
@@ -72,7 +74,7 @@ export default function ColorPalette({ code, value, onSelect }: { code: string; 
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, border: `1px solid ${R.line}`,
               fontSize: 12.5, fontWeight: 700, color: R.ink, cursor: "pointer" }}>
-              <span aria-hidden style={{ width: 14, height: 14, borderRadius: 4, background: "conic-gradient(#d64545,#e0a800,#2f9e5b,#0f9d94,#2f6fd6,#7b4fd0,#d6478f,#d64545)" }} />
+              <span aria-hidden style={{ width: 14, height: 14, borderRadius: 4, background: RAINBOW }} />
               More colours
               {/* the browser's own picker for any shade; it only changes the draft */}
               <input type="color" aria-label="Any colour" value={draft ?? "#e8761a"} onChange={(e) => setDraft(e.target.value)}
