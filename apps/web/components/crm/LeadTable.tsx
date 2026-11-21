@@ -26,7 +26,9 @@ const actBtn: CSSProperties = { width: 24, height: 24, borderRadius: 8, border: 
 // (sums to the table's width on a 1440 px screen; wider screens share out the extra)
 // 1106px in all = fits a 1440px screen beside the sidebar (it used to be 1210, which hid Follow-up alert behind Actions);
 // Actions holds WhatsApp, WATI and Open (24px each); the alert column has room for ✓ Done
-const COL_PX = [48, 84, 136, 112, 96, 56, 56, 48, 72, 84, 88, 130, 96];
+// "9:00 am – 10:00 am" → "9am–10am" so the whole slot fits its column (client, 21 Nov 2026); the full text stays on hover
+export const shortSlot = (s: string) => s.replace(/:00(?=\s*[ap]m)/gi, "").replace(/\s+([ap]m)/gi, "$1").replace(/\s*[–-]\s*/g, "–");
+const COL_PX = [48, 84, 136, 108, 96, 52, 56, 48, 80, 84, 88, 130, 96];
 // Actions stays visible while the table scrolls sideways; its cell needs the row's own background
 const STICKY_CSS = `
   .crm-sticky{position:sticky;right:0;z-index:1;box-shadow:-8px 0 10px -8px rgba(43,33,24,.18)}
@@ -164,7 +166,7 @@ export default function LeadTable({ rows, onOpen, now, meId, sort, onSort, start
                   </select>}</td>
                 {/* the Meta form's answer, as the student picked it (client, 16 Nov 2026) */}
                 <td style={td({ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: l.preferred_class_time ? R.ink : "#c2b39c" })}
-                  title={l.preferred_class_time ?? undefined}>{l.preferred_class_time || "—"}</td>
+                  title={l.preferred_class_time ?? undefined}>{l.preferred_class_time ? shortSlot(l.preferred_class_time) : "—"}</td>
                 {/* Set automatically when a status is saved; can be corrected here (not into the future) */}
                 <td className={edit ? "crm-edit" : undefined} style={td({ fontSize: 12.5, whiteSpace: "nowrap" })} onClick={edit && stop}>
                   {l.last_contacted_at ? <>{day(l.last_contacted_at)}<div style={{ color: R.mute, fontSize: 11.5 }}>{time(l.last_contacted_at)}</div></> : "—"}

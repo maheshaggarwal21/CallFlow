@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import useSWR, { mutate as mutateAll } from "swr";
 import { R } from "@/components/report/kit";
+import { C } from "@/lib/colors";
 import { api, fetcher } from "@/lib/api";
 import { type CrmConfig, type LeadRow, type QueueResponse } from "@/lib/crm";
 import { useAuth } from "@/hooks/useAuth";
@@ -22,6 +23,8 @@ const RANGE_CSS = `.crm-range input::-webkit-calendar-picker-indicator{position:
 const IS_DEV = process.env.NODE_ENV !== "production";
 const IST = "Asia/Kolkata";
 // The follow-up bell on the Leads band (client, 20 Nov 2026): swings and its red count pulses while follow-ups are due
+// a phone has no room to pin the filters too: there everything scrolls
+const PIN_CSS = `@media (max-width:767px){.crm-pin{position:static!important}}`;
 const BELL_CSS = `@keyframes crm-ring{0%,60%,100%{transform:rotate(0)}6%,18%,30%{transform:rotate(16deg)}12%,24%,36%{transform:rotate(-16deg)}}
   @keyframes crm-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.6)}50%{box-shadow:0 0 0 6px rgba(220,38,38,0)}}
   .crm-bell-on svg{animation:crm-ring 1.8s ease-in-out infinite;transform-origin:50% 8%}
@@ -85,6 +88,13 @@ function LeadsBoard() {
   const [simulating, setSimulating] = useState(false);
   const [exporting, setExporting] = useState(false);
   const dueRef = useRef<HTMLElement>(null);
+  const pinRef = useRef<HTMLDivElement>(null);
+  // land the follow-ups (title + table headers) just under whatever the pinned band + filters measure right now
+  const toDue = () => {
+    const s = dueRef.current; if (!s) return;
+    s.style.scrollMarginTop = `${52 + (pinRef.current?.offsetHeight ?? 70) + 8}px`;
+    s.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   // Debounced search box
   useEffect(() => { const t = setTimeout(() => setF((x) => ({ ...x, q })), 300); return () => clearTimeout(t); }, [q]);
@@ -186,10 +196,12 @@ function LeadsBoard() {
   const filterLabel = { display: "grid", gap: 3, fontSize: 10.5, fontWeight: 700, color: R.mute, textTransform: "uppercase", letterSpacing: ".05em" } as const;
   return (
     <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 14 }}>
-      <style>{CRM_CSS + RANGE_CSS + BELL_CSS}</style>
+      <style>{CRM_CSS + RANGE_CSS + BELL_CSS + PIN_CSS}</style>
+      {/* The band and the filter card stay on screen under the top bar while the page scrolls (client, 20-21 Nov 2026);
+          the page colour behind them hides the rows sliding underneath */}
+      <div ref={pinRef} className="crm-pin" style={{ position: "sticky", top: 52, zIndex: 20, display: "grid", gap: 10, background: C.bg, margin: "-8px -4px 0", padding: "8px 4px 6px" }}>
       {/* Slim band (client, 8 Nov): title and the four numbers on one line */}
-      {/* stays on screen under the top bar while the page scrolls (client, 20 Nov 2026) */}
-      <section style={{ position: "sticky", top: 52, zIndex: 20, boxShadow: "0 6px 14px -8px rgba(43,33,24,.45)",
+      <section style={{ boxShadow: "0 6px 14px -8px rgba(43,33,24,.45)",
         background: "linear-gradient(160deg,#3b2a1e,#5a4231 75%,#6f4f35)", color: "#fff", borderRadius: 12, padding: "8px 14px",
         display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Leads</h1>
@@ -200,7 +212,7 @@ function LeadsBoard() {
           </span>
         ))}
         {/* due now + overdue + retries whose wait is over: the same count as "View follow-ups (N due)" */}
-        <button type="button" className={due.length ? "crm-bell-on" : undefined} onClick={() => dueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+        <button type="button" className={due.length ? "crm-bell-on" : undefined} onClick={toDue}
           title={due.length ? `${due.length} follow-up${due.length === 1 ? "" : "s"} due now or overdue` : "No follow-ups due"} aria-label={`${due.length} follow-ups due`}
           style={{ marginLeft: "auto", position: "relative", width: 38, height: 38, borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "rgba(255,255,255,.08)",
             color: due.length ? R.gold : "rgba(255,255,255,.7)", display: "inline-grid", placeItems: "center", cursor: "pointer", padding: 0 }}>
@@ -211,8 +223,6 @@ function LeadsBoard() {
         {IS_DEV && <span><Btn kind="light" onClick={simulate} disabled={simulating} title="Dev only: sends one fake lead through the intake endpoint">
           {simulating ? "Sending…" : "＋ Simulate new lead"}</Btn></span>}
       </section>
-
-      {toast && <div role="status" style={{ background: toast.startsWith("!") ? "#f8e3df" : "#e5efe0", color: toast.startsWith("!") ? R.bad : R.good, borderRadius: 12, padding: "10px 14px", fontWeight: 600, fontSize: 13.5 }}>{toast}</div>}
 
       {/* Two lines (client, 20 Nov 2026): the filters, then a small Leads per page under Search with the buttons on its right */}
       <div style={{ display: "grid", gap: 6, background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: 10 }}>
@@ -258,13 +268,16 @@ function LeadsBoard() {
         </span>
       </div>
       </div>
+      </div>
+
+      {toast && <div role="status" style={{ background: toast.startsWith("!") ? "#f8e3df" : "#e5efe0", color: toast.startsWith("!") ? R.bad : R.good, borderRadius: 12, padding: "10px 14px", fontWeight: 600, fontSize: 13.5 }}>{toast}</div>}
 
       {next && (
         <div role="status" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", background: "#fff4dc", border: `1px solid ${R.gold}`, borderRadius: 12, padding: "10px 14px", fontSize: 13.5 }}>
           <span aria-hidden style={{ fontSize: 18 }}>🔔</span>
           <span><b style={{ color: "#8a5a12" }}>{dueText(next, now)} — moved to top automatically.</b>{" "}
             {next.name || "A lead"}&apos;s follow-up is at {new Date(next.next_followup_at!).toLocaleTimeString("en-US", { timeZone: IST, hour: "2-digit", minute: "2-digit", hour12: true })}. Please call now.</span>
-          <span style={{ marginLeft: "auto" }}><Btn kind="ghost" onClick={() => dueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>View follow-ups ({due.length} due)</Btn></span>
+          <span style={{ marginLeft: "auto" }}><Btn kind="ghost" onClick={toDue}>View follow-ups ({due.length} due)</Btn></span>
         </div>
       )}
 
@@ -293,8 +306,8 @@ function Section({ title, rows, onOpen, now, meId, empty, anchor, edit }: {
 }) {
   return (
     <section ref={anchor} style={{ background: R.card, border: `1px solid ${R.line}`, borderRadius: 14, padding: "12px 14px",
-      // the bell and "View follow-ups" land with the title and table headers just under the pinned Leads band (52 px bar + band)
-      scrollMarginTop: 120 }}>
+      // the bell and "View follow-ups" set the real offset (toDue); this is the fallback
+      scrollMarginTop: 240 }}>
       <SectionTitle count={rows.length}>{title}</SectionTitle>
       <LeadTable rows={rows} onOpen={onOpen} now={now} meId={meId} empty={empty} edit={edit} />
     </section>
