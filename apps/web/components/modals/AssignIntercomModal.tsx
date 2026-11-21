@@ -27,11 +27,28 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
   const gap = lineRow?.gap_calls ?? 0;
   const [claim, setClaim] = useState(true);
   // Line and Agent are two separate choices (client, 15 Nov 2026): picking a line does not pick its person.
-  // "" = leave the line's person as it is; "none" = free the line; else the person it goes to. It starts on the
+  // "" = leave the line's person as it is; else the person it goes to (freeing is the Free line button). It starts on the
   // current person of this intercom's line so nothing looks blank, and goes back to "leave as is" when the line changes.
   const [agent,  setAgent]  = useState(() => (lines ?? []).find((l) => l.line_number === (intercom.line_number ?? ""))?.employee_id ?? "");
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
+
+  // "Free line" button (client, 21 Nov 2026; was a "No one" choice in the Agent list): takes the person off the line
+  // shown, so they can be put on another line; the line's next calls count for nobody until someone gets it
+  async function handleFree() {
+    if (!lineRow?.employee_id) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.patch(`/lines/${lineRow.id}`, { employee_id: null });
+      await Promise.all([mutate("/intercoms"), mutate("/lines")]);
+      onClose();
+    } catch (e: any) {
+      setError(e.message ?? "Failed to free the line.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleSave() {
     if (agent !== "" && !lineRow) return setError("Pick a line to put that person on.");
@@ -40,7 +57,7 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
     try {
       // the line's person gets every recording the line makes (this replaced the Lines tab, 14 Nov); done first, so a
       // refusal ("already has line 03", "switched off") leaves the intercom as it was
-      const to = agent === "none" ? null : agent !== "" ? agent : (lineRow?.employee_id ?? null);
+      const to = agent !== "" ? agent : (lineRow?.employee_id ?? null);
       const giveCalls = claim && gap > 0 && !!to;
       if (lineRow && ((agent !== "" && to !== lineRow.employee_id) || giveCalls)) {
         await api.patch(`/lines/${lineRow.id}`, { employee_id: to, ...(giveCalls ? { claim_gap: true } : {}) });
@@ -114,7 +131,6 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
               }}
             >
               <option value="">— Leave as it is —</option>
-              <option value="none">No one (free the line)</option>
               {/* a switched-off person isn't in the active list: keep them, so the picker can still show who is on the line */}
               {lineRow?.employee_id && !(people ?? []).some((p) => p.id === lineRow.employee_id) && (
                 <option value={lineRow.employee_id}>{lineRow.employee_name} (switched off)</option>
@@ -125,7 +141,7 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
               {lineRow ? (lineRow.employee_name ? `Line ${line} is with ${lineRow.employee_name} now. ` : `Line ${line} has no one now. `) : ""}
               Every call the line records goes to its agent.
             </p>
-            {gap > 0 && lineRow && (agent !== "none") && (agent !== "" || lineRow.employee_id) && (
+            {gap > 0 && lineRow && (agent !== "" || lineRow.employee_id) && (
               <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, padding: "10px 12px", background: C.orangeLight, border: `1px solid ${C.orangeBdr}`, borderRadius: 10, fontSize: 12.5, color: C.text, cursor: "pointer" }}>
                 <input type="checkbox" checked={claim} onChange={(e) => setClaim(e.target.checked)} style={{ marginTop: 2, accentColor: C.orange }} />
                 <span>Also give them the <b>{gap} call{gap === 1 ? "" : "s"}</b> that came in on line {line} with no agent{lineRow.freed_at ? ` since ${new Date(lineRow.freed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}. Until then they count for nobody.</span>
@@ -159,6 +175,20 @@ export default function AssignIntercomModal({ intercom, onClose }: Props) {
         )}
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          {lineRow?.employee_id && (
+            <button
+              onClick={handleFree}
+              disabled={saving}
+              title={`Take ${lineRow.employee_name ?? "the agent"} off line ${line}`}
+              style={{
+                marginRight: "auto", padding: "9px 14px", border: `1px solid ${C.red}`,
+                borderRadius: 10, background: "transparent",
+                color: C.red, fontWeight: 700, fontSize: 13, cursor: saving ? "not-allowed" : "pointer",
+              }}
+            >
+              Free line {line}
+            </button>
+          )}
           <button
             onClick={onClose}
             style={{
