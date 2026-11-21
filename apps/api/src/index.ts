@@ -20,6 +20,7 @@ import devRoutes from "./routes/dev.routes";
 import crmRoutes from "./routes/crm.routes";
 import { DEV_UPLOADS_DIR } from "./services/storage.service";
 import { startReportScheduler } from "./services/report.service";
+import { startUploadWatch } from "./services/uploadWatch.service";
 import { startDayCloser } from "./services/pay.service";
 import payRoutes from "./routes/pay.routes";
 
@@ -120,4 +121,6 @@ app.listen(port, () => {
   startReportScheduler();
   // daily salary: save each day's targets just after it ends (production only; tests close days on request)
   if (process.env.NODE_ENV === "production") startDayCloser();
+  // mails when an office's KoreCall stops sending recordings (client, 21 Nov 2026)
+  if (process.env.NODE_ENV === "production") startUploadWatch();
 });
