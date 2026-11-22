@@ -5,6 +5,7 @@ import { requireAuth } from "../middleware/auth";
 import { requirePermission } from "../middleware/requirePermission";
 import { getSetting } from "../services/crm.service";
 import { paymentsConfigured, paymentsFor, PaymentsError, type Payment } from "../services/payments.service";
+import { byPaidThenEntered } from "../lib/paymentOrder";
 
 // Payments tab (client, 14 Nov 2026): the school site's payments, read only. The school site answers one rep
 // at a time, so this asks for each active person and merges. A User sees only their own; Admins and the
@@ -56,7 +57,7 @@ router.get("/", async (req, res) => {
   ]);
   const statusOf = new Map(st.rows.map((r) => [r.payment_id, r.code]));
   const payments = [...byId.values()]
-    .sort((a, b) => (a.paidDate < b.paidDate ? 1 : a.paidDate > b.paidDate ? -1 : 0))
+    .sort(byPaidThenEntered)
     .map((p) => ({
       id: p.id, name: p.name, linked_to: p.linkedTo, email: p.email, phone: p.phone, amount: p.amountPaise / 100,
       paid_date: p.paidDate, mode: p.paymentMode, rep: p.rep, fee_type: p.feeType, receipt_url: p.receiptUrl, created_at: p.createdAt,
