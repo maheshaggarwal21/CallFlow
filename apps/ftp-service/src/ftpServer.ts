@@ -8,6 +8,7 @@ import pool from "./db/pool";
 import { uploadAudioObject } from "./services/storage";
 import { AudioFormat, AUDIO_FORMATS, transcode, checkFfmpeg } from "./transcode";
 import { dropHungConnections } from "./hungSessions";
+import { LoginGuard, MAX_FAILS, BLOCK_MS, plainIp } from "./loginGuard";
 
 const FTP_ROOT = path.join(os.tmpdir(), "korecall_ftp");
 if (!fs.existsSync(FTP_ROOT)) {
@@ -260,7 +261,15 @@ export function startFtpServer() {
     anonymous: false,
   });
 
+  // repeated wrong logins lock that address out for a while; addresses that send real recordings are exempt (25 Nov 2026)
+  const guard = new LoginGuard();
+  (ftpServer as unknown as import("events").EventEmitter).on("connect", ({ connection }: { connection: { ip?: string; commandSocket?: import("net").Socket } }) => {
+    if (guard.isBlocked(plainIp(connection.ip))) connection.commandSocket?.destroy();
+  });
+
   ftpServer.on("login", ({ username, password, connection }, resolve, reject) => {
+    const ip = plainIp(connection.ip);
+    if (guard.isBlocked(ip)) return reject(new Error("Invalid credentials"));
     if (username === process.env.FTP_USER && password === process.env.FTP_PASSWORD) {
 
       // Listen to the STOR (upload complete) event for this connection
@@ -290,12 +299,15 @@ export function startFtpServer() {
 
         const sourceKey = relativeKey.replace(/^\//, "");
         const baseName = path.basename(localFilePath);
+        // only a properly named KoreCall recording makes its address trusted, so an intruder can't earn the exemption
+        if (parseFilename(baseName)) guard.delivered(ip);
 
         await processUploadedFile(localFilePath, baseName, sourceKey);
       });
 
       resolve({ root: FTP_ROOT });
     } else {
+      if (guard.failed(ip)) console.warn(`⛔ Blocking ${ip} for ${BLOCK_MS / 60_000} min after ${MAX_FAILS} wrong FTP logins`);
       reject(new Error("Invalid credentials"));
     }
   });
