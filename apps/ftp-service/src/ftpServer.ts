@@ -9,6 +9,7 @@ import { uploadAudioObject } from "./services/storage";
 import { AudioFormat, AUDIO_FORMATS, transcode, checkFfmpeg } from "./transcode";
 import { dropHungConnections } from "./hungSessions";
 import { LoginGuard, MAX_FAILS, BLOCK_MS, plainIp } from "./loginGuard";
+import { SecurityAlerts, resendSend } from "./securityAlerts";
 
 const FTP_ROOT = path.join(os.tmpdir(), "korecall_ftp");
 if (!fs.existsSync(FTP_ROOT)) {
@@ -263,6 +264,7 @@ export function startFtpServer() {
 
   // repeated wrong logins lock that address out for a while; addresses that send real recordings are exempt (25 Nov 2026)
   const guard = new LoginGuard();
+  const alerts = new SecurityAlerts(resendSend);
   (ftpServer as unknown as import("events").EventEmitter).on("connect", ({ connection }: { connection: { ip?: string; commandSocket?: import("net").Socket } }) => {
     if (guard.isBlocked(plainIp(connection.ip))) connection.commandSocket?.destroy();
   });
@@ -293,6 +295,7 @@ export function startFtpServer() {
         // Only recordings belong here; an infected PC on the PBX network drops AV.scr/Photo.scr/.lnk worm copies via FTP.
         if (!fileName.toLowerCase().endsWith(".wav")) {
           console.warn(`🗑️  Deleted non-recording upload: ${relativeKey}`);
+          alerts.event(`worm:${ip}`, `Logged in with the correct FTP login from ${ip} and uploaded files that aren't recordings (e.g. ${path.basename(relativeKey)})`);
           fs.rmSync(localFilePath, { force: true });
           return;
         }
@@ -307,7 +310,10 @@ export function startFtpServer() {
 
       resolve({ root: FTP_ROOT });
     } else {
-      if (guard.failed(ip)) console.warn(`⛔ Blocking ${ip} for ${BLOCK_MS / 60_000} min after ${MAX_FAILS} wrong FTP logins`);
+      if (guard.failed(ip)) {
+        console.warn(`⛔ Blocking ${ip} for ${BLOCK_MS / 60_000} min after ${MAX_FAILS} wrong FTP logins`);
+        alerts.event(`block:${ip}`, `Blocked ${ip} after ${MAX_FAILS} wrong FTP logins (locked out for ${BLOCK_MS / 60_000} min)`);
+      }
       reject(new Error("Invalid credentials"));
     }
   });
