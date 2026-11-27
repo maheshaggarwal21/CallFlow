@@ -91,7 +91,9 @@ const issue = (e: z.ZodError) => {
 };
 const bad = (res: any, status: number, message: string) => res.status(status).json({ error: message, message });
 const conflict = (err: any) =>
-  err?.code !== "23505" ? null : String(err.constraint).includes("employee_code") ? "That Reg No. is already used" : "Email already in use by another account";
+  err?.code !== "23505" ? null : String(err.constraint).includes("employee_code") ? "That Reg No. is already used"
+    // each person's own phone is unique: the employee login shows it as their contact (client, 28 Nov 2026)
+    : String(err.constraint).includes("phone") ? "That phone number is already used by another person" : "Email already in use by another account";
 
 router.use(requireAuth);
 

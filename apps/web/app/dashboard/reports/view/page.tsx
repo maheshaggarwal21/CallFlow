@@ -226,7 +226,7 @@ function useGroups(data: ReportData): Group[] {
   return [
     ...t.teams.map((x) => ({ key: x.id, title: x.location ? `${x.name} · ${x.location}` : x.name, ...inTeam(x.members) })),
     // no team, or not on the Teams tab at all (e.g. a Super Admin who takes calls)
-    { key: "none", title: "No team", people: data.people.filter((p) => !placed.has(p.id ?? "")), idle: data.idle.filter((n) => !placedNames.has(n)) },
+    { key: "none", title: "No office", people: data.people.filter((p) => !placed.has(p.id ?? "")), idle: data.idle.filter((n) => !placedNames.has(n)) },
   ].filter((g) => g.people.length || g.idle.length);
 }
 
@@ -248,7 +248,7 @@ function TeamPage({ data, open }: { data: ReportData; open: (s: string) => void 
       {/* the split needs teams: say where to make them instead of looking unchanged */}
       {!split && can("teams") && (
         <p style={{ margin: 0, fontSize: 13.5, color: R.mute, background: R.card, border: `1px dashed ${R.line}`, borderRadius: 12, padding: "10px 14px" }}>
-          Set up teams on the <Link href="/dashboard/teams" style={{ color: R.out, fontWeight: 700 }}>Teams</Link> tab and this page splits by team.</p>
+          Set up offices on the <Link href="/dashboard/teams" style={{ color: R.out, fontWeight: 700 }}>Offices</Link> tab and this page splits by office.</p>
       )}
       {groups.map((g) => (
         <Panel key={g.key} title={g.title} sub={`${split ? `${sum(g)} · ` : ""}Sorted by talk time · click a row to open the person${g.idle.length ? ` · No calls: ${g.idle.join(", ")}` : ""}`}>

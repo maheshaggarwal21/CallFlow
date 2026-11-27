@@ -2,16 +2,20 @@
 
 // Shows a page only when its tab is ticked for the signed-in user. The API checks the same
 // permission on every request, so this is for a clean message, not for security.
-import type { ReactNode } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { C } from "@/lib/colors";
 import { useAuth } from "@/hooks/useAuth";
 import { tabOf } from "@/lib/tabs";
 
 export default function TabGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { isLoading, id, can } = useAuth();
+  const router = useRouter();
+  const { isLoading, id, can, needs_connection } = useAuth();
   const tab = tabOf(pathname);
+  // a rep works only once their line is tested and connected (client, 28 Nov 2026)
+  useEffect(() => { if (needs_connection) router.replace("/connect"); }, [needs_connection, router]);
+  if (needs_connection) return <p style={{ color: C.muted, fontSize: 14 }}>Taking you to Test connection…</p>;
   if (!tab) return <>{children}</>;
   if (isLoading || !id) return <p style={{ color: C.muted, fontSize: 14 }}>Loading…</p>;
   if (can(tab.key)) return <>{children}</>;

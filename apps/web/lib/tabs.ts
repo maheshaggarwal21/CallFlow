@@ -21,7 +21,7 @@ const ALL: (Tab & { crm?: boolean })[] = [
   { key: "reports",      label: "Reports",      section: "Analytics",  icon: "✉", path: "/dashboard/reports/view", match: "/dashboard/reports" },
   { key: "intercoms",    label: "Intercoms",    section: "Management", icon: "☎", path: "/dashboard/intercoms" },
   { key: "users",        label: "Users",        section: "Management", icon: "◯", path: "/dashboard/users" },
-  { key: "teams",        label: "Teams",        section: "Management", icon: "◐", path: "/dashboard/teams" },
+  { key: "teams",        label: "Offices",      section: "Management", icon: "◐", path: "/dashboard/teams" },
   { key: "payments",     label: "Payments",     section: "Salary",     icon: "◈", path: "/dashboard/payments" },
   // weekly working days, holidays and the daily-pay start month (client, 15 Nov 2026)
   { key: "working_days", label: "Working Days", section: "Salary",     icon: "▦", path: "/dashboard/working-days" },

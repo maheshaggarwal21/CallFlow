@@ -16,6 +16,8 @@ import studentsRoutes from "./routes/students.routes";
 import paymentsRoutes from "./routes/payments.routes";
 import reportsRoutes from "./routes/reports.routes";
 import teamsRoutes from "./routes/teams.routes";
+import connectRoutes from "./routes/connect.routes";
+import { startSessionTidy } from "./services/lineSession.service";
 import devRoutes from "./routes/dev.routes";
 import crmRoutes from "./routes/crm.routes";
 import { DEV_UPLOADS_DIR } from "./services/storage.service";
@@ -90,6 +92,7 @@ app.use("/api/v1/students", studentsRoutes);
 app.use("/api/v1/payments", paymentsRoutes);
 app.use("/api/v1/reports", reportsRoutes);
 app.use("/api/v1/teams", teamsRoutes);
+app.use("/api/v1/connect", connectRoutes);
 app.use("/api/v1/pay", payRoutes);
 
 // CRM (lead follow-up) is off unless switched on per environment, so merging the
@@ -123,4 +126,5 @@ app.listen(port, () => {
   if (process.env.NODE_ENV === "production") startDayCloser();
   // mails when an office's KoreCall stops sending recordings (client, 21 Nov 2026)
   if (process.env.NODE_ENV === "production") startUploadWatch();
+  if (process.env.NODE_ENV === "production") startSessionTidy();
 });

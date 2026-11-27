@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import type { LoginResponse } from "@callflow/shared-types";
 
@@ -173,6 +174,17 @@ export default function LoginPage() {
             {loading ? "Signing in…" : "Sign In →"}
           </button>
         </form>
+
+        {/* reps sign in with their Reg No, pick their line and test it (client, 28 Nov 2026) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 14px", color: "#b8a898", fontSize: 12 }}>
+          <span style={{ flex: 1, height: 1, background: "#e8ddd2" }} />or<span style={{ flex: 1, height: 1, background: "#e8ddd2" }} />
+        </div>
+        <Link href="/login/employee" style={{
+          display: "block", textAlign: "center", padding: "12px 0", borderRadius: 12, textDecoration: "none",
+          border: "1.5px solid #e8761a", color: "#c65f0c", fontWeight: 700, fontSize: 15, background: "rgba(232,118,26,0.06)",
+        }}>
+          Employee login (Reg No) →
+        </Link>
 
         <p style={{ margin: "20px 0 0", fontSize: 12, color: "#b8a898", textAlign: "center" }}>
           CallFlow · Max Music School Call Management

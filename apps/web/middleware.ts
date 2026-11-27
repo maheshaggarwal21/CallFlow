@@ -7,7 +7,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes — no auth needed
-  if (pathname === "/" || pathname === "/login" || pathname.startsWith("/images/")) {
+  if (pathname === "/" || pathname === "/login" || pathname === "/login/employee" || pathname.startsWith("/images/")) {
     return NextResponse.next();
   }
 

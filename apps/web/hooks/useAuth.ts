@@ -8,7 +8,7 @@ import type { AuthUser } from "@callflow/shared-types";
  * The signed-in account. isOwner = Super Admin. isUser = the "User" rank, which only sees its own
  * data. can(key) = may open that tab (Users → Tabs); the Super Admin can open all of them.
  */
-export function useAuth(): AuthUser & { isOwner: boolean; isUser: boolean; isLoading: boolean; can: (key: string) => boolean } {
+export function useAuth(): AuthUser & { connection: AuthUser["connection"]; needs_connection: boolean; isOwner: boolean; isUser: boolean; isLoading: boolean; can: (key: string) => boolean } {
   const { data, isLoading } = useSWR<AuthUser>("/auth/me", fetcher);
 
   return {
@@ -18,6 +18,8 @@ export function useAuth(): AuthUser & { isOwner: boolean; isUser: boolean; isLoa
     role:        data?.role ?? "employee",
     color_index: data?.color_index ?? 0,
     permissions: data?.permissions ?? [],
+    connection:  data?.connection ?? null,
+    needs_connection: !!data?.needs_connection,
     isOwner:     data?.role === "owner",
     isUser:      !data || data.role === "employee",
     isLoading,

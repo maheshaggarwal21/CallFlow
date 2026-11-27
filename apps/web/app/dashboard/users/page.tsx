@@ -217,7 +217,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
   // the small "Create team" popup: a name and the office address, then the new team is picked for this user
   const createTeam = async () => {
     if (!newTeam) return;
-    if (!newTeam.name.trim()) return setNewTeam({ ...newTeam, err: "Give the team a name" });
+    if (!newTeam.name.trim()) return setNewTeam({ ...newTeam, err: "Give the office a name" });
     setNewTeam({ ...newTeam, err: "", busy: true });
     try {
       const t = await api.post<{ id: string }>("/teams", { name: newTeam.name.trim(), location: newTeam.location.trim() || null });
@@ -351,11 +351,11 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
               )}
               </div>
               {teamsData && (
-                <Field label="Team">
+                <Field label="Office">
                   <select value={f.team_id} onChange={(e) => (e.target.value === NEW_TEAM ? setNewTeam({ name: "", location: "", err: "", busy: false }) : set({ team_id: e.target.value }))} style={input}>
-                    <option value="">— No team —</option>
+                    <option value="">— No office —</option>
                     {teamsData.teams.map((t) => <option key={t.id} value={t.id}>{t.name}{t.location ? ` · ${t.location}` : ""}</option>)}
-                    <option value={NEW_TEAM}>+ Create team…</option>
+                    <option value={NEW_TEAM}>+ Create office…</option>
                   </select>
                 </Field>
               )}
@@ -458,12 +458,12 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
       {newTeam && (
         <>
           <div onClick={() => setNewTeam(null)} style={{ position: "fixed", inset: 0, background: "rgba(43,33,24,0.35)", zIndex: 300 }} />
-          <div role="dialog" aria-label="Create team" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 301,
+          <div role="dialog" aria-label="Create office" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 301,
             width: "min(380px, calc(100vw - 32px))", background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: "24px 26px", boxShadow: "0 24px 60px -20px rgba(43,33,24,0.4)" }}>
-            <h3 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 800, color: C.text }}>Create team</h3>
+            <h3 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 800, color: C.text }}>Create office</h3>
             <p style={{ margin: "0 0 16px", fontSize: 13, color: C.muted }}>It is picked for this user as soon as it is created.</p>
             <div style={{ display: "grid", gap: 12 }}>
-              <Field label="Team name"><input autoFocus value={newTeam.name} maxLength={60} onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })}
+              <Field label="Office name"><input autoFocus value={newTeam.name} maxLength={60} onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && createTeam()} style={input} /></Field>
               <Field label="Office address"><input value={newTeam.location} maxLength={60} onChange={(e) => setNewTeam({ ...newTeam, location: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && createTeam()} style={input} /></Field>

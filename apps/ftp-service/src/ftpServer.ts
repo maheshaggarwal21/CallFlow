@@ -117,7 +117,9 @@ async function insertCall(data: {
         $7, $8, $9, $10, $11, $12, $13,
         -- the line's calling number as it is now, kept with the call (migration 030): a later number change leaves it.
         -- $2/$3 are cast the same everywhere: mixed text/varchar uses fail the whole insert.
-        COALESCE((SELECT phone_number FROM intercoms WHERE intercom_code = $3::varchar),
+        -- the line's own calling number first (Intercoms tab since 28 Nov 2026), then the old intercoms table
+        COALESCE((SELECT calling_number FROM lines WHERE line_number = $2::varchar),
+                 (SELECT phone_number FROM intercoms WHERE intercom_code = $3::varchar),
                  (SELECT phone_number FROM intercoms WHERE $3::varchar IS NULL AND line_number = $2::varchar LIMIT 1))
       )
       ON CONFLICT (source_file_key) DO NOTHING

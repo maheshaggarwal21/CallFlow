@@ -3,13 +3,14 @@
 import { usePathname } from "next/navigation";
 import { C } from "@/lib/colors";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { useAuth } from "@/hooks/useAuth";
 
 const PAGE_LABELS: Record<string, string> = {
   recordings: "Recordings",
   reports:    "Reports",
   intercoms:  "Intercoms",
   users:      "Users",
-  teams:      "Teams",
+  teams:      "Offices",
   me:         "My Dashboard",
   payments:   "Payments",
   "working-days": "Working Days",
@@ -21,6 +22,7 @@ const PAGE_LABELS: Record<string, string> = {
 export default function Topbar({ onMenu }: { onMenu?: () => void }) {
   const pathname  = usePathname();
   const { isLive } = useSystemStatus();
+  const { connection } = useAuth();
 
   const segments = pathname.split("/").filter(Boolean); // ["dashboard", "overview"]
   const section  = segments[1] === "crm" ? `crm/${segments[2] ?? ""}` : segments[1] ?? "";
@@ -50,6 +52,13 @@ export default function Topbar({ onMenu }: { onMenu?: () => void }) {
 
       {/* Right: date + LIVE */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {/* the line this person is connected on today (employee login, 28 Nov 2026) */}
+        {connection && (
+          <span title={`Connected${connection.office ? ` in ${connection.office}` : ""} since ${new Date(connection.connected_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}`}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, background: C.greenLight, border: `1px solid ${C.greenBdr}`, fontSize: 12, fontWeight: 700, color: C.green, whiteSpace: "nowrap" }}>
+            ☎ Line {connection.line_number}<span className="cf-wide" style={{ fontWeight: 600 }}>· {connection.calling_number}</span>
+          </span>
+        )}
         <span className="cf-wide" style={{ fontSize: 12, color: C.muted }}>{monthYear}</span>
         <div style={{
           display: "flex", alignItems: "center", gap: 6,

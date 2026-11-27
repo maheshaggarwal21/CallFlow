@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
+import IdleLogout from "@/components/layout/IdleLogout";
 
 export default function Shell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -18,6 +19,7 @@ export default function Shell({ children }: { children: ReactNode }) {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <Topbar onMenu={() => setOpen(true)} />
         <main className="cf-main">{children}</main>
+        <IdleLogout />
       </div>
     </>
   );

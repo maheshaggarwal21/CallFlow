@@ -677,6 +677,133 @@ mock.server.close();
     [l.id, before.status, before.current_code, before.next_followup_at, before.attempts, before.callback_set_by]);
 }
 
+
+// ── employee login and line connections (client, 28 Nov 2026; docs/EMPLOYEE-LOGIN-PLAN.md) ──
+{
+  const TEST = "9876500011", PWD = "Cn@123456";
+  const off = (await call(owner, "POST", "/teams", { name: `E2E Office ${stamp}`, location: "Test", test_number: "+91 98765 00011" })).data;
+  ok(off?.test_number === TEST, "office keeps its test number as digits", JSON.stringify(off));
+  ok((await call(owner, "POST", "/teams", { name: `E2E bad ${stamp}`, test_number: "12" })).status === 400, "office: a 2-digit test number is refused");
+  const l97 = (await call(owner, "POST", "/lines", { line_number: "97", calling_number: "0172-5550097", team_id: off.id })).data;
+  const l98 = (await call(owner, "POST", "/lines", { line_number: "98", calling_number: "1725550098", team_id: off.id })).data;
+  ok(l97?.line_number === "97" && l97.calling_number === "01725550097" && l97.team_id === off.id, "add connection: line 97 with its number and office", JSON.stringify(l97));
+  ok((await call(owner, "POST", "/lines", { line_number: "97" })).status === 409, "add connection: line 97 twice is refused");
+  ok((await call(owner, "POST", "/lines", { line_number: "9a" })).status === 400, "add connection: a line must be a number");
+  ok((await call(neha, "POST", "/lines", { line_number: "96" })).status === 403, "a User can't add connections");
+
+  const codeA = 700000 + Number(stamp.slice(-5)), codeB = codeA + 1;
+  const mkRep = async (tag, code, phone) => call(owner, "POST", "/employees", { name: `Conn ${tag}`, email: `cn${tag}${stamp}@crm-demo.local`, password: PWD, employee_code: code, phone });
+  const ra = (await mkRep("a", codeA, "9812345666")).data, rb = (await mkRep("b", codeB, "9812345677")).data;
+  ok(!!ra?.id && !!rb?.id, "two reps with Reg Nos created");
+  const dupPhone = await mkRep("c", codeB + 1, "+91 98123 45666");
+  ok(dupPhone.status === 409 && /phone number is already used/.test(dupPhone.msg), "a phone number already used by another person is refused", dupPhone.msg);
+
+  const look = await call(null, "POST", "/auth/employee/lookup", { reg_no: codeA });
+  ok(look.status === 200 && look.data.name === "Conn a" && look.data.phone_masked === "98******66", "lookup: name and masked phone", JSON.stringify(look.data).slice(0, 200));
+  const offA = look.data?.offices?.find((x) => x.id === off.id);
+  ok(offA?.lines.length === 2 && offA.lines.every((l) => l.holder === null), "lookup: the office lists its two free lines");
+  ok((await call(null, "POST", "/auth/employee/lookup", { reg_no: 3 })).status === 404, "lookup: an unknown Reg No is refused");
+
+  const elogin = async (reg_no, line_id, password = PWD) => {
+    const r = await fetch(`${A}/auth/employee/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reg_no, password, line_id }) });
+    const m = (r.headers.get("set-cookie") ?? "").match(/token=([^;]+)/);
+    let data; try { data = await r.json(); } catch { data = null; }
+    return { status: r.status, token: m?.[1], data };
+  };
+  const fake = (line, phone, secs) => pool.query(
+    `INSERT INTO calls (source, source_file_key, line_number, call_direction, caller_phone, called_at, duration_secs, is_misc)
+     VALUES ('korecall', $1, $2, 'outbound', $3, NOW(), $4, FALSE) RETURNING id`,
+    [`e2e-conn-${stamp}-${line}-${Math.random()}`, line, phone, secs]).then((r) => r.rows[0].id);
+
+  ok((await elogin(codeA, l97.id, "Wrong@1234")).status === 401, "employee login: a wrong password is refused");
+  const a = await elogin(codeA, l97.id);
+  ok(a.status === 200 && !!a.token && a.data.problem === null, "employee login: signed in, testing line 97", JSON.stringify(a.data));
+  const meA = (await call(a.token, "GET", "/auth/me")).data;
+  ok(meA.needs_connection === true && meA.connection === null, "a rep who hasn't tested must connect first");
+  let st = (await call(a.token, "GET", "/connect/me")).data;
+  ok(st.status === "testing" && st.session.line_number === "97" && st.session.test_number === TEST && st.session.seconds_left > 170,
+    "test page: line 97, dial the office test number, ~3 min left", JSON.stringify(st).slice(0, 200));
+
+  const b = await elogin(codeB, l97.id);
+  ok(b.status === 200 && b.data.problem?.code === "testing" && b.data.problem.message.includes(`Conn a (${codeA})`), "same line while another tests: told who is testing", JSON.stringify(b.data?.problem));
+
+  await fake("98", "09876500011", 15);
+  st = (await call(a.token, "GET", "/connect/me")).data;
+  ok(st.status === "testing" && st.hint?.line_number === "98" && st.hint.calling_number === "1725550098", "test call on another line: the rep is told their phone is on line 98", JSON.stringify(st.hint));
+  await fake("97", "9876500011", 6);
+  ok((await call(a.token, "GET", "/connect/me")).data.status === "testing", "a 6-second test call doesn't connect");
+  const testCall = await fake("97", "+919876500011", 12);
+  st = (await call(a.token, "GET", "/connect/me")).data;
+  ok(st.status === "connected" && st.session.connected_at, "the 12-second test call on line 97 connects the rep", JSON.stringify(st).slice(0, 200));
+  const tc = (await pool.query("SELECT employee_id, is_misc, misc_reason FROM calls WHERE id = $1", [testCall])).rows[0];
+  ok(tc.employee_id === ra.id && tc.is_misc && tc.misc_reason === "Connection test", "the test call is the rep's, filed as a Connection test");
+  const holder97 = (await pool.query("SELECT employee_id FROM lines WHERE id = $1", [l97.id])).rows[0].employee_id;
+  ok(holder97 === ra.id, "line 97 now stamps the rep on its recordings");
+  const meA2 = (await call(a.token, "GET", "/auth/me")).data;
+  ok(meA2.needs_connection === false && meA2.connection?.line_number === "97", "connected: the dashboard opens, top bar shows line 97");
+
+  const ownA = (await call(null, "POST", "/auth/employee/lookup", { reg_no: codeA })).data.offices.find((x) => x.id === off.id).lines.find((l) => l.id === l97.id);
+  ok(ownA.mine === true && ownA.holder === null, "the rep's own line stays pickable for them (marked as theirs)");
+  const takeB = await call(b.token, "POST", "/connect/start", { line_id: l97.id });
+  ok(takeB.status === 409 && takeB.data.code === "in_use" && takeB.msg.includes(`Conn a (${codeA})`), "a taken line: in use by name and Reg No", takeB.msg);
+  const look2 = (await call(null, "POST", "/auth/employee/lookup", { reg_no: codeB })).data.offices.find((x) => x.id === off.id).lines.find((l) => l.id === l97.id);
+  ok(look2.holder?.initial === "C" && !look2.holder.name, "before login a taken line shows only the holder's initial and colour");
+  const full = (await call(b.token, "GET", "/connect/options")).data.find((x) => x.id === off.id).lines.find((l) => l.id === l97.id);
+  ok(full.holder?.name === "Conn a" && full.holder.reg_no === codeA, "signed in, the holder's name and Reg No show");
+
+  ok((await call(b.token, "POST", "/connect/start", { line_id: l98.id })).data?.status === "testing", "the second rep tests line 98 instead");
+  await fake("98", "9876500011", 20);
+  ok((await call(b.token, "GET", "/connect/me")).data.status === "connected", "their test call on 98 connects them (the older call on 98 doesn't count)");
+  ok((await call(a.token, "POST", "/connect/start", { line_id: l98.id })).status === 409, "a connected rep can't take a second line");
+  ok((await call(a.token, "POST", "/connect/start", { line_id: l97.id })).status === 200, "the same rep picking their own line again just carries on");
+
+  ok((await call(owner, "PATCH", `/lines/${l97.id}`, { line_number: "95" })).status === 409, "renumbering a line someone is on is refused");
+  ok((await call(owner, "DELETE", `/lines/${l97.id}`)).status === 409, "deleting a line someone is on is refused");
+  ok((await call(owner, "PATCH", `/lines/${l97.id}`, { calling_number: "1725550197" })).status === 200, "its calling number can change while connected");
+
+  ok((await call(owner, "PATCH", `/lines/${l98.id}`, { employee_id: null })).status === 200, "admin frees line 98");
+  const sb = (await pool.query("SELECT status, end_reason FROM line_sessions WHERE employee_id = $1 ORDER BY started_at DESC LIMIT 1", [rb.id])).rows[0];
+  ok(sb.status === "ended" && sb.end_reason === "line freed" && (await call(b.token, "GET", "/auth/me")).data.needs_connection === true, "freeing the line ends that rep's connection");
+  ok((await call(owner, "PATCH", `/lines/${l98.id}`, { employee_id: rb.id })).status === 200, "admin connects the rep by hand (fallback)");
+  const sb2 = (await pool.query("SELECT status, via FROM line_sessions WHERE employee_id = $1 AND status = 'connected'", [rb.id])).rows[0];
+  ok(sb2?.via === "admin" && (await call(b.token, "GET", "/auth/me")).data.needs_connection === false, "a hand connection counts, marked as by admin");
+
+  await call(a.token, "POST", "/auth/logout");
+  const l97now = (await pool.query("SELECT employee_id, freed_at FROM lines WHERE id = $1", [l97.id])).rows[0];
+  const sa = (await pool.query("SELECT status, end_reason FROM line_sessions WHERE employee_id = $1 ORDER BY started_at DESC LIMIT 1", [ra.id])).rows[0];
+  ok(l97now.employee_id === null && l97now.freed_at && sa.end_reason === "logged out", "logging out frees the line");
+
+  // idle logout (client, 28 Nov 2026): 45 min with no touch and no call on the line; the page asks first, the server
+  // frees the line of a closed page after 47 min
+  const seenB = (await call(b.token, "POST", "/connect/seen", { touched: true })).data;
+  ok(seenB.connected && Date.now() - new Date(seenB.last_active_at).getTime() < 60_000, "activity ping: last active now");
+  const back = (m) => pool.query(`UPDATE line_sessions SET connected_at = connected_at - INTERVAL '${m} minutes', started_at = started_at - INTERVAL '${m} minutes',
+    last_seen_at = last_seen_at - INTERVAL '${m} minutes', ended_at = ended_at - INTERVAL '${m} minutes' WHERE employee_id = $1`, [rb.id]);
+  await back(50);
+  await fake("98", "9000000098", 40); // a call on the rep's line just now: they're working
+  await call(b.token, "GET", "/connect/me");
+  ok((await pool.query("SELECT 1 FROM line_sessions WHERE employee_id = $1 AND status = 'connected'", [rb.id])).rowCount === 1, "no touch for 50 min but a call just recorded on the line: still connected");
+  await pool.query("UPDATE calls SET created_at = created_at - INTERVAL '50 minutes' WHERE source_file_key LIKE $1 AND line_number = '98'", [`e2e-conn-${stamp}-%`]);
+  const seenOld = (await call(b.token, "POST", "/connect/seen", { touched: false })).data;
+  ok(Date.now() - new Date(seenOld.last_active_at).getTime() > 45 * 60_000, "a look without a touch doesn't count as activity");
+  await call(b.token, "GET", "/connect/me");
+  const sb3 = (await pool.query("SELECT status, end_reason FROM line_sessions WHERE employee_id = $1 AND via = 'admin'", [rb.id])).rows[0];
+  const l98now = (await pool.query("SELECT employee_id FROM lines WHERE id = $1", [l98.id])).rows[0];
+  ok(sb3.status === "ended" && sb3.end_reason === "idle 45 min" && l98now.employee_id === null, "47 min with no touch and no call: the connection ends and the line is freed");
+
+  const a2 = await elogin(codeA, l97.id);
+  await pool.query("UPDATE line_sessions SET started_at = started_at - INTERVAL '4 minutes', connected_at = connected_at - INTERVAL '4 minutes', ended_at = ended_at - INTERVAL '4 minutes' WHERE employee_id = $1", [ra.id]);
+  st = (await call(a2.token, "GET", "/connect/me")).data;
+  ok(st.status === "failed" && st.session.end_reason === "no test call arrived", "no test call in 3 minutes: not connected, can retry", JSON.stringify(st).slice(0, 160));
+  ok((await call(a2.token, "POST", "/connect/start", { line_id: l97.id })).data?.status === "testing", "Retry starts a new test");
+  await call(a2.token, "POST", "/connect/end");
+
+  await pool.query("DELETE FROM calls WHERE source_file_key LIKE $1", [`e2e-conn-${stamp}-%`]);
+  await pool.query("DELETE FROM lines WHERE id = ANY($1::uuid[])", [[l97.id, l98.id]]);
+  await pool.query("DELETE FROM employees WHERE email LIKE $1", [`cn_${stamp}%`]);
+  await pool.query("DELETE FROM teams WHERE name LIKE $1", [`E2E % ${stamp}`]);
+}
+
 // ── clean up: test users, line 99, intercom links as they were ──
 await pool.query("DELETE FROM employees WHERE email LIKE $1 OR email LIKE $2 OR email LIKE $3", [`e2e${stamp}%`, `x${stamp}%`, `y${stamp}%`]);
 for (const i of icBefore) await pool.query("UPDATE intercoms SET line_number = NULL WHERE id = $1", [i.id]);

@@ -1,6 +1,6 @@
 "use client";
 
-// Teams (client, 13 Nov 2026): the owner runs offices in two or more places. One card per team with
+// Offices (was Teams; client, 13 Nov 2026, renamed 28 Nov): the owner runs offices in two or more places. One card per office with
 // its agents and today's numbers, a "Today's race" bar comparing the offices, and the agents not in
 // a team yet. Agents move between teams with a dropdown (the client prefers dropdowns to dragging).
 // The day / date / month picker (client, 15 Nov 2026) sets the period the call numbers cover; it opens on Today.
@@ -41,12 +41,12 @@ export default function TeamsPage() {
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h1 style={S.h1}>Teams</h1>
+          <h1 style={S.h1}>Offices</h1>
           <p style={S.sub}>Your offices and the agents in each</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <PeriodSelect {...selectProps} />
-          {!adding && <button onClick={() => setAdding(true)} style={S.btnPrimary}><span style={{ fontSize: 17, lineHeight: 1 }}>+</span> New team</button>}
+          {!adding && <button onClick={() => setAdding(true)} style={S.btnPrimary}><span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Create office</button>}
         </div>
       </div>
       {err && <p role="alert" style={{ margin: 0, color: C.red, fontSize: 14 }}>{err}</p>}
@@ -57,7 +57,7 @@ export default function TeamsPage() {
 
       {teams.length === 0 && !adding && (
         <div style={{ ...S.card, padding: "28px 24px", textAlign: "center", color: C.muted, fontSize: 14 }}>
-          No teams yet. Press <b style={{ color: C.orange }}>+ New team</b> to add one for each office.
+          No offices yet. Press <b style={{ color: C.orange }}>+ Create office</b> to add each one.
         </div>
       )}
 
@@ -68,11 +68,11 @@ export default function TeamsPage() {
       {unassigned.length > 0 && (
         <section style={{ ...S.card, border: `1px dashed ${C.border}`, boxShadow: "none", padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: C.text }}>Not in a team yet</h2>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: C.text }}>Not in an office yet</h2>
             <Tag label={String(unassigned.length)} color={C.textSub} bg={C.bgDeep} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(330px, 100%), 1fr))", gap: "0 24px" }}>
-            {unassigned.map((a) => <AgentRow key={a.id} agent={a} teams={teams} onMove={move} placeholder="Add to team…" />)}
+            {unassigned.map((a) => <AgentRow key={a.id} agent={a} teams={teams} onMove={move} placeholder="Add to office…" />)}
           </div>
         </section>
       )}
@@ -129,17 +129,20 @@ function TeamCard({ team, teams, onMove, run }: {
               <div style={{ minWidth: 0 }}>
                 <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: C.text }}>{team.name}</h2>
                 <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>📍 {team.location || "Location not set"}</div>
+                <div style={{ fontSize: 13, color: team.test_number ? C.textSub : C.red, marginTop: 2 }}>
+                  ☎ Test number: {team.test_number ? <b style={{ color: C.text }}>{team.test_number}</b> : "not set — reps of this office can't connect"}
+                </div>
               </div>
             </div>
             {mode === "delete" ? (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, color: C.textSub }}>
-                Delete? Agents stay, without a team.
+                Delete? Agents stay, without an office. Its lines lose their office.
                 <button onClick={() => run(api.delete(`/teams/${team.id}`))} style={smallBtn(C.red)}>Yes</button>
                 <button onClick={() => setMode("view")} style={smallBtn(C.textSub)}>No</button>
               </span>
             ) : (
               <span style={{ display: "inline-flex", flex: "none" }}>
-                <button onClick={() => setMode("edit")} style={smallBtn(C.orange)}>Rename</button>
+                <button onClick={() => setMode("edit")} style={smallBtn(C.orange)}>Edit</button>
                 <button onClick={() => setMode("delete")} style={smallBtn(C.muted)}>Delete</button>
               </span>
             )}
@@ -182,33 +185,39 @@ function AgentRow({ agent, teams, onMove, placeholder }: {
         <div style={{ fontSize: 12.5, color: C.muted }}>{agent.designation || "Agent"} · Reg No. {agent.employee_code}</div>
       </div>
       <span title="Calls in the period picked" style={{ fontSize: 13, fontWeight: 700, color: agent.calls_today ? C.text : C.dim, whiteSpace: "nowrap" }}>{agent.calls_today} calls</span>
-      <select aria-label={`Team for ${agent.name}`} value="" onChange={(e) => e.target.value && onMove(agent, e.target.value === "none" ? "" : e.target.value)}
+      <select aria-label={`Office for ${agent.name}`} value="" onChange={(e) => e.target.value && onMove(agent, e.target.value === "none" ? "" : e.target.value)}
         style={{ ...input, width: 128, padding: "6px 8px", fontSize: 12.5 }}>
         <option value="">{placeholder}</option>
         {teams.filter((t) => t.id !== agent.team_id).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        {agent.team_id && <option value="none">No team</option>}
+        {agent.team_id && <option value="none">No office</option>}
       </select>
     </div>
   );
 }
 
-function TeamForm({ initial, onSave, onCancel }: { initial?: Team; onSave: (v: { name: string; location: string | null }) => void; onCancel: () => void }) {
+function TeamForm({ initial, onSave, onCancel }: { initial?: Team; onSave: (v: { name: string; location: string | null; test_number: string | null }) => void; onCancel: () => void }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [location, setLocation] = useState(initial?.location ?? "");
+  const [testNo, setTestNo] = useState(initial?.test_number ?? "");
   const [err, setErr] = useState("");
   const save = () => {
-    if (!name.trim()) return setErr("Give the team a name.");
-    onSave({ name: name.trim(), location: location.trim() || null });
+    if (!name.trim()) return setErr("Give the office a name.");
+    const digits = testNo.replace(/\D/g, "");
+    if (digits && (digits.length < 6 || digits.length > 15)) return setErr("The test number should be 6 to 15 digits.");
+    onSave({ name: name.trim(), location: location.trim() || null, test_number: digits || null });
   };
   return (
     <div style={{ ...(initial ? {} : { ...S.card, padding: "16px 20px" }), display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-      <label style={{ flex: "1 1 180px" }}><span style={{ ...S.label, display: "block", marginBottom: 6 }}>Team name</span>
-        <input autoFocus value={name} maxLength={60} placeholder="e.g. Team A" onChange={(e) => { setErr(""); setName(e.target.value); }} style={input} /></label>
+      <label style={{ flex: "1 1 180px" }}><span style={{ ...S.label, display: "block", marginBottom: 6 }}>Office name</span>
+        <input autoFocus value={name} maxLength={60} placeholder="e.g. Sandhu Complex" onChange={(e) => { setErr(""); setName(e.target.value); }} style={input} /></label>
       <label style={{ flex: "1 1 180px" }}><span style={{ ...S.label, display: "block", marginBottom: 6 }}>Office location</span>
         <input value={location} maxLength={60} placeholder="e.g. Chandigarh" onChange={(e) => setLocation(e.target.value)} style={input} /></label>
+      {/* reps dial this from their desk phone to prove which line they're on (employee login, 28 Nov 2026) */}
+      <label style={{ flex: "1 1 180px" }}><span style={{ ...S.label, display: "block", marginBottom: 6 }}>Test number</span>
+        <input value={testNo} inputMode="tel" maxLength={18} placeholder="number reps dial to test" onChange={(e) => { setErr(""); setTestNo(e.target.value); }} style={input} /></label>
       <span style={{ display: "inline-flex", gap: 8 }}>
         <button onClick={onCancel} style={S.btn}>Cancel</button>
-        <button onClick={save} style={{ ...S.btnPrimary, padding: "9px 18px" }}>{initial ? "Save" : "Create team"}</button>
+        <button onClick={save} style={{ ...S.btnPrimary, padding: "9px 18px" }}>{initial ? "Save" : "Create office"}</button>
       </span>
       {err && <span role="alert" style={{ width: "100%", color: C.red, fontSize: 13 }}>{err}</span>}
     </div>

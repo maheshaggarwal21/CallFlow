@@ -30,7 +30,7 @@ export default function Sidebar({ open = false }: { open?: boolean }) {
     } catch {
       // ignore network errors — still clear local state
     }
-    router.push("/login");
+    router.push(role === "employee" ? "/login/employee" : "/login");
   }
 
   const { t: myClrT, bg: myClrBg, br: myClrBr } = eClr(color_index);

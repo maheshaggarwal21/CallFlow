@@ -18,14 +18,16 @@ async function request<T>(
     credentials: "include",
   });
 
-  if (res.status === 401 && path !== "/auth/login") {
+  // a wrong password on either sign-in form is an error to show, not a trip back to /login
+  const isLogin = path === "/auth/login" || path === "/auth/employee/login";
+  if (res.status === 401 && !isLogin) {
     if (typeof window !== "undefined") {
       window.location.href = "/login";
     }
     throw new Error("Unauthorized");
   }
 
-  if (res.status === 401 && path === "/auth/login") {
+  if (res.status === 401 && isLogin) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.error ?? body?.message ?? "Invalid email or password.");
   }

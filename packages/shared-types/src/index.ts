@@ -9,6 +9,10 @@ export type AuthUser = {
   color_index: number;
   /** Tab keys ticked for this user (Users → Tabs). The Super Admin has every tab without rows. */
   permissions?: string[];
+  /** The line this person is connected on today (employee login, 28 Nov 2026), or null. */
+  connection?: { line_number: string; calling_number: string | null; office: string | null; connected_at: string } | null;
+  /** A User (rep) must test and connect a line before using the dashboard. */
+  needs_connection?: boolean;
 };
 
 export type LoginResponse = {
@@ -64,7 +68,24 @@ export type TeamAgent = {
   id: string; name: string; designation: string | null; color_index: number; employee_code: number;
   team_id: string | null; calls_today: number; talk_secs_today: number;
 };
-export type Team = { id: string; name: string; location: string | null; color_index: number; members: TeamAgent[] };
+export type Team = { id: string; name: string; location: string | null; color_index: number; test_number: string | null; members: TeamAgent[] };
+
+/** Employee login / test page: an office and its lines with who holds or is testing each (POST /auth/employee/lookup, GET /connect/options). */
+export type LineHolder = { initial: string; color: string | null; color_index: number; name?: string; reg_no?: number };
+export type LineOption = { id: string; line_number: string; calling_number: string | null; mine?: boolean; holder: LineHolder | null; testing: string | true | null };
+export type OfficeOption = { id: string; name: string; has_test_number: boolean; lines: LineOption[] };
+
+/** GET /connect/me */
+export type ConnectState = {
+  status: "none" | "testing" | "connected" | "failed" | "ended";
+  session?: {
+    id: string; line_id: string | null; line_number: string; calling_number: string | null; office: string | null; test_number: string | null;
+    started_at: string; connected_at: string | null; ended_at: string | null; end_reason: string | null; via: "test" | "admin"; seconds_left: number;
+  };
+  /** the test call came in on this line instead: the phone is wired there */
+  hint?: { line_number: string; calling_number: string | null } | null;
+  office_last_upload_at?: string | null;
+};
 export type TeamsResponse = { teams: Team[]; unassigned: TeamAgent[] };
 
 /** A flat bonus on a user for a date range (Users form → Extra Commission). Checked by extraSchema in employees.routes.ts. */
@@ -102,6 +123,14 @@ export type Line = {
   freed_at: string | null;
   /** Calls that came in on this line with no agent since it was freed: they count for nobody until given to an agent. */
   gap_calls: number;
+  /** A connection (Intercoms tab, 28 Nov 2026): its office and calling number. */
+  team_id: string | null;
+  team_name: string | null;
+  calling_number: string | null;
+  employee_color: string | null;
+  /** When the person on it connected, and whether by test call or by an admin. */
+  connected_at: string | null;
+  connected_via: "test" | "admin" | null;
 };
 
 export type Intercom = {
