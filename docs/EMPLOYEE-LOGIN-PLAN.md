@@ -11,6 +11,7 @@ The new way works like this:
 1. The rep logs in as an employee: Reg No, then password.
 2. The rep picks an office and a calling number (that is, a line).
 3. The rep proves the wiring with a test call: they dial a test number from their desk phone and hold it for at least 10 seconds.
+   **Changed 28 Nov 2026 (client):** the number is not an office setting. Each test gets its own random 10-digit number (first digit 6–9), shown on the test page. It needn't exist: KoreCall records whatever is dialled. Because the number belongs to one test, a recording proves whose test it is. `line_sessions.test_number` (migration 035); `teams.test_number` is unused.
 4. When that recording reaches the server on the line they picked, the line is locked to them for the day. Their working day starts, and they go to the Leads tab.
 
 Lines, calling numbers and offices are set up by the client on a redesigned Intercoms tab. The Teams tab becomes Offices.
@@ -20,7 +21,7 @@ Lines, calling numbers and offices are set up by the client on a redesigned Inte
 | Fact (checked 28 Nov 2026) | What it means for the design |
 |---|---|
 | A recording reaches the server **8 s after hang-up (median) for Office 1, ~57 s for Office 2, sometimes 2–3 min**. | A 30-second wait can't work. The rep holds the call for 10 s or more, and the server then waits **up to 3 minutes**. A countdown is shown. |
-| A recording's file name has the **line (01–08) and the dialled number**, but no office and no rep. | We know the call came in on line L, to number N. If L is the line the rep picked and N is the office's test number, then the wiring is right. |
+| A recording's file name has the **line (01–08) and the dialled number**, but no office and no rep. | We know the call came in on line L, to number N. If L is the line the rep picked and N is the number shown for this test, then the wiring is right. |
 | Line numbers come from the boxes: Office 1 = 01–04, Office 2 = 05–08. | Line numbers are **unique across all offices**. "Add connection" suggests the highest line + 1. |
 | The PBX clock drifts (it resumes from its shutdown time every morning). | Match the test call on **when it arrived at the server**, never on the time the PBX gives it. |
 | A rep is already stamped onto a recording **when it arrives**, from `lines.employee_id`. | Keep that. A connection simply sets `lines.employee_id`, so the receiver logic doesn't change. If a line changes hands mid-day, calls after the change go to the new rep. This already works. |
@@ -41,7 +42,7 @@ Lines, calling numbers and offices are set up by the client on a redesigned Inte
   "Dial 98xxxxxx, hold 10 s"
   polls every 3 s ───────────► GET  /connect/me ────────────────► looks in calls for:            KoreCall box
                                   (does the matching)              line = picked line,             uploads the
-                                                                   number = office test number,◄── test recording
+                                                                   number = this test's number,◄── test recording
                                                                    ≥ 10 s, arrived after start     (unchanged)
   ✓ connected → Start calling                                      → session connected,
                                                                      lines.employee_id = rep
@@ -135,7 +136,7 @@ The calling number stored on a call is read from `lines.calling_number` first, t
 
 1. Take a backup, then deploy everything.
 2. Run the script that **removes the old lines and intercoms**, as the client asked. Old calls keep their line and number, because those are stored on each call.
-3. The client sets up offices with test numbers, then adds the connections (line plus calling number) on the new Intercoms tab.
+3. The client sets up offices, then adds the connections (line plus calling number) on the new Intercoms tab.
 4. Restart the receiver after hours.
 5. The next morning, each rep logs in with Reg No and password, tests, and connects. Calls made before a rep connects have no rep, and an admin can give them out as now.
 

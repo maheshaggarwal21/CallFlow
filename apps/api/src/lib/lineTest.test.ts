@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findTestCall, sameNumber, maskPhone, TEST_MIN_SECS } from "./lineTest";
+import { findTestCall, sameNumber, maskPhone, randomTestNumber, TEST_MIN_SECS } from "./lineTest";
 
 const t0 = new Date("2026-11-28T04:00:00Z");
 const at = (s: number) => new Date(t0.getTime() + s * 1000);
@@ -37,4 +37,14 @@ test("phone masked to first two and last two digits", () => {
   assert.equal(maskPhone("9812345666"), "98******66");
   assert.equal(maskPhone("+91 98123 45666"), "98******66");
   assert.equal(maskPhone(null), "");
+});
+
+test("the test number is 10 digits, starts 6-9 and differs each time", () => {
+  const seen = new Set<string>();
+  for (let i = 0; i < 200; i++) {
+    const n = randomTestNumber();
+    assert.match(n, /^[6-9]\d{9}$/);
+    seen.add(n);
+  }
+  assert.ok(seen.size > 195);
 });

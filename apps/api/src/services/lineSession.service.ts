@@ -3,7 +3,7 @@
 // stamps on each recording; the trigger from migration 034 keeps line_sessions in step with it.
 import pool from "../db/pool";
 import { IST_TODAY_START } from "../lib/dateRange";
-import { findTestCall, TEST_WINDOW_MS, TEST_MIN_SECS, SERVER_IDLE_MS } from "../lib/lineTest";
+import { findTestCall, randomTestNumber, TEST_WINDOW_MS, TEST_MIN_SECS, SERVER_IDLE_MS } from "../lib/lineTest";
 
 type Db = { query: typeof pool.query };
 export class ConnectError extends Error {
@@ -55,7 +55,7 @@ export function startSessionTidy() {
 export async function lineOptions(full: boolean, me?: string) {
   await tidy();
   const { rows } = await pool.query(
-    `SELECT t.id AS team_id, t.name AS team_name, t.test_number IS NOT NULL AS has_test_number,
+    `SELECT t.id AS team_id, t.name AS team_name,
             l.id, l.line_number, l.calling_number, l.employee_id AS holder_id, ts.employee_id AS tester_id,
             e.name AS holder_name, e.employee_code AS holder_code, e.color AS holder_color, e.color_index AS holder_color_index,
             te.name AS tester_name, te.employee_code AS tester_code
@@ -65,9 +65,9 @@ export async function lineOptions(full: boolean, me?: string) {
      LEFT JOIN line_sessions ts ON ts.line_id = l.id AND ts.status = 'testing'
      LEFT JOIN employees te ON te.id = ts.employee_id
      ORDER BY t.created_at, l.line_number`);
-  const offices = new Map<string, { id: string; name: string; has_test_number: boolean; lines: unknown[] }>();
+  const offices = new Map<string, { id: string; name: string; lines: unknown[] }>();
   for (const r of rows) {
-    if (!offices.has(r.team_id)) offices.set(r.team_id, { id: r.team_id, name: r.team_name, has_test_number: r.has_test_number, lines: [] });
+    if (!offices.has(r.team_id)) offices.set(r.team_id, { id: r.team_id, name: r.team_name, lines: [] });
     if (!r.id) continue;
     const initial = (r.holder_name ?? "").trim().slice(0, 1).toUpperCase();
     // the rep's own line (connected or being tested by them) stays pickable for them
@@ -88,13 +88,12 @@ export async function startTest(employeeId: string, lineId: string) {
     await client.query("BEGIN");
     await tidy(client);
     const { rows: [line] } = await client.query(
-      `SELECT l.id, l.line_number, l.calling_number, l.team_id, l.employee_id, t.test_number, t.name AS team_name,
+      `SELECT l.id, l.line_number, l.calling_number, l.team_id, l.employee_id, t.name AS team_name,
               e.name AS holder_name, e.employee_code AS holder_code
        FROM lines l LEFT JOIN teams t ON t.id = l.team_id LEFT JOIN employees e ON e.id = l.employee_id
        WHERE l.id = $1 FOR UPDATE OF l`, [lineId]);
     if (!line) throw new ConnectError(404, "That calling number no longer exists. Pick another.");
     if (!line.team_id) throw new ConnectError(400, `Line ${line.line_number} isn't in an office yet. Ask an admin to set it on the Intercoms tab.`);
-    if (!line.test_number) throw new ConnectError(400, `${line.team_name} has no test number yet. Ask an admin to add one on the Offices tab.`);
     if (line.employee_id && line.employee_id !== employeeId) {
       throw new ConnectError(409, `This line is in use by ${holderOf(line)}.`, { code: "in_use", holder: holderOf(line) });
     }
@@ -112,8 +111,8 @@ export async function startTest(employeeId: string, lineId: string) {
     }
     await client.query("UPDATE line_sessions SET status = 'failed', ended_at = NOW(), end_reason = 'test restarted' WHERE employee_id = $1 AND status = 'testing'", [employeeId]);
     await client.query(
-      `INSERT INTO line_sessions (line_id, line_number, calling_number, team_id, employee_id, status) VALUES ($1, $2, $3, $4, $5, 'testing')`,
-      [line.id, line.line_number, line.calling_number, line.team_id, employeeId]);
+      `INSERT INTO line_sessions (line_id, line_number, calling_number, team_id, employee_id, status, test_number) VALUES ($1, $2, $3, $4, $5, 'testing', $6)`,
+      [line.id, line.line_number, line.calling_number, line.team_id, employeeId, randomTestNumber()]);
     await client.query("COMMIT");
   } catch (e) {
     await client.query("ROLLBACK");
@@ -128,8 +127,8 @@ export async function startTest(employeeId: string, lineId: string) {
 export async function myState(employeeId: string) {
   await tidy();
   const load = () => pool.query(
-    `SELECT ls.id, ls.status, ls.line_id, ls.line_number, ls.calling_number, ls.started_at, ls.connected_at, ls.ended_at, ls.end_reason, ls.via,
-            t.id AS team_id, t.name AS team_name, t.test_number
+    `SELECT ls.id, ls.status, ls.line_id, ls.line_number, ls.calling_number, ls.started_at, ls.connected_at, ls.ended_at, ls.end_reason, ls.via, ls.test_number,
+            t.id AS team_id, t.name AS team_name
      FROM line_sessions ls LEFT JOIN teams t ON t.id = ls.team_id
      WHERE ls.employee_id = $1 AND ls.started_at >= ${IST_TODAY_START} - INTERVAL '1 day'
      ORDER BY (ls.status IN ('testing', 'connected')) DESC, ls.started_at DESC LIMIT 1`, [employeeId]);

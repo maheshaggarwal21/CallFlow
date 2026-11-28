@@ -76,7 +76,7 @@ export default function IntercomsPage() {
 
       {offices.length === 0 && teams && (
         <p style={{ margin: 0, padding: "12px 16px", background: C.orangeLight, border: `1px solid ${C.orangeBdr}`, borderRadius: 12, fontSize: 13.5, color: C.text }}>
-          Create your offices on the <a href="/dashboard/teams" style={{ color: C.orange, fontWeight: 700 }}>Offices</a> tab first (with each office&apos;s test number), then add connections here.
+          Create your offices on the <a href="/dashboard/teams" style={{ color: C.orange, fontWeight: 700 }}>Offices</a> tab first, then add connections here.
         </p>
       )}
       {msg && <p role={msg.ok ? "status" : "alert"} style={{ margin: 0, fontSize: 14, fontWeight: 600, color: msg.ok ? C.green : C.red }}>{msg.text}</p>}

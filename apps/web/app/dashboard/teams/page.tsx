@@ -129,9 +129,6 @@ function TeamCard({ team, teams, onMove, run }: {
               <div style={{ minWidth: 0 }}>
                 <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: C.text }}>{team.name}</h2>
                 <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>📍 {team.location || "Location not set"}</div>
-                <div style={{ fontSize: 13, color: team.test_number ? C.textSub : C.red, marginTop: 2 }}>
-                  ☎ Test number: {team.test_number ? <b style={{ color: C.text }}>{team.test_number}</b> : "not set — reps of this office can't connect"}
-                </div>
               </div>
             </div>
             {mode === "delete" ? (
@@ -195,16 +192,13 @@ function AgentRow({ agent, teams, onMove, placeholder }: {
   );
 }
 
-function TeamForm({ initial, onSave, onCancel }: { initial?: Team; onSave: (v: { name: string; location: string | null; test_number: string | null }) => void; onCancel: () => void }) {
+function TeamForm({ initial, onSave, onCancel }: { initial?: Team; onSave: (v: { name: string; location: string | null }) => void; onCancel: () => void }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [location, setLocation] = useState(initial?.location ?? "");
-  const [testNo, setTestNo] = useState(initial?.test_number ?? "");
   const [err, setErr] = useState("");
   const save = () => {
     if (!name.trim()) return setErr("Give the office a name.");
-    const digits = testNo.replace(/\D/g, "");
-    if (digits && (digits.length < 6 || digits.length > 15)) return setErr("The test number should be 6 to 15 digits.");
-    onSave({ name: name.trim(), location: location.trim() || null, test_number: digits || null });
+    onSave({ name: name.trim(), location: location.trim() || null });
   };
   return (
     <div style={{ ...(initial ? {} : { ...S.card, padding: "16px 20px" }), display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
@@ -212,9 +206,6 @@ function TeamForm({ initial, onSave, onCancel }: { initial?: Team; onSave: (v: {
         <input autoFocus value={name} maxLength={60} placeholder="e.g. Sandhu Complex" onChange={(e) => { setErr(""); setName(e.target.value); }} style={input} /></label>
       <label style={{ flex: "1 1 180px" }}><span style={{ ...S.label, display: "block", marginBottom: 6 }}>Office location</span>
         <input value={location} maxLength={60} placeholder="e.g. Chandigarh" onChange={(e) => setLocation(e.target.value)} style={input} /></label>
-      {/* reps dial this from their desk phone to prove which line they're on (employee login, 28 Nov 2026) */}
-      <label style={{ flex: "1 1 180px" }}><span style={{ ...S.label, display: "block", marginBottom: 6 }}>Test number</span>
-        <input value={testNo} inputMode="tel" maxLength={18} placeholder="number reps dial to test" onChange={(e) => { setErr(""); setTestNo(e.target.value); }} style={input} /></label>
       <span style={{ display: "inline-flex", gap: 8 }}>
         <button onClick={onCancel} style={S.btn}>Cancel</button>
         <button onClick={save} style={{ ...S.btnPrimary, padding: "9px 18px" }}>{initial ? "Save" : "Create office"}</button>

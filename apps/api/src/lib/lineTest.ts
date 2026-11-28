@@ -1,4 +1,5 @@
-// The connection test (client, 28 Nov 2026): a rep dials the office's test number from their desk phone and holds
+import { randomInt } from "node:crypto";
+// The connection test (client, 28 Nov 2026): a rep dials the random number shown to them from their desk phone and holds
 // it for TEST_MIN_SECS. The KoreCall box records it under the line the phone is really wired to; if that is the line
 // the rep picked, they are connected. Recordings reach the server 8 s (Office 1, median) to ~3 min after hang-up,
 // hence the long window. Matching is on arrival time (created_at), never the PBX's own clock, which drifts.
@@ -27,6 +28,13 @@ export function findTestCall(lineNumber: string, testNumber: string, startedAt: 
   const ok = calls.filter((c) => c.created_at >= startedAt && c.duration_secs >= TEST_MIN_SECS && sameNumber(c.caller_phone, testNumber));
   return { hit: ok.find((c) => c.line_number === lineNumber) ?? null, elsewhere: ok.find((c) => c.line_number !== lineNumber) ?? null };
 }
+
+/**
+ * The number a rep dials for their test (client, 28 Nov 2026): random, 10 digits. It needn't exist: KoreCall records
+ * whatever is dialled. Starts 6–9 (mobile form) because a landline must prefix 0 to reach a mobile, so dialling it
+ * plain gets the exchange's announcement and rings no stranger, and it never starts 1 (100, 108, 112 are emergency).
+ */
+export const randomTestNumber = () => String(randomInt(6, 10)) + Array.from({ length: 9 }, () => randomInt(0, 10)).join("");
 
 /** "98******66": first two and last two digits */
 export const maskPhone = (p: string | null | undefined) => {

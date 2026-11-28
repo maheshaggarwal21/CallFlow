@@ -1,6 +1,6 @@
 "use client";
 
-// Test connection (client's PDF, 28 Nov 2026): dial the office's test number from the desk phone and hold it for 10 s.
+// Test connection (client's PDF, 28 Nov 2026): dial the random number shown from the desk phone and hold it for 10 s.
 // The page asks the server every 3 s; the server matches the recording to the line picked. Connected → Start calling
 // (the Leads tab). No recording in 3 min → Retry or Try another number. A line someone else holds shows who.
 import { Suspense, useEffect, useState } from "react";
@@ -115,7 +115,7 @@ function Testing({ s, left, hint, lastUpload }: { s: NonNullable<ConnectState["s
     <div className="glass-step" style={{ textAlign: "center" }}>
       <p style={{ margin: 0, color: G.sub, fontSize: 14, fontWeight: 600 }}>From your desk phone on <b style={{ color: G.ink }}>{s.calling_number}</b> (line {s.line_number}), dial</p>
       <div style={{ margin: "10px auto 6px", fontSize: 34, fontWeight: 800, letterSpacing: 2, color: G.red, fontVariantNumeric: "tabular-nums" }}>{s.test_number}</div>
-      <p style={{ margin: "0 0 16px", color: G.sub, fontSize: 14 }}>and hold it for at least <b style={{ color: G.ink }}>10 seconds</b>, then hang up and wait for verification.</p>
+      <p style={{ margin: "0 0 16px", color: G.sub, fontSize: 14 }}>and hold it for at least <b style={{ color: G.ink }}>10 seconds</b>, then hang up and wait for verification. It doesn&apos;t matter if the call goes through: the recording is enough.</p>
       <div style={{ position: "relative", width: 120, height: 120, margin: "0 auto" }} role="timer" aria-label={`${mm} left`}>
         <svg width="120" height="120" viewBox="0 0 120 120" style={{ transform: "rotate(-90deg)" }}>
           <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="9" />

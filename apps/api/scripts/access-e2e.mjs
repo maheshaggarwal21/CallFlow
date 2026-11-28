@@ -680,10 +680,8 @@ mock.server.close();
 
 // ── employee login and line connections (client, 28 Nov 2026; docs/EMPLOYEE-LOGIN-PLAN.md) ──
 {
-  const TEST = "9876500011", PWD = "Cn@123456";
-  const off = (await call(owner, "POST", "/teams", { name: `E2E Office ${stamp}`, location: "Test", test_number: "+91 98765 00011" })).data;
-  ok(off?.test_number === TEST, "office keeps its test number as digits", JSON.stringify(off));
-  ok((await call(owner, "POST", "/teams", { name: `E2E bad ${stamp}`, test_number: "12" })).status === 400, "office: a 2-digit test number is refused");
+  const PWD = "Cn@123456";
+  const off = (await call(owner, "POST", "/teams", { name: `E2E Office ${stamp}`, location: "Test" })).data;
   const l97 = (await call(owner, "POST", "/lines", { line_number: "97", calling_number: "0172-5550097", team_id: off.id })).data;
   const l98 = (await call(owner, "POST", "/lines", { line_number: "98", calling_number: "1725550098", team_id: off.id })).data;
   ok(l97?.line_number === "97" && l97.calling_number === "01725550097" && l97.team_id === off.id, "add connection: line 97 with its number and office", JSON.stringify(l97));
@@ -721,18 +719,21 @@ mock.server.close();
   const meA = (await call(a.token, "GET", "/auth/me")).data;
   ok(meA.needs_connection === true && meA.connection === null, "a rep who hasn't tested must connect first");
   let st = (await call(a.token, "GET", "/connect/me")).data;
-  ok(st.status === "testing" && st.session.line_number === "97" && st.session.test_number === TEST && st.session.seconds_left > 170,
-    "test page: line 97, dial the office test number, ~3 min left", JSON.stringify(st).slice(0, 200));
+  const TEST = st.session?.test_number;
+  ok(st.status === "testing" && st.session.line_number === "97" && /^[6-9]\d{9}$/.test(TEST) && st.session.seconds_left > 170,
+    "test page: line 97, dial a random 10-digit number, ~3 min left", JSON.stringify(st).slice(0, 200));
 
   const b = await elogin(codeB, l97.id);
   ok(b.status === 200 && b.data.problem?.code === "testing" && b.data.problem.message.includes(`Conn a (${codeA})`), "same line while another tests: told who is testing", JSON.stringify(b.data?.problem));
 
-  await fake("98", "09876500011", 15);
+  await fake("98", `0${TEST}`, 15);
   st = (await call(a.token, "GET", "/connect/me")).data;
   ok(st.status === "testing" && st.hint?.line_number === "98" && st.hint.calling_number === "1725550098", "test call on another line: the rep is told their phone is on line 98", JSON.stringify(st.hint));
-  await fake("97", "9876500011", 6);
+  await fake("97", TEST, 6);
   ok((await call(a.token, "GET", "/connect/me")).data.status === "testing", "a 6-second test call doesn't connect");
-  const testCall = await fake("97", "+919876500011", 12);
+  await fake("97", "9000000097", 30);
+  ok((await call(a.token, "GET", "/connect/me")).data.status === "testing", "a call to any other number doesn't connect");
+  const testCall = await fake("97", `+91${TEST}`, 12);
   st = (await call(a.token, "GET", "/connect/me")).data;
   ok(st.status === "connected" && st.session.connected_at, "the 12-second test call on line 97 connects the rep", JSON.stringify(st).slice(0, 200));
   const tc = (await pool.query("SELECT employee_id, is_misc, misc_reason FROM calls WHERE id = $1", [testCall])).rows[0];
@@ -751,8 +752,9 @@ mock.server.close();
   const full = (await call(b.token, "GET", "/connect/options")).data.find((x) => x.id === off.id).lines.find((l) => l.id === l97.id);
   ok(full.holder?.name === "Conn a" && full.holder.reg_no === codeA, "signed in, the holder's name and Reg No show");
 
-  ok((await call(b.token, "POST", "/connect/start", { line_id: l98.id })).data?.status === "testing", "the second rep tests line 98 instead");
-  await fake("98", "9876500011", 20);
+  const stB = (await call(b.token, "POST", "/connect/start", { line_id: l98.id })).data;
+  ok(stB?.status === "testing" && stB.session.test_number !== TEST, "the second rep tests line 98 instead, with a number of their own");
+  await fake("98", stB.session.test_number, 20);
   ok((await call(b.token, "GET", "/connect/me")).data.status === "connected", "their test call on 98 connects them (the older call on 98 doesn't count)");
   ok((await call(a.token, "POST", "/connect/start", { line_id: l98.id })).status === 409, "a connected rep can't take a second line");
   ok((await call(a.token, "POST", "/connect/start", { line_id: l97.id })).status === 200, "the same rep picking their own line again just carries on");

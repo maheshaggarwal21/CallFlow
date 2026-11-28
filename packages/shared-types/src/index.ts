@@ -73,7 +73,7 @@ export type Team = { id: string; name: string; location: string | null; color_in
 /** Employee login / test page: an office and its lines with who holds or is testing each (POST /auth/employee/lookup, GET /connect/options). */
 export type LineHolder = { initial: string; color: string | null; color_index: number; name?: string; reg_no?: number };
 export type LineOption = { id: string; line_number: string; calling_number: string | null; mine?: boolean; holder: LineHolder | null; testing: string | true | null };
-export type OfficeOption = { id: string; name: string; has_test_number: boolean; lines: LineOption[] };
+export type OfficeOption = { id: string; name: string; lines: LineOption[] };
 
 /** GET /connect/me */
 export type ConnectState = {
