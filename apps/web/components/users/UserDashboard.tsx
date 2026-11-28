@@ -1,7 +1,7 @@
 "use client";
 
 // My Dashboard: a User's home, and their salary page in one (client, 13 Nov 2026). With `id` it is the
-// Super Admin's eye on that user's dashboard (Employee Tracker → View). Left: who they are
+// Super Admin's eye on that user's dashboard (Users → View). Left: who they are
 // and their salary plan, as a clean card. Right: today's targets (what is done, what is left), their
 // calls for the picked period, and what they earned in it. Figures are their own only (the API forces it).
 import DaysView from "@/components/salary/DaysView";
@@ -280,7 +280,7 @@ export default function UserDashboard({ id }: { id?: string }) {
   return (
     <div style={{ padding: "8px 4px 40px", color: R.ink, display: "grid", gap: 16 }}>
       <style>{CSS}</style>
-      {id && <Link href="/dashboard/salary" style={{ justifySelf: "start", fontSize: 13.5, fontWeight: 700, color: R.out, textDecoration: "none" }}>← Back to Employee Tracker</Link>}
+      {id && <Link href="/dashboard/users" style={{ justifySelf: "start", fontSize: 13.5, fontWeight: 700, color: R.out, textDecoration: "none" }}>← Back to Users</Link>}
 
       {/* ── Header: who, status, details, period ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>

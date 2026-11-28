@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { HOME } from "@/lib/tabs";
 import UserDashboard from "@/components/users/UserDashboard";
 
-/** The Super Admin's eye on one employee: their dashboard as they see it (Employee Tracker → View). */
+/** The Super Admin's eye on one employee: their dashboard as they see it (Users → View). */
 export default function EmployeeSalaryPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { id: myId, isOwner, isLoading } = useAuth();

@@ -113,3 +113,15 @@ export function periodPhrase(period: Period): string {
     default:           return "all time";
   }
 }
+
+/** This month and the 11 before it, newest first, as YYYY-MM (IST). */
+export function lastMonths(): string[] {
+  const [y, m] = istToday().split("-").map(Number);
+  return Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(Date.UTC(y, m - 1 - i, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  });
+}
+
+/** "November 2026" */
+export const monthName = (ym: string) => new Date(`${ym}-01T00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });

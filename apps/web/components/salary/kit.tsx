@@ -37,11 +37,11 @@ export function Avatar({ name, colorIndex, size = 44 }: { name: string; colorInd
   );
 }
 
-/** The eye: opens one employee's dashboard as they see it. */
-export function EyeButton({ id, name }: { id: string; name: string }) {
+/** The eye: opens one employee's dashboard as they see it (Users tab, Super Admin). */
+export function EyeButton({ id, name, compact = false }: { id: string; name: string; compact?: boolean }) {
   return (
     <Link href={`/dashboard/salary/${id}`} title={`${name}'s dashboard`} style={{
-      ...S.btn, border: `1px solid ${C.orangeBdr}`, color: C.orange, textDecoration: "none",
+      ...S.btn, border: `1px solid ${C.orangeBdr}`, color: C.orange, textDecoration: "none", ...(compact ? { padding: "7px 11px", gap: 5 } : {}),
     }}>
       <Icon name="eye" size={16} /> View
     </Link>

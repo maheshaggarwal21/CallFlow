@@ -1,23 +1,27 @@
 "use client";
 
 // Users (client's users.pdf, 12 Nov 2026): the list, and the "User Management System" form with
-// Basic, Salary, Call Setting, Target and the Tabs checklist that decides which tabs a user sees.
+// Basic, Salary, Target, extras, Days and the Tabs checklist that decides which tabs a user sees. The Super Admin also gets
+// each person's View (their dashboard) and Days, moved here from the Employee Tracker (client, 28 Nov 2026).
 import { useState, type CSSProperties, type ReactNode } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { C } from "@/lib/colors";
 import { api, fetcher } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { EXTRA_PERMISSIONS, RANKS, TABS, rankLabel } from "@/lib/tabs";
-import { Avatar, S } from "@/components/salary/kit";
+import { Avatar, EyeButton, S } from "@/components/salary/kit";
+import DaysView from "@/components/salary/DaysView";
 import Tag from "@/components/ui/Tag";
 import { Icon } from "@/components/crm/icons";
 import ExtraCommissions, { extraProblem } from "@/components/users/ExtraCommissions";
 import type { Employee, TeamsResponse, UserRole } from "@callflow/shared-types";
-import { istToday } from "@/lib/period";
+import { istToday, lastMonths, monthName } from "@/lib/period";
 
 // Fits a 1280px laptop without sideways scrolling, Edit included (the minimums); on wider screens the spare
 // room is shared out so Access, Status and Edit get space too, not just Designation. Email gets the most.
 const COLS = "minmax(150px,1.3fr) 110px minmax(205px,1.35fr) 64px minmax(100px,0.8fr) minmax(104px,0.8fr) minmax(60px,0.6fr) minmax(36px,0.4fr)";
+// the Super Admin's list has View between Access and Status; Email and Designation give up the room
+const COLS_VIEW = "minmax(130px,1.3fr) 110px minmax(150px,1.35fr) 64px minmax(118px,0.8fr) minmax(96px,0.8fr) 84px minmax(60px,0.6fr) minmax(36px,0.4fr)";
 const TICKS = [...TABS.map((t) => ({ key: t.key, label: t.label })), ...EXTRA_PERMISSIONS];
 
 /** The green on/off switch from the client's design. */
@@ -38,7 +42,8 @@ export default function UsersPage() {
   const users = all && [...all].sort((a, b) => Number(a.status !== "active") - Number(b.status !== "active"))
     .filter((u) => show === "all" || u.status === show);
   const inactiveCount = (all ?? []).filter((u) => u.status !== "active").length;
-  const { id: myId } = useAuth();
+  const { id: myId, isOwner } = useAuth();
+  const cols = isOwner ? COLS_VIEW : COLS;
   const [editing, setEditing] = useState<Employee | "new" | null>(null);
   const [error, setError] = useState("");
 
@@ -61,7 +66,7 @@ export default function UsersPage() {
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
           <h1 style={S.h1}>Users</h1>
-          <p style={S.sub}>Everyone who can sign in, what they see, and their salary, line and targets</p>
+          <p style={S.sub}>Everyone who can sign in, what they see, and their salary, days and targets</p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {/* switched-off people stay at the bottom; this narrows the list (client, 15 Nov 2026) */}
@@ -79,13 +84,13 @@ export default function UsersPage() {
       {isLoading ? <p style={{ color: C.muted, fontSize: 14 }}>Loading…</p> : (
         <div style={{ ...S.card, overflowX: "auto" }}>
           <div style={{ minWidth: 940 }}>
-            <div style={{ display: "grid", gridTemplateColumns: COLS, alignItems: "center", gap: 16, padding: "0 20px", minHeight: 44,
+            <div style={{ display: "grid", gridTemplateColumns: cols, alignItems: "center", gap: isOwner ? 12 : 16, padding: "0 20px", minHeight: 44,
               borderBottom: `2px solid ${C.border}`, background: C.bgDeep }}>
-              {["Name", "Contact", "Email Id", "Reg No.", "Designation Name", "Access", "Status", "Edit"].map((h) => <span key={h} style={S.th}>{h}</span>)}
+              {["Name", "Contact", "Email Id", "Reg No.", "Designation Name", "Access", ...(isOwner ? ["View"] : []), "Status", "Edit"].map((h) => <span key={h} style={S.th}>{h}</span>)}
             </div>
             {users?.length === 0 && <p style={{ margin: 0, padding: "18px 20px", color: C.muted, fontSize: 14 }}>No {show === "inactive" ? "inactive" : "active"} users.</p>}
             {(users ?? []).map((u, i) => (
-              <div key={u.id} style={{ display: "grid", gridTemplateColumns: COLS, alignItems: "center", gap: 16, padding: "14px 20px",
+              <div key={u.id} style={{ display: "grid", gridTemplateColumns: cols, alignItems: "center", gap: isOwner ? 12 : 16, padding: "14px 20px",
                 borderBottom: i === users!.length - 1 ? "none" : `1px solid ${C.borderLight}`, opacity: u.status === "active" ? 1 : 0.6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                   <Avatar name={u.name} colorIndex={u.color_index} />
@@ -97,6 +102,7 @@ export default function UsersPage() {
                 <span style={{ fontSize: 14, color: C.textSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={u.designation ?? undefined}>{u.designation || "—"}</span>
                 <span><Tag label={rankLabel(u.role)} color={u.role === "owner" ? C.orange : u.role === "admin" ? C.blue : C.textSub}
                   bg={u.role === "owner" ? C.orangeLight : u.role === "admin" ? C.blueLight : C.bgDeep} /></span>
+                {isOwner && <span><EyeButton id={u.id} name={u.name} compact /></span>}
                 <Switch on={u.status === "active"} onChange={(v) => setStatus(u, v)} label={`${u.name} is active`} disabled={u.id === myId} />
                 <button onClick={() => setEditing(u)} aria-label={`Edit ${u.name}`} title="Edit"
                   style={{ ...S.btn, padding: 8, color: C.orange, justifySelf: "start" }}><Icon name="edit" size={16} /></button>
@@ -380,6 +386,8 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
             <ExtraCommissions deduction value={f.deductions} onChange={(deductions) => set({ deductions })} input={input} label={fieldLabel} />
           </Section>
 
+          {isOwner && user && <DaysSection id={user.id} />}
+
           <Section title="Tabs" icon="▦" right={!all && (
             <button type="button" onClick={() => set({ permissions: f.permissions.length === TICKS.length ? [] : TICKS.map((t) => t.key) })}
               style={{ border: "none", background: "none", color: C.orange, fontSize: 12, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", cursor: "pointer", marginBottom: 12 }}>
@@ -431,5 +439,19 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
         </>
       )}
     </>
+  );
+}
+
+/** One person's month day by day, with Count as full and a custom ₹ per day (Super Admin; was Days on the Employee Tracker). */
+function DaysSection({ id }: { id: string }) {
+  const months = lastMonths();
+  const [month, setMonth] = useState(months[0]);
+  return (
+    <Section title="Days" icon="▤" right={
+      <select aria-label="Month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ ...input, width: 180, padding: "6px 10px" }}>
+        {months.map((m) => <option key={m} value={m}>{monthName(m)}</option>)}
+      </select>}>
+      <DaysView employeeId={id} month={month} canOverride onChanged={() => globalMutate((k) => typeof k === "string" && k.startsWith("/employees/payroll"))} />
+    </Section>
   );
 }
