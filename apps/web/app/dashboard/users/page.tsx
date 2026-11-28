@@ -112,8 +112,10 @@ export default function UsersPage() {
         </div>
       )}
 
-      {editing && <UserForm user={editing === "new" ? null : editing} isSelf={editing !== "new" && editing.id === myId}
-        onClose={() => setEditing(null)} onSaved={() => { setEditing(null); mutate(); }} />}
+      {editing && <UserForm key={editing === "new" ? "new" : editing.id} user={editing === "new" ? null : editing} isSelf={editing !== "new" && editing.id === myId}
+        onClose={() => setEditing(null)}
+        // a new user's form stays open on them, so their CallFlow ID can be copied straight away (client, 28 Nov 2026)
+        onSaved={async (created) => { const list = await mutate(); setEditing(created ? list?.find((x) => x.id === created.id) ?? created : null); }} />}
     </div>
   );
 }
@@ -181,7 +183,7 @@ const fromHms = (v: string) => {
 const num = (v: string) => (v.trim() === "" ? 0 : Number(v));
 const NEW_TEAM = "__new_team__";
 
-function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; isSelf: boolean; onClose: () => void; onSaved: () => void }) {
+function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; isSelf: boolean; onClose: () => void; onSaved: (created?: Employee) => void }) {
   const { isOwner, can } = useAuth();
   const { data: teamsData, mutate: reloadTeams } = useSWR<TeamsResponse>(can("teams") || can("users") ? "/teams" : null, fetcher);
   const [newTeam, setNewTeam] = useState<{ name: string; location: string; err: string; busy: boolean } | null>(null);
@@ -265,8 +267,8 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
     };
     setSaving(true);
     try {
-      await (user ? api.patch(`/employees/${user.id}`, body) : api.post("/employees", body));
-      onSaved();
+      if (user) { await api.patch(`/employees/${user.id}`, body); onSaved(); }
+      else onSaved(await api.post<Employee>("/employees", body));
     } catch (e) {
       setError((e as Error).message);
       setSaving(false);
@@ -359,6 +361,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
                   {RANKS.filter((r) => isOwner || r.role !== "owner" || f.role === "owner").map((r) => <option key={r.role} value={r.role}>{r.label}</option>)}
                 </select>
               </Field>
+              <CallFlowId id={user?.id} />
             </div>
           </Section>
 
@@ -467,5 +470,33 @@ function DaysSection({ id }: { id: string }) {
       </select>}>
       <DaysView employeeId={id} month={month} canOverride onChanged={() => globalMutate((k) => typeof k === "string" && k.startsWith("/employees/payroll"))} />
     </Section>
+  );
+}
+
+/** The person's CallFlow ID (employees.id), read-only with Copy: the school site asks for it to link their payments (client, 28 Nov 2026). */
+function CallFlowId({ id }: { id?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!id) return;
+    try { await navigator.clipboard.writeText(id); } catch {
+      // no clipboard (plain http or an old browser): select the text so Ctrl+C works
+      const r = document.createRange(); r.selectNodeContents(document.getElementById("cf-id")!); getSelection()?.removeAllRanges(); getSelection()?.addRange(r); return;
+    }
+    setCopied(true); setTimeout(() => setCopied(false), 1800);
+  };
+  return (
+    <div style={{ gridColumn: "span 2", minWidth: 0 }}>
+      <span style={fieldLabel}>CallFlow ID<span style={hint}> · for the school site</span></span>
+      <div style={{ ...input, display: "flex", alignItems: "center", gap: 8, background: C.bgDeep, padding: "6px 6px 6px 12px" }}>
+        <span id="cf-id" title={id} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", userSelect: "all",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13, color: id ? C.text : C.muted }}>
+          {id ?? "Shown here once the user is saved"}</span>
+        {id && (
+          <button type="button" onClick={copy} aria-label="Copy CallFlow ID"
+            style={{ ...S.btn, padding: "6px 12px", flex: "none", color: copied ? C.green : C.orange, borderColor: copied ? C.green : C.orangeBdr }}>
+            {copied ? "✓ Copied" : "Copy"}</button>
+        )}
+      </div>
+    </div>
   );
 }
