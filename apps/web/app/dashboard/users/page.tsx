@@ -125,17 +125,29 @@ const hint: CSSProperties = { fontWeight: 500, color: C.muted };
 const input: CSSProperties = { ...S.input, background: C.card, fontSize: 14, boxShadow: "0 1px 2px rgba(60,40,20,0.04)" };
 
 /** One part of the form on a soft card, so the white inputs stand out (client, 13 Nov: "looking a little dull"). */
-function Section({ title, icon, right, children, style }: { title: string; icon: string; right?: ReactNode; children: ReactNode; style?: CSSProperties }) {
+/** A form section. With `onToggle` its title is a side arrow that opens and closes it (Days, client 28 Nov 2026). */
+function Section({ title, icon, right, children, style, open, onToggle }: {
+  title: string; icon: string; right?: ReactNode; children: ReactNode; style?: CSSProperties; open?: boolean; onToggle?: () => void;
+}) {
+  const badge: CSSProperties = { width: 26, height: 26, borderRadius: 8, background: C.orangeLight, display: "inline-grid", placeItems: "center", fontSize: 14 };
   return (
     <section style={{ background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 14, padding: "16px 18px", minWidth: 0, ...style }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <p style={sectionTitle}>
-          <span aria-hidden style={{ width: 26, height: 26, borderRadius: 8, background: C.orangeLight, display: "inline-grid", placeItems: "center", fontSize: 14 }}>{icon}</span>
-          {title}
-        </p>
+        {onToggle ? (
+          <button type="button" onClick={onToggle} aria-expanded={open}
+            style={{ ...sectionTitle, ...(open ? {} : { margin: 0 }), background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>
+            <span aria-hidden style={{ ...badge, fontSize: 12, transition: "transform 0.15s", transform: open ? "rotate(90deg)" : "none" }}>▶</span>
+            {title}
+          </button>
+        ) : (
+          <p style={sectionTitle}>
+            <span aria-hidden style={badge}>{icon}</span>
+            {title}
+          </p>
+        )}
         {right}
       </div>
-      {children}
+      {(open ?? true) && children}
     </section>
   );
 }
@@ -446,8 +458,10 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
 function DaysSection({ id }: { id: string }) {
   const months = lastMonths();
   const [month, setMonth] = useState(months[0]);
+  // closed until the arrow is clicked: the month's list is long
+  const [open, setOpen] = useState(false);
   return (
-    <Section title="Days" icon="▤" right={
+    <Section title="Days" icon="▤" open={open} onToggle={() => setOpen((v) => !v)} right={
       <select aria-label="Month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ ...input, width: 180, padding: "6px 10px" }}>
         {months.map((m) => <option key={m} value={m}>{monthName(m)}</option>)}
       </select>}>
