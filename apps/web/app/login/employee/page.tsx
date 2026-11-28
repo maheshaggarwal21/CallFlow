@@ -19,7 +19,8 @@ export default function EmployeeLoginPage() {
 
 function EmployeeLogin() {
   const router = useRouter();
-  const idle = useSearchParams().get("idle") === "1";
+  const q = useSearchParams();
+  const idle = q.get("idle") === "1", freed = q.get("freed") === "1";
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [reg, setReg] = useState("");
   const [who, setWho] = useState<Lookup | null>(null);
@@ -68,6 +69,11 @@ function EmployeeLogin() {
       {idle && step === 1 && (
         <p role="status" style={{ margin: "0 0 14px", padding: "10px 12px", borderRadius: 10, fontSize: 13.5, color: "#8a4b00", background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.35)" }}>
           You were logged out after 45 minutes with no activity, and your line was freed. Log in again to connect.
+        </p>
+      )}
+      {freed && step === 1 && (
+        <p role="status" style={{ margin: "0 0 14px", padding: "10px 12px", borderRadius: 10, fontSize: 13.5, color: "#8a4b00", background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.35)" }}>
+          An admin gave your line to someone else or freed it, so you were logged out. Log in again to connect.
         </p>
       )}
       <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }} noValidate>

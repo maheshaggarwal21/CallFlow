@@ -2,16 +2,16 @@
 
 // Intercoms: connections (client's PDF, 28 Nov 2026; docs/EMPLOYEE-LOGIN-PLAN.md). Each row is a line as the KoreCall
 // box numbers it, the calling number on it and its office. Reps connect themselves with the employee login and a test
-// call; this page shows who is on each line, frees a line, and connects someone by hand when the box is offline.
-// Add connection suggests the next line number. Every row saves on its own.
-import { useMemo, useState, type CSSProperties } from "react";
+// call; here an admin can also pick who is on a line from the Connected dropdown (gives it to them with no test call,
+// and logs out whoever had it) or free it. Add connection suggests the next line number. Every row saves on its own.
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import useSWR from "swr";
 import { C, eClr } from "@/lib/colors";
 import { api, fetcher } from "@/lib/api";
 import { S } from "@/components/salary/kit";
-import type { Line, TeamsResponse } from "@callflow/shared-types";
+import type { EmployeeName, Line, TeamsResponse } from "@callflow/shared-types";
 
-const COLS = "26px 64px minmax(124px,1fr) minmax(118px,1fr) minmax(170px,1.5fr) 62px 176px";
+const COLS = "26px 64px minmax(124px,1fr) minmax(118px,1fr) minmax(230px,1.8fr) 62px 120px";
 const field: CSSProperties = { ...S.input, background: C.card, fontSize: 14, padding: "8px 10px" };
 const small = (tone: "orange" | "red" | "plain"): CSSProperties => ({
   padding: "7px 12px", borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
@@ -30,7 +30,7 @@ export default function IntercomsPage() {
   const offices = teams?.teams ?? [];
   const [office, setOffice] = useState("all");
   const [adding, setAdding] = useState<Draft | null>(null);
-  const [connecting, setConnecting] = useState<Line | null>(null);
+  const { data: people } = useSWR<EmployeeName[]>("/employees/names", fetcher);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const shown = useMemo(() => (lines ?? []).filter((l) => office === "all" || (office === "none" ? !l.team_id : l.team_id === office)), [lines, office]);
@@ -87,7 +87,7 @@ export default function IntercomsPage() {
             <div key={l.id}>⚠ <b>Line {l.line_number}</b>: {l.gap_calls} call{l.gap_calls === 1 ? "" : "s"}
               {l.freed_at ? ` since ${new Date(l.freed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : " this month"} came in with no one connected, so they count for nobody.</div>
           ))}
-          <div style={{ marginTop: 4, color: C.textSub }}>Use <b>Connect by hand</b> on that line and tick the box to give them to the person.</div>
+          <div style={{ marginTop: 4, color: C.textSub }}>Pick the person in that line&apos;s <b>Connected</b> dropdown and tick the box to give them those calls.</div>
         </div>
       )}
 
@@ -108,123 +108,193 @@ export default function IntercomsPage() {
               </p>
             )}
             {shown.map((l, i) => (
-              <Row key={l.id + (l.calling_number ?? "") + (l.team_id ?? "") + l.line_number} n={i + 1} line={l} offices={offices}
+              <Row key={l.id + (l.calling_number ?? "") + (l.team_id ?? "") + l.line_number} n={i + 1} line={l} offices={offices} people={people ?? []} lines={lines ?? []}
                 draft={{ line_number: l.line_number, calling_number: l.calling_number ?? "", team_id: l.team_id ?? "" }}
                 onSave={(d) => run(api.patch(`/lines/${l.id}`, {
                   ...(d.line_number.padStart(2, "0") !== l.line_number ? { line_number: d.line_number } : {}),
                   calling_number: d.calling_number || null, team_id: d.team_id || null,
                 }), `Line ${d.line_number.padStart(2, "0")} saved.`)}
-                onFree={() => run(api.patch(`/lines/${l.id}`, { employee_id: null }), `Line ${l.line_number} is free.`)}
-                onConnect={() => setConnecting(l)}
+                onAssign={(p, claim) => run(api.patch(`/lines/${l.id}`, p ? { employee_id: p.id, move: true, ...(claim ? { claim_gap: true } : {}) } : { employee_id: null }),
+                  p ? `${p.name} is on line ${l.line_number}.` : `Line ${l.line_number} is free.`)}
                 onDelete={() => run(api.delete(`/lines/${l.id}`), `Line ${l.line_number} removed. Its past calls keep their line and number.`)} />
             ))}
           </div>
         </div>
       )}
-
-      {connecting && (
-        <ConnectByHand line={connecting} taken={new Set((lines ?? []).filter((l) => l.employee_id).map((l) => l.employee_id!))} onClose={() => setConnecting(null)}
-          onDone={async (body, name) => { if (await run(api.patch(`/lines/${connecting.id}`, body), `${name} connected on line ${connecting.line_number}.`)) setConnecting(null); }} />
-      )}
     </div>
   );
 }
 
-function Row({ n, line, draft: initial, offices, isNew, onSave, onCancel, onFree, onConnect, onDelete }: {
-  n: number; line?: Line; draft: Draft; offices: TeamsResponse["teams"]; isNew?: boolean;
-  onSave: (d: Draft) => Promise<unknown> | void; onCancel?: () => void; onFree?: () => void; onConnect?: () => void; onDelete?: () => void;
+type Person = EmployeeName;
+const personColor = (p: { color?: string | null; color_index?: number | null }) => p.color || eClr(p.color_index ?? 0).t;
+const Avatar = ({ name, color }: { name: string; color: string }) => (
+  <span aria-hidden style={{ width: 32, height: 32, borderRadius: "50%", flex: "none", display: "grid", placeItems: "center", background: color, color: "#fff", fontWeight: 800, fontSize: 13 }}>
+    {name.trim().slice(0, 1).toUpperCase()}</span>
+);
+
+function Row({ n, line, draft: initial, offices, people = [], lines = [], isNew, onSave, onCancel, onAssign, onDelete }: {
+  n: number; line?: Line; draft: Draft; offices: TeamsResponse["teams"]; people?: Person[]; lines?: Line[]; isNew?: boolean;
+  onSave: (d: Draft) => Promise<unknown> | void; onCancel?: () => void; onAssign?: (p: Person | null, claimGap: boolean) => Promise<unknown>; onDelete?: () => void;
 }) {
   const [d, setD] = useState(initial);
-  const [confirm, setConfirm] = useState<"free" | "delete" | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  // the person picked in the Connected dropdown (null = free the line), waiting for Yes
+  const [pending, setPending] = useState<{ p: Person | null } | null>(null);
+  const [claim, setClaim] = useState(false);
   const [busy, setBusy] = useState(false);
   const dirty = isNew || d.line_number !== initial.line_number || d.calling_number !== initial.calling_number || d.team_id !== initial.team_id;
   const held = !!line?.employee_id;
   const save = async () => { setBusy(true); try { await onSave(d); } finally { setBusy(false); } };
   const who = line?.employee_name;
-  const clr = line?.employee_color || eClr(line?.employee_color_index ?? 0).t;
+  const otherLine = (id: string) => lines.find((l) => l.employee_id === id && l.id !== line?.id)?.line_number;
+  const assign = async () => {
+    if (!pending) return;
+    setBusy(true);
+    try { await onAssign?.(pending.p, claim); setPending(null); setClaim(false); } finally { setBusy(false); }
+  };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 12, alignItems: "center", padding: "12px 18px", borderBottom: `1px solid ${C.borderLight}`, background: isNew ? C.orangeLight : undefined }}>
-      <span style={{ fontSize: 13, fontWeight: 800, color: C.blue }}>{isNew ? "new" : `${n}.`}</span>
-      <input aria-label="Line" value={d.line_number} inputMode="numeric" maxLength={3} disabled={held}
-        title={held ? "Free the line before changing its number" : "The line number the KoreCall box uses"}
-        onChange={(e) => setD({ ...d, line_number: e.target.value.replace(/\D/g, "") })} style={{ ...field, fontWeight: 800, textAlign: "center", opacity: held ? 0.6 : 1 }} />
-      <input aria-label="Calling number" value={d.calling_number} inputMode="tel" maxLength={18} placeholder="number on this line"
-        onChange={(e) => setD({ ...d, calling_number: e.target.value })} style={field} />
-      <select aria-label="Office" value={d.team_id} onChange={(e) => setD({ ...d, team_id: e.target.value })} style={field}>
-        <option value="">— No office —</option>
-        {offices.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-      </select>
-      <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-        {isNew ? <span style={{ fontSize: 13, color: C.muted }}>—</span> : who ? (
-          <>
-            <span aria-hidden style={{ width: 32, height: 32, borderRadius: "50%", flex: "none", display: "grid", placeItems: "center", background: clr, color: "#fff", fontWeight: 800, fontSize: 13 }}>
-              {who.trim().slice(0, 1).toUpperCase()}</span>
-            <span style={{ minWidth: 0 }}>
-              <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{who}</span>
-              <span style={{ fontSize: 12, color: C.muted }}>
-                {line?.employee_code != null && `Reg No. ${line.employee_code}`}
-                {line?.connected_at && ` · since ${time(line.connected_at)}`}{line?.connected_via === "admin" ? " · by hand" : line?.connected_via === "test" ? " · tested ✓" : ""}
-              </span>
-            </span>
-          </>
-        ) : <span style={{ fontSize: 13.5, color: C.dim }}>Free</span>}
-      </span>
-      <span style={{ fontSize: 14, fontWeight: 700, color: line?.call_count_today ? C.orange : C.dim }}>{isNew ? "—" : line?.call_count_today ?? 0}</span>
-      <span style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-        {confirm ? (
-          <>
-            <span style={{ fontSize: 12.5, color: C.textSub, alignSelf: "center" }}>{confirm === "free" ? `Free from ${who}?` : "Remove this line?"}</span>
-            <button onClick={() => { setConfirm(null); (confirm === "free" ? onFree : onDelete)?.(); }} style={small("red")}>Yes</button>
-            <button onClick={() => setConfirm(null)} style={small("plain")}>No</button>
-          </>
-        ) : (
-          <>
-            {(dirty || isNew) && <button disabled={busy || !d.line_number} onClick={save} style={{ ...small("orange"), opacity: busy ? 0.6 : 1 }}>{busy ? "Saving…" : "Save"}</button>}
-            {isNew && <button onClick={onCancel} style={small("plain")}>Cancel</button>}
-            {!isNew && held && <button onClick={() => setConfirm("free")} style={small("red")}>Free line</button>}
-            {!isNew && !held && !dirty && <button onClick={onConnect} style={small("plain")}>Connect by hand</button>}
-            {!isNew && !held && !dirty && <button onClick={() => setConfirm("delete")} aria-label={`Remove line ${line?.line_number}`} title="Remove this line" style={small("plain")}>✕</button>}
-          </>
+    <div style={{ borderBottom: `1px solid ${C.borderLight}`, background: isNew ? C.orangeLight : undefined }}>
+      <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 12, alignItems: "center", padding: "12px 18px" }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: C.blue }}>{isNew ? "new" : `${n}.`}</span>
+        <input aria-label="Line" value={d.line_number} inputMode="numeric" maxLength={3} disabled={held}
+          title={held ? "Free the line before changing its number" : "The line number the KoreCall box uses"}
+          onChange={(e) => setD({ ...d, line_number: e.target.value.replace(/\D/g, "") })} style={{ ...field, fontWeight: 800, textAlign: "center", opacity: held ? 0.6 : 1 }} />
+        <input aria-label="Calling number" value={d.calling_number} inputMode="tel" maxLength={18} placeholder="number on this line"
+          onChange={(e) => setD({ ...d, calling_number: e.target.value })} style={field} />
+        <select aria-label="Office" value={d.team_id} onChange={(e) => setD({ ...d, team_id: e.target.value })} style={field}>
+          <option value="">— No office —</option>
+          {offices.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        {isNew || !line ? <span style={{ fontSize: 13, color: C.muted }}>—</span> : (
+          <AgentPicker line={line} people={people} otherLine={otherLine} onPick={(p) => { setClaim(false); setPending({ p }); }} />
         )}
-      </span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: line?.call_count_today ? C.orange : C.dim }}>{isNew ? "—" : line?.call_count_today ?? 0}</span>
+        <span style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          {confirmDelete ? (
+            <>
+              <span style={{ fontSize: 12.5, color: C.textSub, alignSelf: "center" }}>Remove?</span>
+              <button onClick={() => { setConfirmDelete(false); onDelete?.(); }} style={small("red")}>Yes</button>
+              <button onClick={() => setConfirmDelete(false)} style={small("plain")}>No</button>
+            </>
+          ) : (
+            <>
+              {(dirty || isNew) && <button disabled={busy || !d.line_number} onClick={save} style={{ ...small("orange"), opacity: busy ? 0.6 : 1 }}>{busy ? "Saving…" : "Save"}</button>}
+              {isNew && <button onClick={onCancel} style={small("plain")}>Cancel</button>}
+              {!isNew && !held && !dirty && <button onClick={() => setConfirmDelete(true)} aria-label={`Remove line ${line?.line_number}`} title="Remove this line" style={small("plain")}>✕</button>}
+            </>
+          )}
+        </span>
+      </div>
+      {pending && line && (
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 18px 12px", padding: "10px 14px", borderRadius: 10, background: C.orangeLight, border: `1px solid ${C.orangeBdr}`, fontSize: 13.5, color: C.text }}>
+          <span style={{ flex: "1 1 300px" }}>
+            {pending.p ? <>Give line <b>{line.line_number}</b> to <b>{pending.p.name}</b>{pending.p.employee_code != null && ` (Reg No. ${pending.p.employee_code})`}? Their calls on this line count for them from now, no test call needed.</>
+              : <>Free line <b>{line.line_number}</b>?</>}
+            {who && <> <b>{who}</b> will be logged out.</>}
+            {pending.p && otherLine(pending.p.id) && <> {pending.p.name} leaves line {otherLine(pending.p.id)}, which becomes free.</>}
+          </span>
+          {pending.p && line.gap_calls > 0 && (
+            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="checkbox" checked={claim} onChange={(e) => setClaim(e.target.checked)} />
+              Also give them the {line.gap_calls} call{line.gap_calls === 1 ? "" : "s"} that came in with no one on this line
+            </label>
+          )}
+          <span style={{ display: "flex", gap: 6 }}>
+            <button disabled={busy} onClick={assign} style={{ ...small(pending.p ? "orange" : "red"), opacity: busy ? 0.6 : 1 }}>{busy ? "Saving…" : "Yes"}</button>
+            <button disabled={busy} onClick={() => setPending(null)} style={small("plain")}>No</button>
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
-/** The fallback when a test call can't get through (box offline): an admin puts a person on the line. */
-function ConnectByHand({ line, taken, onClose, onDone }: {
-  line: Line; taken: Set<string>; onClose: () => void; onDone: (body: { employee_id: string; claim_gap?: boolean }, name: string) => void;
-}) {
-  const { data: people } = useSWR<{ id: string; name: string }[]>("/employees/names", fetcher);
-  const [pick, setPick] = useState("");
-  const [claim, setClaim] = useState(false);
-  const free = (people ?? []).filter((p) => !taken.has(p.id));
-  const name = free.find((p) => p.id === pick)?.name ?? "";
+/** The Connected cell: who is on the line, as before, opening a list of everyone to give the line to (or free it). */
+function AgentPicker({ line, people, otherLine, onPick }: { line: Line; people: Person[]; otherLine: (id: string) => string | undefined; onPick: (p: Person | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; width: number }>({ left: 0, width: 280 });
+  const btn = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const who = line.employee_name;
+  // "Free" first when someone is on it; the person on it isn't offered again
+  const options: (Person | null)[] = [...(line.employee_id ? [null] : []), ...people.filter((p) => p.id !== line.employee_id)];
+
+  const show = () => {
+    const r = btn.current!.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom > 300;
+    setPos({ left: r.left, width: Math.max(r.width, 280), ...(below ? { top: r.bottom + 4 } : { bottom: window.innerHeight - r.top + 4 }) });
+    setActive(0);
+    setOpen(true);
+  };
+  // the list is fixed to the screen (the table scrolls sideways), so it closes on any scroll or outside click
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: Event) => { if (!list.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setOpen(false); };
+    const scrolled = (e: Event) => { if (!list.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", away);
+    window.addEventListener("scroll", scrolled, true);
+    window.addEventListener("resize", () => setOpen(false), { once: true });
+    return () => { document.removeEventListener("mousedown", away); window.removeEventListener("scroll", scrolled, true); };
+  }, [open]);
+
+  const choose = (p: Person | null) => { setOpen(false); onPick(p); btn.current?.focus(); };
+  const key = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") return setOpen(false);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) return show();
+      setActive((i) => Math.min(options.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1))));
+    }
+    if (e.key === "Enter" && open && active < options.length) { e.preventDefault(); choose(options[active]); }
+  };
+
   return (
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(43,33,24,0.35)", zIndex: 300 }} />
-      <div role="dialog" aria-label={`Connect someone on line ${line.line_number}`} style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 301,
-        width: "min(420px, calc(100vw - 32px))", ...S.card, padding: "20px 22px" }}>
-        <h3 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 800, color: C.text }}>Connect by hand · line {line.line_number}</h3>
-        <p style={{ margin: "0 0 14px", fontSize: 13.5, color: C.muted }}>For when a test call can&apos;t get through. Calls on this line will go to the person you pick until they log out or go idle.</p>
-        <label><span style={{ ...S.label, display: "block", marginBottom: 6 }}>Person</span>
-          <select autoFocus value={pick} onChange={(e) => setPick(e.target.value)} style={field}>
-            <option value="">Pick someone without a line…</option>
-            {free.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </label>
-        {line.gap_calls > 0 && (
-          <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12, fontSize: 13.5, color: C.text }}>
-            <input type="checkbox" checked={claim} onChange={(e) => setClaim(e.target.checked)} />
-            Also give them the {line.gap_calls} call{line.gap_calls === 1 ? "" : "s"} that came in with no one on this line
-          </label>
-        )}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
-          <button onClick={onClose} style={S.btn}>Cancel</button>
-          <button disabled={!pick} onClick={() => onDone({ employee_id: pick, ...(claim ? { claim_gap: true } : {}) }, name)} style={{ ...S.btnPrimary, opacity: pick ? 1 : 0.5 }}>Connect</button>
+      <button ref={btn} type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`Who is on line ${line.line_number}`}
+        onClick={() => (open ? setOpen(false) : show())} onKeyDown={key}
+        style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, width: "100%", padding: "4px 8px", margin: "-4px -8px", borderRadius: 10,
+          border: `1px solid ${open ? C.orange : "transparent"}`, background: open ? C.card : "transparent", cursor: "pointer", textAlign: "left", font: "inherit" }}
+        onMouseEnter={(e) => { if (!open) e.currentTarget.style.borderColor = C.border; }} onMouseLeave={(e) => { if (!open) e.currentTarget.style.borderColor = "transparent"; }}>
+        {who ? (
+          <>
+            <Avatar name={who} color={line.employee_color || eClr(line.employee_color_index ?? 0).t} />
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{who}</span>
+              <span style={{ fontSize: 12, color: C.muted }}>
+                {line.employee_code != null && `Reg No. ${line.employee_code}`}
+                {line.connected_at && ` · since ${time(line.connected_at)}`}{line.connected_via === "admin" ? " · by admin" : line.connected_via === "test" ? " · tested ✓" : ""}
+              </span>
+            </span>
+          </>
+        ) : <span style={{ flex: 1, fontSize: 13.5, color: C.dim }}>Free</span>}
+        <span aria-hidden style={{ color: C.muted, fontSize: 11, flex: "none" }}>▼</span>
+      </button>
+      {open && (
+        <div ref={list} role="listbox" aria-label={`Give line ${line.line_number} to`} style={{
+          position: "fixed", zIndex: 400, left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, maxHeight: 300, overflowY: "auto", padding: 6,
+          background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "0 14px 36px rgba(43,33,24,0.18)" }}>
+          {options.length === 0 && <div style={{ padding: 10, fontSize: 13.5, color: C.muted }}>No one to pick.</div>}
+          {options.map((p, i) => {
+            const elsewhere = p && otherLine(p.id);
+            return (
+              <div key={p?.id ?? "free"} role="option" aria-selected={i === active} onMouseEnter={() => setActive(i)} onClick={() => choose(p)}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 9, cursor: "pointer", background: i === active ? C.orangeLight : "transparent" }}>
+                {p ? (
+                  <>
+                    <Avatar name={p.name} color={personColor(p)} />
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                      <span style={{ fontSize: 12, color: C.muted }}>{p.employee_code != null ? `Reg No. ${p.employee_code}` : "No Reg No"}{elsewhere ? ` · on line ${elsewhere}` : ""}</span>
+                    </span>
+                  </>
+                ) : <span style={{ fontSize: 13.5, fontWeight: 700, color: C.red, padding: "6px 0" }}>Free this line (no one)</span>}
+              </div>
+            );
+          })}
         </div>
-      </div>
+      )}
     </>
   );
 }

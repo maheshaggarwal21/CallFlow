@@ -4,6 +4,7 @@ import pool from "../db/pool";
 import { requireAuth } from "../middleware/auth";
 import { requirePermission } from "../middleware/requirePermission";
 import { IST_TODAY_START, IST_TZ } from "../lib/dateRange";
+import { tidy } from "../services/lineSession.service";
 
 const router = Router();
 
@@ -20,6 +21,8 @@ const patchSchema = z.object({
   purpose: z.string().max(200).nullable().optional(),
   /** With an agent: also give them the calls that came on this line with no agent since it was freed. */
   claim_gap: z.boolean().optional(),
+  /** With an agent who holds another line: move them here (that line is freed) instead of refusing. */
+  move: z.boolean().optional(),
 });
 const swapSchema = z.object({ a: z.string().uuid(), b: z.string().uuid(), with_intercoms: z.boolean().optional() });
 const bad = (res: any, status: number, message: string) => res.status(status).json({ error: message, message });
@@ -32,6 +35,7 @@ const GAP_FROM = (l: string) =>
   `COALESCE(${l}.freed_at, date_trunc('month', now() AT TIME ZONE '${IST_TZ}') AT TIME ZONE '${IST_TZ}')`;
 
 router.get("/", async (_req, res) => {
+  await tidy(); // the Intercoms page shows a line free as soon as its rep logged out, went idle or never connected
   const result = await pool.query(
     "SELECT l.id, l.line_number, l.employee_id, l.purpose, l.assigned_at, l.freed_at, " +
       "l.team_id, t.name AS team_name, l.calling_number, s.connected_at, s.via AS connected_via, " +
@@ -89,7 +93,9 @@ router.patch("/:id", requirePermission("intercoms"), async (req, res) => {
          FROM employees e WHERE e.id = $1`, [u.employee_id, line.id]);
       if (!p) { await client.query("ROLLBACK"); return bad(res, 400, "That person doesn't exist"); }
       if (p.status !== "active") { await client.query("ROLLBACK"); return bad(res, 400, `${p.name} is switched off`); }
-      if (p.other_line) { await client.query("ROLLBACK"); return bad(res, 409, `${p.name} already has line ${p.other_line}. Use Swap agents, or free that line first.`); }
+      if (p.other_line && !u.move) { await client.query("ROLLBACK"); return bad(res, 409, `${p.name} already has line ${p.other_line}. Use Swap agents, or free that line first.`); }
+      // the Intercoms dropdown moves them (client, 28 Nov 2026): their old line is freed; the trigger ends that connection
+      if (p.other_line) await client.query("UPDATE lines SET employee_id = NULL, assigned_at = NULL, freed_at = NOW() WHERE employee_id = $1 AND id <> $2", [u.employee_id, line.id]);
     }
 
     const fields: string[] = [];

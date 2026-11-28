@@ -99,7 +99,7 @@ router.use(requireAuth);
 
 router.get("/names", async (_req, res) => {
   const result = await pool.query(
-    "SELECT id, name, color_index FROM employees WHERE status = 'active' ORDER BY name ASC"
+    "SELECT id, name, color_index, color, employee_code FROM employees WHERE status = 'active' ORDER BY name ASC"
   );
   return res.json(result.rows);
 });

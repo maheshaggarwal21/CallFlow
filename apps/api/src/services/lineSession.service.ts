@@ -30,6 +30,11 @@ export async function tidy(db: Db = pool) {
   for (const r of rows) {
     await db.query("UPDATE lines SET employee_id = NULL, assigned_at = NULL, freed_at = NOW() WHERE id = $1 AND employee_id = $2", [r.line_id, r.employee_id]);
   }
+  // no line is fixed to anyone (client, 28 Nov 2026): a line is held only through a live connection (a test call or an
+  // admin's pick), so one held without one (set before the employee login, or a session ended elsewhere) is freed
+  await db.query(`UPDATE lines l SET employee_id = NULL, assigned_at = NULL, freed_at = NOW()
+                   WHERE l.employee_id IS NOT NULL AND NOT EXISTS (
+                     SELECT 1 FROM line_sessions s WHERE s.line_id = l.id AND s.employee_id = l.employee_id AND s.status = 'connected')`);
 }
 
 /** The page's activity ping: the rep touched the dashboard. Returns when they were last active (touch or call). */
@@ -38,8 +43,11 @@ export async function seen(employeeId: string, touched: boolean) {
   const { rows: [r] } = await pool.query(
     `SELECT x.at AS last_active_at, FLOOR(EXTRACT(EPOCH FROM NOW() - x.at))::int AS idle_secs
      FROM line_sessions ls CROSS JOIN LATERAL (SELECT ${LAST_ACTIVE} AS at) x WHERE ls.employee_id = $1 AND ls.status = 'connected'`, [employeeId]);
+  // why the last connection ended, so the page can say so when it logs the rep out (an admin freed or moved the line)
+  const ended = r ? null : (await pool.query(
+    "SELECT end_reason FROM line_sessions WHERE employee_id = $1 AND status = 'ended' ORDER BY ended_at DESC LIMIT 1", [employeeId])).rows[0]?.end_reason ?? null;
   // idle_secs is counted on the server, so a PC with a wrong clock still gets it right
-  return { connected: !!r, last_active_at: r?.last_active_at ?? null, idle_secs: r?.idle_secs ?? null };
+  return { connected: !!r, last_active_at: r?.last_active_at ?? null, idle_secs: r?.idle_secs ?? null, end_reason: ended };
 }
 
 let timer: NodeJS.Timeout | null = null;

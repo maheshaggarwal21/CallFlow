@@ -28,10 +28,22 @@ export default function IdleLogout() {
   const [now, setNow] = useState(Date.now());
   const warning = deadline !== null;
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (why: "idle" | "freed" = "idle") => {
     await api.post("/auth/logout").catch(() => {});
-    window.location.href = "/login/employee?idle=1";
+    window.location.href = `/login/employee?${why}=1`;
   }, []);
+
+  // an admin gave the line to someone else or freed it (Intercoms, 28 Nov 2026): log this rep out within 20 s
+  useEffect(() => {
+    if (!on) return;
+    const t = setInterval(async () => {
+      try {
+        const r = await api.post<{ connected: boolean; end_reason: string | null }>("/connect/seen", { touched: false });
+        if (!r.connected) logout(r.end_reason === "idle 45 min" ? "idle" : "freed");
+      } catch { /* offline: try again */ }
+    }, 20_000);
+    return () => clearInterval(t);
+  }, [on, logout]);
 
   const touch = useCallback((force = false) => {
     const t = Date.now();
@@ -61,7 +73,7 @@ export default function IdleLogout() {
       if (Date.now() - mine < IDLE_MS) return;
       try {
         const r = await api.post<{ connected: boolean; idle_secs: number | null }>("/connect/seen", { touched: false });
-        if (!r.connected) { window.location.href = "/connect"; return; }
+        if (!r.connected) return; // the check above logs them out
         // a call on the line, or a touch on another device, since: count from then
         if (r.idle_secs !== null && r.idle_secs * 1000 < IDLE_MS) { last.current = Date.now() - r.idle_secs * 1000; return; }
       } catch { /* offline: ask anyway */ }

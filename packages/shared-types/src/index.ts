@@ -106,6 +106,8 @@ export type EmployeeName = {
   id: string;
   name: string;
   color_index: number;
+  color?: string | null;
+  employee_code?: number | null;
 };
 
 export type Line = {

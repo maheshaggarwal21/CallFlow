@@ -800,6 +800,21 @@ mock.server.close();
   ok((await call(a2.token, "POST", "/connect/start", { line_id: l97.id })).data?.status === "testing", "Retry starts a new test");
   await call(a2.token, "POST", "/connect/end");
 
+  // Intercoms dropdown (client, 28 Nov 2026): an admin picks who is on a line; whoever had it is logged out; no line is fixed
+  ok((await call(owner, "PATCH", `/lines/${l97.id}`, { employee_id: ra.id })).status === 200, "dropdown: admin gives line 97 to rep A");
+  ok((await call(owner, "PATCH", `/lines/${l98.id}`, { employee_id: ra.id })).status === 409, "dropdown: a rep on another line isn't moved without the move flag");
+  ok((await call(owner, "PATCH", `/lines/${l98.id}`, { employee_id: ra.id, move: true })).status === 200, "dropdown: ...and is moved with it");
+  const mv = (await pool.query("SELECT id, employee_id FROM lines WHERE id = ANY($1::uuid[])", [[l97.id, l98.id]])).rows;
+  ok(mv.find((r) => r.id === l97.id).employee_id === null && mv.find((r) => r.id === l98.id).employee_id === ra.id
+    && (await call(a2.token, "GET", "/auth/me")).data.connection?.line_number === "98", "moved: line 97 is free, rep A is connected on 98");
+  ok((await call(owner, "PATCH", `/lines/${l98.id}`, { employee_id: rb.id })).status === 200, "dropdown: admin gives line 98 to rep B instead");
+  const seenA = (await call(a2.token, "POST", "/connect/seen", { touched: false })).data;
+  ok(seenA.connected === false && seenA.end_reason === "line freed", "the rep who had it hears their line went (their page logs them out)", JSON.stringify(seenA));
+  await pool.query("UPDATE lines SET employee_id = $1 WHERE id = $2", [ra.id, l97.id]);
+  await pool.query("UPDATE line_sessions SET status = 'ended', ended_at = NOW(), end_reason = 'e2e' WHERE employee_id = $1 AND status = 'connected'", [ra.id]);
+  const shown97 = (await call(owner, "GET", "/lines")).data.find((l) => l.id === l97.id);
+  ok(shown97?.employee_id === null, "a line held with no live connection shows free on Intercoms (no fixed lines)", JSON.stringify(shown97?.employee_id));
+
   await pool.query("DELETE FROM calls WHERE source_file_key LIKE $1", [`e2e-conn-${stamp}-%`]);
   await pool.query("DELETE FROM lines WHERE id = ANY($1::uuid[])", [[l97.id, l98.id]]);
   await pool.query("DELETE FROM employees WHERE email LIKE $1", [`cn_${stamp}%`]);

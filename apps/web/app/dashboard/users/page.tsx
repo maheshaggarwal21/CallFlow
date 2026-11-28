@@ -12,7 +12,7 @@ import { Avatar, S } from "@/components/salary/kit";
 import Tag from "@/components/ui/Tag";
 import { Icon } from "@/components/crm/icons";
 import ExtraCommissions, { extraProblem } from "@/components/users/ExtraCommissions";
-import type { Employee, Intercom, Line, TeamsResponse, UserRole } from "@callflow/shared-types";
+import type { Employee, TeamsResponse, UserRole } from "@callflow/shared-types";
 import { istToday } from "@/lib/period";
 
 // Fits a 1280px laptop without sideways scrolling, Edit included (the minimums); on wider screens the spare
@@ -165,8 +165,6 @@ const NEW_TEAM = "__new_team__";
 
 function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; isSelf: boolean; onClose: () => void; onSaved: () => void }) {
   const { isOwner, can } = useAuth();
-  const { data: lines } = useSWR<Line[]>("/lines", fetcher);
-  const { data: intercoms } = useSWR<Intercom[]>("/intercoms", fetcher);
   const { data: teamsData, mutate: reloadTeams } = useSWR<TeamsResponse>(can("teams") || can("users") ? "/teams" : null, fetcher);
   const [newTeam, setNewTeam] = useState<{ name: string; location: string; err: string; busy: boolean } | null>(null);
   const [f, setF] = useState({
@@ -179,7 +177,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
     // daily salary (15 Nov 2026): which targets count, and the first day paid (a new user: today, filled by the server)
     tick_call: user?.tick_call ?? false, tick_trial: user?.tick_trial ?? false, tick_regular: user?.tick_regular ?? false,
     join_date: user ? user.join_date ?? "" : istToday(), // new user: today (IST), editable
-    line_id: user?.line_id ?? "", intercom_id: user?.intercom_id ?? "", permissions: user?.permissions ?? [],
+    permissions: user?.permissions ?? [],
     extras: user?.extra_commissions ?? [], deductions: user?.extra_deductions ?? [], team_id: user?.team_id ?? "",
   });
   const [showPw, setShowPw] = useState(false);
@@ -193,26 +191,6 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
-
-  // Line, intercom and calling number go together (one intercom per line, number = the intercom's):
-  // picking the line brings its intercom; picking an intercom or number brings its line, and an
-  // intercom not on any line yet is put on the picked line when the form is saved.
-  const lineNo = (id: string) => (lines ?? []).find((l) => l.id === id)?.line_number;
-  // one person per line, one intercom per line: only free ones are offered, plus what this user already has
-  const lineChoices = (lines ?? []).filter((l) => !l.employee_id || l.employee_id === user?.id);
-  const pickedLine = lineNo(f.line_id);
-  const icChoices = (intercoms ?? []).filter((i) => !i.line_number || i.line_number === pickedLine || i.id === f.intercom_id);
-  const intercom = (intercoms ?? []).find((i) => i.id === f.intercom_id);
-  const pickLine = (id: string) => {
-    const onIt = (intercoms ?? []).find((i) => i.line_number && i.line_number === lineNo(id));
-    // a line with no intercom yet keeps an unattached intercom picked first (it goes on this line when saved)
-    set({ line_id: id, intercom_id: onIt?.id ?? (intercom && !intercom.line_number ? intercom.id : "") });
-  };
-  const pickIntercom = (id: string) => {
-    const ic = (intercoms ?? []).find((i) => i.id === id);
-    const onLine = ic?.line_number ? (lines ?? []).find((l) => l.line_number === ic.line_number)?.id : undefined;
-    set({ intercom_id: id, line_id: onLine ?? f.line_id });
-  };
 
   // the small "Create team" popup: a name and the office address, then the new team is picked for this user
   const createTeam = async () => {
@@ -248,7 +226,6 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
     if (nums.some((v) => v.trim() !== "" && !(Number(v) >= 0))) return setError("Salary and target figures can't be negative.");
     if ((f.trial_commission_type === "pct" && num(f.trial_commission) > 100) || (f.regular_commission_type === "pct" && num(f.regular_commission) > 100))
       return setError("A commission in % can't be more than 100.");
-    if (f.intercom_id && !f.line_id) return setError("Pick a line for the intercom.");
     const bad = f.extras.map(extraProblem).findIndex(Boolean);
     if (bad >= 0) return setError(`Extra commission ${bad + 1}: ${extraProblem(f.extras[bad])}`);
     const badD = f.deductions.map(extraProblem).findIndex(Boolean);
@@ -264,7 +241,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
       target_call_secs: secs, target_trial: num(f.target_trial), target_regular: num(f.target_regular),
       tick_call: f.tick_call, tick_trial: f.tick_trial, tick_regular: f.tick_regular,
       ...(f.join_date ? { join_date: f.join_date } : {}),
-      permissions: all ? [] : f.permissions, line_id: f.line_id || null, intercom_id: f.intercom_id || null,
+      permissions: all ? [] : f.permissions,
       extra_commissions: f.extras, extra_deductions: f.deductions,
       ...(teamsData ? { team_id: f.team_id || null } : {}),
     };
@@ -378,29 +355,6 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: Employee | null; i
               </div>
             </Section>
 
-            <Section title="Call Setting" icon="☎">
-              <div style={{ display: "grid", gap: 12 }}>
-                <Field label="Line">
-                  <select value={f.line_id} onChange={(e) => pickLine(e.target.value)} style={input}>
-                    <option value="">— No line —</option>
-                    {lineChoices.map((l) => <option key={l.id} value={l.id}>{l.line_number}</option>)}
-                  </select>
-                </Field>
-                <Field label="Intercom">
-                  <select value={f.intercom_id} onChange={(e) => pickIntercom(e.target.value)} style={input}>
-                    <option value="">—</option>
-                    {icChoices.map((i) => <option key={i.id} value={i.id}>{i.intercom_code}{i.line_number ? ` · line ${i.line_number}` : " · no line yet"}</option>)}
-                  </select>
-                </Field>
-                <Field label="Calling Number">
-                  <select value={intercom?.phone_number ? intercom.id : ""} onChange={(e) => pickIntercom(e.target.value)} style={input}>
-                    <option value="">—</option>
-                    {icChoices.filter((i) => i.phone_number).map((i) => <option key={i.id} value={i.id}>{i.phone_number}</option>)}
-                  </select>
-                </Field>
-                <p style={{ margin: 0, fontSize: 12.5, color: C.muted }}>Pick any one and the others fill in. An intercom with no line yet goes on this line when you save.</p>
-              </div>
-            </Section>
 
             <Section title="Target" icon="◎">
               <div style={{ display: "grid", gap: 12 }}>
